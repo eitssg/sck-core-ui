@@ -12,7 +12,8 @@ import {
   ChevronDown,
   FolderOpen,
   List,
-  Building2
+  Building2,
+  GitBranch
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -41,6 +42,7 @@ export default function DashboardLayout() {
     { name: "Clients", href: "/clients", icon: Building2 },
     { name: "Portfolios", href: "/portfolios", icon: Briefcase },
     { name: "Applications", href: "/applications", icon: FolderOpen },
+    { name: "Deployments", href: "/deployments", icon: GitBranch },
     { name: "Documentation", href: "/docs", icon: List },
     { name: "Profile", href: "/profile", icon: User },
   ];

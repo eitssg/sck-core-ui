@@ -16,6 +16,8 @@ import ApplicationDetails from "./pages/ApplicationDetails";
 import Clients from "./pages/Clients";
 import ClientDetails from "./pages/ClientDetails";
 import CreateClient from "./pages/CreateClient";
+import Deployments from "./pages/Deployments";
+import DeploymentDetails from "./pages/DeploymentDetails";
 import Docs from "./pages/Docs";
 import DashboardLayout from "./components/DashboardLayout";
 import NotFound from "./pages/NotFound";
@@ -70,6 +72,12 @@ const App = () => (
           </Route>
           <Route path="/clients/:id/edit" element={<DashboardLayout />}>
             <Route index element={<CreateClient />} />
+          </Route>
+          <Route path="/deployments" element={<DashboardLayout />}>
+            <Route index element={<Deployments />} />
+          </Route>
+          <Route path="/deployments/:id" element={<DashboardLayout />}>
+            <Route index element={<DeploymentDetails />} />
           </Route>
           <Route path="/docs" element={<DashboardLayout />}>
             <Route index element={<Docs />} />
