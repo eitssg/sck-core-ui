@@ -30,9 +30,9 @@ const mockPortfolio = {
   lastUpdated: "2024-01-15",
   status: "active",
   applications: [
-    { id: 1, name: "User Management", status: "active" },
-    { id: 2, name: "Analytics Dashboard", status: "active" },
-    { id: 3, name: "Inventory Tracker", status: "development" },
+    { id: 1, name: "User Management", slug: "user-mgmt", status: "active" },
+    { id: 2, name: "Analytics Dashboard", slug: "analytics-dash", status: "active" },
+    { id: 3, name: "Inventory Tracker", slug: "inventory-track", status: "development" },
   ]
 };
 
@@ -252,7 +252,10 @@ export default function PortfolioDetails() {
                     className="flex items-center justify-between p-2 bg-muted/30 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors group"
                     onClick={() => navigate(`/application/${app.id}`)}
                   >
-                    <span className="font-medium">{app.name}</span>
+                    <div>
+                      <span className="font-medium">{app.name}</span>
+                      <p className="text-xs text-muted-foreground">{app.slug}</p>
+                    </div>
                     <div className="flex items-center gap-2">
                       <Badge className={getStatusColor(app.status)} variant="secondary">
                         {app.status}
