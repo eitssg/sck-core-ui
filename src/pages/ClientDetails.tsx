@@ -1,4 +1,4 @@
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Edit, Building2, Globe, Mail, User, MapPin, Users, Briefcase } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,6 +35,7 @@ const recentMembers = [
 
 export default function ClientDetails() {
   const { id } = useParams();
+  const navigate = useNavigate();
 
   return (
     <div className="space-y-6">
@@ -134,7 +135,11 @@ export default function ClientDetails() {
             <CardContent>
               <div className="space-y-3">
                 {recentPortfolios.map((portfolio) => (
-                  <div key={portfolio.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div 
+                    key={portfolio.id} 
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
+                    onClick={() => navigate(`/portfolio/${portfolio.id}`)}
+                  >
                     <div>
                       <h4 className="font-medium text-foreground">{portfolio.name}</h4>
                       <p className="text-sm text-muted-foreground">{portfolio.description}</p>
