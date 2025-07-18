@@ -1,5 +1,5 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Edit, Building2, Globe, Mail, User, MapPin, Users, Briefcase } from "lucide-react";
+import { ArrowLeft, Edit, Building2, Globe, Mail, User, MapPin, Users, Briefcase, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -137,16 +137,19 @@ export default function ClientDetails() {
                 {recentPortfolios.map((portfolio) => (
                   <div 
                     key={portfolio.id} 
-                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors group"
                     onClick={() => navigate(`/portfolio/${portfolio.id}`)}
                   >
-                    <div>
+                    <div className="flex-1">
                       <h4 className="font-medium text-foreground">{portfolio.name}</h4>
                       <p className="text-sm text-muted-foreground">{portfolio.description}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Updated</p>
-                      <p className="text-sm font-medium">{portfolio.lastUpdated}</p>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className="text-sm text-muted-foreground">Updated</p>
+                        <p className="text-sm font-medium">{portfolio.lastUpdated}</p>
+                      </div>
+                      <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
                   </div>
                 ))}
