@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Briefcase, FolderOpen, Users, TrendingUp, Activity, Search, Filter } from "lucide-react";
+import { Plus, Briefcase, FolderOpen, Users, TrendingUp, Activity, Search, Filter, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +18,11 @@ import {
 } from "@/components/ui/select";
 
 // Mock data - will be replaced with real data later
+const mockClients = [
+  { id: "1", name: "TechCorp Solutions", slug: "techcorp-solutions", description: "Leading technology solutions provider", memberCount: 45, portfolioCount: 12 },
+  { id: "2", name: "Digital Innovations Inc", slug: "digital-innovations", description: "Cutting-edge digital transformation consultancy", memberCount: 23, portfolioCount: 8 }
+];
+
 const mockPortfolios = [
   { id: 1, name: "Enterprise Suite", code: "ENT", description: "Comprehensive enterprise applications for business management", applicationCount: 12, status: "active" },
   { id: 2, name: "Mobile Apps", code: "MOB", description: "Cross-platform mobile applications", applicationCount: 8, status: "active" },
@@ -33,13 +38,14 @@ const mockApplications = [
 ];
 
 const mockStats = [
+  { label: "Clients", value: "2", icon: Building2, change: "Organizations you belong to" },
   { label: "Total Portfolios", value: "3", icon: Briefcase, change: "+2" },
   { label: "Active Applications", value: "24", icon: FolderOpen, change: "+5" },
-  { label: "Team Members", value: "18", icon: Users, change: "+3" },
   { label: "Deployments", value: "156", icon: Activity, change: "+12" },
 ];
 
 export default function Dashboard() {
+  const [selectedClient, setSelectedClient] = useState(mockClients[0]);
   const [selectedPortfolio, setSelectedPortfolio] = useState(mockPortfolios[0]);
   const [selectedApp, setSelectedApp] = useState(mockApplications[0]);
   const [appFilter, setAppFilter] = useState("all");
@@ -94,6 +100,43 @@ export default function Dashboard() {
         })}
       </div>
 
+      {/* Client Selection */}
+      <Card className="shadow-soft mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Building2 className="h-5 w-5 text-primary" />
+            Current Client
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-4">
+            <Select value={selectedClient.id} onValueChange={(value) => {
+              const client = mockClients.find(c => c.id === value);
+              if (client) setSelectedClient(client);
+            }}>
+              <SelectTrigger className="w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {mockClients.map((client) => (
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex-1">
+              <p className="text-sm text-muted-foreground">{selectedClient.description}</p>
+              <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
+                <span>{selectedClient.memberCount} members</span>
+                <span>{selectedClient.portfolioCount} portfolios</span>
+              </div>
+            </div>
+            <Button variant="outline" size="sm">View Details</Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Portfolio Selection */}
       <Card className="shadow-soft mb-6">
         <CardHeader>
@@ -121,7 +164,34 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Client Overview */}
+        <Card className="shadow-medium">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-primary" />
+              Client Overview
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {mockClients.map((client) => (
+              <div key={client.id} className="flex items-center justify-between p-3 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                    <Building2 className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-foreground">{client.name}</h3>
+                    <p className="text-xs text-muted-foreground">{client.portfolioCount} portfolios</p>
+                  </div>
+                </div>
+                <Button variant="outline" size="sm">View</Button>
+              </div>
+            ))}
+            <Button variant="outline" className="w-full mt-4">View All Clients</Button>
+          </CardContent>
+        </Card>
+
         {/* Current Portfolio Details */}
         <Card className="shadow-medium">
           <CardHeader>

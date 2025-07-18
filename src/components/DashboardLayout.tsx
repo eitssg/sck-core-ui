@@ -11,7 +11,8 @@ import {
   X,
   ChevronDown,
   FolderOpen,
-  List
+  List,
+  Building2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -37,6 +38,7 @@ export default function DashboardLayout() {
 
   const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: Home },
+    { name: "Clients", href: "/clients", icon: Building2 },
     { name: "Portfolios", href: "/portfolios", icon: Briefcase },
     { name: "Applications", href: "/applications", icon: FolderOpen },
     { name: "Documentation", href: "/docs", icon: List },

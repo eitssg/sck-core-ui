@@ -13,6 +13,9 @@ import CreatePortfolio from "./pages/CreatePortfolio";
 import CreateApplication from "./pages/CreateApplication";
 import PortfolioDetails from "./pages/PortfolioDetails";
 import ApplicationDetails from "./pages/ApplicationDetails";
+import Clients from "./pages/Clients";
+import ClientDetails from "./pages/ClientDetails";
+import CreateClient from "./pages/CreateClient";
 import Docs from "./pages/Docs";
 import DashboardLayout from "./components/DashboardLayout";
 import NotFound from "./pages/NotFound";
@@ -55,6 +58,18 @@ const App = () => (
           </Route>
           <Route path="/applications/:id" element={<DashboardLayout />}>
             <Route index element={<ApplicationDetails />} />
+          </Route>
+          <Route path="/clients" element={<DashboardLayout />}>
+            <Route index element={<Clients />} />
+          </Route>
+          <Route path="/clients/create" element={<DashboardLayout />}>
+            <Route index element={<CreateClient />} />
+          </Route>
+          <Route path="/clients/:id" element={<DashboardLayout />}>
+            <Route index element={<ClientDetails />} />
+          </Route>
+          <Route path="/clients/:id/edit" element={<DashboardLayout />}>
+            <Route index element={<CreateClient />} />
           </Route>
           <Route path="/docs" element={<DashboardLayout />}>
             <Route index element={<Docs />} />
