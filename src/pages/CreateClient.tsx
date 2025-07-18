@@ -25,7 +25,7 @@ export default function CreateClient() {
 
   const [formData, setFormData] = useState({
     name: isEdit ? "TechCorp Solutions" : "",
-    slug: isEdit ? "techcorp-solutions" : "",
+    slug: isEdit ? "techcorp" : "",
     description: isEdit ? "Leading technology solutions provider for enterprise clients" : "",
     homepage: isEdit ? "https://techcorp.com" : "",
     contactName: isEdit ? "Sarah Johnson" : "",
@@ -126,7 +126,7 @@ export default function CreateClient() {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="slug">Client Slug *</Label>
+                <Label htmlFor="slug">Client Key *</Label>
                 <Input
                   id="slug"
                   value={formData.slug}

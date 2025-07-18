@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 const client = {
   id: "1",
   name: "TechCorp Solutions",
-  slug: "techcorp-solutions",
+  slug: "techcorp",
   description: "Leading technology solutions provider for enterprise clients with a focus on digital transformation and cloud-native solutions. We help organizations modernize their infrastructure and accelerate their digital journey.",
   homepage: "https://techcorp.com",
   contactName: "Sarah Johnson",
@@ -78,7 +78,7 @@ export default function ClientDetails() {
                   <div className="flex items-center gap-2">
                     <Building2 className="h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="text-sm font-medium">Client Slug</p>
+                      <p className="text-sm font-medium">Client Key</p>
                       <p className="text-sm text-muted-foreground font-mono">@{client.slug}</p>
                     </div>
                   </div>
