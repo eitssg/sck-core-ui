@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search, ExternalLink, Filter } from "lucide-react";
+import { Plus, Search, ExternalLink, Filter, Edit, Trash2, Folder } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -109,6 +109,19 @@ export default function Portfolios() {
     navigate(`/portfolio/${portfolioId}`);
   };
 
+  const handleEditPortfolio = (portfolioId: number) => {
+    navigate(`/portfolio/${portfolioId}?edit=true`);
+  };
+
+  const handleDeletePortfolio = (portfolioId: number) => {
+    // TODO: Add confirmation dialog and delete logic
+    console.log(`Delete portfolio ${portfolioId}`);
+  };
+
+  const handleViewApplications = (portfolioId: number, portfolioCode: string) => {
+    navigate(`/applications?portfolio=${portfolioCode}`);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Page Header */}
@@ -202,16 +215,53 @@ export default function Portfolios() {
                   <div className="text-sm">{portfolio.lastUpdated}</div>
                 </TableCell>
                 <TableCell>
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleViewPortfolio(portfolio.id);
-                    }}
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleViewPortfolio(portfolio.id);
+                      }}
+                      title="View Portfolio Details"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleViewApplications(portfolio.id, portfolio.code);
+                      }}
+                      title="View Applications"
+                    >
+                      <Folder className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditPortfolio(portfolio.id);
+                      }}
+                      title="Edit Portfolio"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeletePortfolio(portfolio.id);
+                      }}
+                      title="Delete Portfolio"
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
