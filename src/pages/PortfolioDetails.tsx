@@ -266,7 +266,7 @@ export default function PortfolioDetails() {
                   >
                     <div>
                       <span className="font-medium">{app.name}</span>
-                      <p className="text-xs text-muted-foreground">{app.slug}</p>
+                      <p className="text-xs text-muted-foreground">prn:{mockPortfolio.slug}:{app.slug}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge className={getStatusColor(app.status)} variant="secondary">
