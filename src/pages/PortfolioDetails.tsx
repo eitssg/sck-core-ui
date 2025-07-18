@@ -196,7 +196,7 @@ export default function PortfolioDetails() {
                 <div className="space-y-4">
                   <div>
                     <h2 className="text-2xl font-bold text-foreground">{mockPortfolio.name}</h2>
-                    <p className="text-sm text-muted-foreground">Portfolio Key: {mockPortfolio.slug}</p>
+                    <p className="text-sm text-muted-foreground">prn:{mockPortfolio.client.slug}:{mockPortfolio.slug}</p>
                     <p className="text-sm text-muted-foreground">Code: {mockPortfolio.code}</p>
                   </div>
                   <div>
