@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Plus, FolderOpen, Edit, Trash2, ExternalLink, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +55,7 @@ const mockApplications = [
 ];
 
 export default function Applications() {
+  const navigate = useNavigate();
   const [applications] = useState(mockApplications);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -128,7 +130,11 @@ export default function Applications() {
             </TableHeader>
             <TableBody>
               {filteredApplications.map((app) => (
-                <TableRow key={app.id}>
+                <TableRow 
+                  key={app.id} 
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => navigate(`/applications/${app.id}`)}
+                >
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 bg-primary/10 rounded-md flex items-center justify-center">
