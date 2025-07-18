@@ -39,6 +39,7 @@ export default function DashboardLayout() {
     { name: "Dashboard", href: "/dashboard", icon: Home },
     { name: "Portfolios", href: "/portfolios", icon: Briefcase },
     { name: "Applications", href: "/applications", icon: FolderOpen },
+    { name: "Documentation", href: "/docs", icon: List },
     { name: "Profile", href: "/profile", icon: User },
   ];
 
