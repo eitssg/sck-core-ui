@@ -90,28 +90,6 @@ export default function DashboardLayout() {
                 <Menu className="h-5 w-5" />
               </Button>
               
-              {/* Portfolio Selector */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="gap-2">
-                    <Briefcase className="h-4 w-4" />
-                    {currentPortfolio.name}
-                    <ChevronDown className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-48">
-                  {mockPortfolios.map((portfolio) => (
-                    <DropdownMenuItem
-                      key={portfolio.id}
-                      onClick={() => setCurrentPortfolio(portfolio)}
-                      className={currentPortfolio.id === portfolio.id ? "bg-accent" : ""}
-                    >
-                      <Briefcase className="mr-2 h-4 w-4" />
-                      {portfolio.name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
             </div>
 
             <div className="flex items-center gap-2">
