@@ -76,6 +76,14 @@ export default function ClientDetails() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Client Slug</p>
+                      <p className="text-sm text-muted-foreground font-mono">@{client.slug}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
                     <Globe className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium">Homepage</p>
