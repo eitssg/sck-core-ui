@@ -29,6 +29,11 @@ const mockPortfolio = {
   applicationCount: 12,
   lastUpdated: "2024-01-15",
   status: "active",
+  client: {
+    id: 1,
+    name: "TechCorp Solutions",
+    slug: "techcorp"
+  },
   applications: [
     { id: 1, name: "User Management", slug: "user-mgmt", status: "active" },
     { id: 2, name: "Analytics Dashboard", slug: "analytics-dash", status: "active" },
@@ -191,6 +196,11 @@ export default function PortfolioDetails() {
                   <div>
                     <h2 className="text-2xl font-bold text-foreground">{mockPortfolio.name}</h2>
                     <p className="text-muted-foreground">Code: {mockPortfolio.code}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Client</p>
+                    <p className="font-medium text-foreground">{mockPortfolio.client.name}</p>
+                    <p className="text-xs text-muted-foreground">{mockPortfolio.client.slug}</p>
                   </div>
                   <p className="text-foreground">{mockPortfolio.description}</p>
                   {mockPortfolio.homePageUrl && (
