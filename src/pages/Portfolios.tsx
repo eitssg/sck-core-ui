@@ -80,7 +80,7 @@ const mockPortfolios = [
 export default function Portfolios() {
   const navigate = useNavigate();
   const [portfolios] = useState(mockPortfolios);
-  const [selectedClient, setSelectedClient] = useState<string>("");
+  const [selectedClient, setSelectedClient] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
 
   const getStatusColor = (status: string) => {
@@ -97,7 +97,7 @@ export default function Portfolios() {
   };
 
   const filteredPortfolios = portfolios.filter((portfolio) => {
-    const matchesClient = !selectedClient || portfolio.clientId.toString() === selectedClient;
+    const matchesClient = selectedClient === "all" || portfolio.clientId.toString() === selectedClient;
     const matchesSearch = !searchTerm || 
       portfolio.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       portfolio.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -141,7 +141,7 @@ export default function Portfolios() {
             <SelectValue placeholder="Select client" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All clients</SelectItem>
+            <SelectItem value="all">All clients</SelectItem>
             {mockClients.map((client) => (
               <SelectItem key={client.id} value={client.id.toString()}>
                 {client.name}
