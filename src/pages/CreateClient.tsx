@@ -38,7 +38,7 @@ export default function CreateClient() {
     
     // Auto-generate slug from name
     if (field === "name" && !isEdit) {
-      const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const slug = value.toLowerCase().replace(/[^a-z]/g, "");
       setFormData(prev => ({ ...prev, slug }));
     }
   };
@@ -131,13 +131,13 @@ export default function CreateClient() {
                   id="slug"
                   value={formData.slug}
                   onChange={(e) => handleInputChange("slug", e.target.value)}
-                  placeholder="client-slug"
+                  placeholder="clientkey"
                   required
-                  pattern="^[a-z0-9-]+$"
-                  title="Only lowercase letters, numbers, and hyphens are allowed"
+                  pattern="^[a-z]+$"
+                  title="Only lowercase letters (a-z) are allowed"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Used in URLs and API endpoints. Only lowercase letters, numbers, and hyphens.
+                  Used in URLs and API endpoints. Only lowercase letters (a-z).
                 </p>
               </div>
             </div>

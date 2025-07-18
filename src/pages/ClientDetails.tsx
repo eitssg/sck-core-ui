@@ -46,7 +46,7 @@ export default function ClientDetails() {
         </Button>
         <div className="flex-1">
           <h1 className="text-3xl font-bold text-foreground">{client.name}</h1>
-          <p className="text-muted-foreground">@{client.slug}</p>
+          <p className="text-muted-foreground">{client.slug}</p>
         </div>
         <Button asChild>
           <Link to={`/clients/${id}/edit`}>
@@ -79,7 +79,7 @@ export default function ClientDetails() {
                     <Building2 className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium">Client Key</p>
-                      <p className="text-sm text-muted-foreground font-mono">@{client.slug}</p>
+                      <p className="text-sm text-muted-foreground font-mono">{client.slug}</p>
                     </div>
                   </div>
                   

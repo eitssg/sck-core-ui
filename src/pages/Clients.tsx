@@ -11,7 +11,7 @@ const clients = [
   {
     id: "1",
     name: "TechCorp Solutions",
-    slug: "techcorp-solutions",
+    slug: "techcorp",
     description: "Leading technology solutions provider for enterprise clients",
     homepage: "https://techcorp.com",
     contactName: "Sarah Johnson",
@@ -23,7 +23,7 @@ const clients = [
   {
     id: "2",
     name: "Digital Innovations Inc",
-    slug: "digital-innovations",
+    slug: "digitalinnovations",
     description: "Cutting-edge digital transformation consultancy",
     homepage: "https://digitalinnovations.com",
     contactName: "Michael Chen",
@@ -35,7 +35,7 @@ const clients = [
   {
     id: "3",
     name: "CloudFirst Partners",
-    slug: "cloudfirst-partners",
+    slug: "cloudfirstpartners",
     description: "Cloud-native development and infrastructure specialists",
     homepage: "https://cloudfirst.com",
     contactName: "Emma Rodriguez",
@@ -86,7 +86,7 @@ export default function Clients() {
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
                   <CardTitle className="text-lg">{client.name}</CardTitle>
-                  <p className="text-sm text-muted-foreground">@{client.slug}</p>
+                  <p className="text-sm text-muted-foreground">{client.slug}</p>
                 </div>
                 <Building2 className="h-5 w-5 text-muted-foreground" />
               </div>
