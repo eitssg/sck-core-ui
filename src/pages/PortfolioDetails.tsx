@@ -23,6 +23,7 @@ import {
 const mockPortfolio = {
   id: 1,
   name: "Enterprise Suite",
+  slug: "enterprise-suite",
   code: "ENT",
   description: "Comprehensive enterprise applications for business management",
   homePageUrl: "https://enterprise.company.com",
@@ -195,12 +196,13 @@ export default function PortfolioDetails() {
                 <div className="space-y-4">
                   <div>
                     <h2 className="text-2xl font-bold text-foreground">{mockPortfolio.name}</h2>
-                    <p className="text-muted-foreground">Code: {mockPortfolio.code}</p>
+                    <p className="text-sm text-muted-foreground">Portfolio Key: {mockPortfolio.slug}</p>
+                    <p className="text-sm text-muted-foreground">Code: {mockPortfolio.code}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Client</p>
                     <p className="font-medium text-foreground">{mockPortfolio.client.name}</p>
-                    <p className="text-xs text-muted-foreground">{mockPortfolio.client.slug}</p>
+                    <p className="text-xs text-muted-foreground">Client Key: {mockPortfolio.client.slug}</p>
                   </div>
                   <p className="text-foreground">{mockPortfolio.description}</p>
                   {mockPortfolio.homePageUrl && (
