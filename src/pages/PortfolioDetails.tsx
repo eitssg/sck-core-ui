@@ -247,11 +247,18 @@ export default function PortfolioDetails() {
             <CardContent>
               <div className="space-y-3">
                 {mockPortfolio.applications.map((app) => (
-                  <div key={app.id} className="flex items-center justify-between p-2 bg-muted/30 rounded-lg">
+                  <div 
+                    key={app.id} 
+                    className="flex items-center justify-between p-2 bg-muted/30 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors group"
+                    onClick={() => navigate(`/application/${app.id}`)}
+                  >
                     <span className="font-medium">{app.name}</span>
-                    <Badge className={getStatusColor(app.status)} variant="secondary">
-                      {app.status}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge className={getStatusColor(app.status)} variant="secondary">
+                        {app.status}
+                      </Badge>
+                      <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    </div>
                   </div>
                 ))}
               </div>
