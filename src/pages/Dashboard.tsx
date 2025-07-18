@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Plus, Briefcase, FolderOpen, Users, TrendingUp, Activity } from "lucide-react";
+import { Plus, Briefcase, FolderOpen, Users, TrendingUp, Activity, Search, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -8,23 +9,27 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Mock data - will be replaced with real data later
-const mockPortfolio = {
-  id: 1,
-  name: "Enterprise Suite",
-  code: "ENT",
-  description: "Comprehensive enterprise applications for business management",
-  homePageUrl: "https://enterprise.company.com",
-  applicationCount: 12,
-  lastUpdated: "2024-01-15"
-};
+const mockPortfolios = [
+  { id: 1, name: "Enterprise Suite", code: "ENT", description: "Comprehensive enterprise applications for business management", applicationCount: 12, status: "active" },
+  { id: 2, name: "Mobile Apps", code: "MOB", description: "Cross-platform mobile applications", applicationCount: 8, status: "active" },
+  { id: 3, name: "Analytics Platform", code: "ANL", description: "Business intelligence solutions", applicationCount: 5, status: "development" }
+];
 
 const mockApplications = [
-  { id: 1, name: "User Management", description: "Centralized user administration system" },
-  { id: 2, name: "Analytics Dashboard", description: "Real-time business intelligence platform" },
-  { id: 3, name: "Inventory Tracker", description: "Advanced inventory management solution" },
-  { id: 4, name: "CRM Portal", description: "Customer relationship management system" },
+  { id: 1, name: "User Management", description: "Centralized user administration system", portfolio: "Enterprise Suite", status: "active" },
+  { id: 2, name: "Analytics Dashboard", description: "Real-time business intelligence platform", portfolio: "Enterprise Suite", status: "active" },
+  { id: 3, name: "Inventory Tracker", description: "Advanced inventory management solution", portfolio: "Enterprise Suite", status: "development" },
+  { id: 4, name: "Customer Portal", description: "Mobile customer service application", portfolio: "Mobile Apps", status: "active" },
+  { id: 5, name: "Data Warehouse", description: "Central data storage system", portfolio: "Analytics Platform", status: "maintenance" },
 ];
 
 const mockStats = [
@@ -35,7 +40,19 @@ const mockStats = [
 ];
 
 export default function Dashboard() {
+  const [selectedPortfolio, setSelectedPortfolio] = useState(mockPortfolios[0]);
   const [selectedApp, setSelectedApp] = useState(mockApplications[0]);
+  const [appFilter, setAppFilter] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // Filter applications based on selected portfolio and search
+  const filteredApplications = mockApplications.filter(app => {
+    const matchesPortfolio = app.portfolio === selectedPortfolio.name;
+    const matchesFilter = appFilter === "all" || app.status === appFilter;
+    const matchesSearch = app.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                         app.description.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesPortfolio && matchesFilter && matchesSearch;
+  });
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -77,6 +94,33 @@ export default function Dashboard() {
         })}
       </div>
 
+      {/* Portfolio Selection */}
+      <Card className="shadow-soft mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Briefcase className="h-5 w-5 text-primary" />
+            Portfolio Selection
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Select value={selectedPortfolio.name} onValueChange={(value) => {
+            const portfolio = mockPortfolios.find(p => p.name === value);
+            if (portfolio) setSelectedPortfolio(portfolio);
+          }}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {mockPortfolios.map((portfolio) => (
+                <SelectItem key={portfolio.id} value={portfolio.name}>
+                  {portfolio.name} ({portfolio.code}) - {portfolio.applicationCount} apps
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Current Portfolio Details */}
         <Card className="shadow-medium">
@@ -88,19 +132,25 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <h3 className="text-xl font-semibold text-foreground">{mockPortfolio.name}</h3>
-              <p className="text-sm text-muted-foreground">Code: {mockPortfolio.code}</p>
-              <p className="text-sm text-foreground">{mockPortfolio.description}</p>
+              <h3 className="text-xl font-semibold text-foreground">{selectedPortfolio.name}</h3>
+              <p className="text-sm text-muted-foreground">Code: {selectedPortfolio.code}</p>
+              <p className="text-sm text-foreground">{selectedPortfolio.description}</p>
             </div>
             
             <div className="flex items-center justify-between pt-4 border-t border-border">
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Applications</p>
-                <p className="text-lg font-semibold text-foreground">{mockPortfolio.applicationCount}</p>
+                <p className="text-lg font-semibold text-foreground">{selectedPortfolio.applicationCount}</p>
               </div>
               <div className="space-y-1 text-right">
-                <p className="text-sm text-muted-foreground">Last Updated</p>
-                <p className="text-sm text-foreground">{mockPortfolio.lastUpdated}</p>
+                <p className="text-sm text-muted-foreground">Status</p>
+                <span className={`px-2 py-1 text-xs rounded-full ${
+                  selectedPortfolio.status === 'active' ? 'bg-green-100 text-green-800' : 
+                  selectedPortfolio.status === 'development' ? 'bg-blue-100 text-blue-800' : 
+                  'bg-orange-100 text-orange-800'
+                }`}>
+                  {selectedPortfolio.status}
+                </span>
               </div>
             </div>
 
@@ -111,60 +161,84 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Application Details */}
+        {/* Application Management */}
         <Card className="shadow-medium">
           <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <FolderOpen className="h-5 w-5 text-primary" />
-                Application Details
-              </span>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    {selectedApp.name}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  {mockApplications.map((app) => (
-                    <DropdownMenuItem
-                      key={app.id}
-                      onClick={() => setSelectedApp(app)}
-                      className={selectedApp.id === app.id ? "bg-accent" : ""}
-                    >
-                      <FolderOpen className="mr-2 h-4 w-4" />
-                      {app.name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+            <CardTitle className="flex items-center gap-2">
+              <FolderOpen className="h-5 w-5 text-primary" />
+              Application Management
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <h3 className="text-xl font-semibold text-foreground">{selectedApp.name}</h3>
-              <p className="text-sm text-foreground">{selectedApp.description}</p>
-            </div>
-            
-            <div className="space-y-3 pt-4 border-t border-border">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Status</span>
-                <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">Active</span>
+            {/* Search and Filter */}
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search applications..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Last Deploy</span>
-                <span className="text-sm text-foreground">2 days ago</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Version</span>
-                <span className="text-sm text-foreground">v2.1.3</span>
+              <div className="flex gap-2">
+                <Select value={appFilter} onValueChange={setAppFilter}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="development">Development</SelectItem>
+                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
-            <div className="flex gap-2 pt-2">
-              <Button variant="outline" size="sm">View Details</Button>
-              <Button variant="admin" size="sm">Manage App</Button>
+            {/* Application List */}
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {filteredApplications.map((app) => (
+                <div 
+                  key={app.id} 
+                  className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                    selectedApp.id === app.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
+                  }`}
+                  onClick={() => setSelectedApp(app)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium text-foreground">{app.name}</h4>
+                      <p className="text-xs text-muted-foreground truncate">{app.description}</p>
+                    </div>
+                    <span className={`px-2 py-1 text-xs rounded-full ${
+                      app.status === 'active' ? 'bg-green-100 text-green-800' :
+                      app.status === 'development' ? 'bg-blue-100 text-blue-800' :
+                      'bg-orange-100 text-orange-800'
+                    }`}>
+                      {app.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {filteredApplications.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  No applications found matching your criteria
+                </div>
+              )}
             </div>
+
+            {/* Selected App Details */}
+            {selectedApp && (
+              <div className="pt-4 border-t border-border">
+                <h4 className="font-semibold text-foreground mb-2">Selected: {selectedApp.name}</h4>
+                <p className="text-sm text-foreground mb-3">{selectedApp.description}</p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm">View Details</Button>
+                  <Button variant="admin" size="sm">Manage App</Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

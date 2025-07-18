@@ -10,6 +10,9 @@ import Profile from "./pages/Profile";
 import Portfolios from "./pages/Portfolios";
 import Applications from "./pages/Applications";
 import CreatePortfolio from "./pages/CreatePortfolio";
+import CreateApplication from "./pages/CreateApplication";
+import PortfolioDetails from "./pages/PortfolioDetails";
+import ApplicationDetails from "./pages/ApplicationDetails";
 import Docs from "./pages/Docs";
 import DashboardLayout from "./components/DashboardLayout";
 import NotFound from "./pages/NotFound";
@@ -41,8 +44,17 @@ const App = () => (
           <Route path="/portfolios/create" element={<DashboardLayout />}>
             <Route index element={<CreatePortfolio />} />
           </Route>
+          <Route path="/portfolios/:id" element={<DashboardLayout />}>
+            <Route index element={<PortfolioDetails />} />
+          </Route>
           <Route path="/applications" element={<DashboardLayout />}>
             <Route index element={<Applications />} />
+          </Route>
+          <Route path="/applications/create" element={<DashboardLayout />}>
+            <Route index element={<CreateApplication />} />
+          </Route>
+          <Route path="/applications/:id" element={<DashboardLayout />}>
+            <Route index element={<ApplicationDetails />} />
           </Route>
           <Route path="/docs" element={<DashboardLayout />}>
             <Route index element={<Docs />} />
