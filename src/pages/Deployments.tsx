@@ -170,6 +170,15 @@ export default function Deployments() {
     }
   }, [searchParams]);
 
+  // Debug: Log the current state
+  useEffect(() => {
+    console.log('Deployments page - Total deployments in store:', deployments.length);
+    console.log('Selected client:', selectedClient);
+    if (deployments.length > 0) {
+      console.log('Sample deployment:', deployments[0]);
+    }
+  }, [deployments, selectedClient]);
+
   // Filter deployments by selected client and convert format
   const clientDeployments = selectedClient 
     ? deployments.filter(deployment => deployment.clientId === selectedClient.id).map((dep, index) => ({
