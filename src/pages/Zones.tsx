@@ -1,7 +1,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Plus, ArrowLeft, Building2, ExternalLink, Edit, Trash2, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Plus, ArrowLeft, Building2, ExternalLink, Edit, Trash2, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -15,9 +15,24 @@ import { useToast } from '@/hooks/use-toast';
 const Zones = () => {
   const { zones, clients, selectedClient, initializeZones, initializeClients, selectClient, removeZone } = useReduxData();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterTerms, setFilterTerms] = useState<string[]>([]);
+  const [newFilterTerm, setNewFilterTerm] = useState("");
+
+  // Initialize filters from URL parameters
+  useEffect(() => {
+    const environmentFilter = searchParams.get('environment');
+    const orgFilter = searchParams.get('organizationalUnit');
+    const initialFilters = [];
+    if (environmentFilter) initialFilters.push(environmentFilter);
+    if (orgFilter) initialFilters.push(orgFilter);
+    if (initialFilters.length > 0) {
+      setFilterTerms(initialFilters);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     // Initialize with mock data - replace with API calls
@@ -83,12 +98,35 @@ const Zones = () => {
     ]);
   }, []);
 
-  // Filter zones by selected client and search term
+  // TODO: Replace with actual API call when filter terms change
+  useEffect(() => {
+    if (selectedClient && (searchTerm || filterTerms.length > 0)) {
+      // Future API call structure:
+      // fetchZones({
+      //   clientId: selectedClient.id,
+      //   searchTerm,
+      //   filterTerms,
+      //   page: currentPage,
+      //   limit: itemsPerPage
+      // });
+      console.log('API call would be made with:', {
+        clientId: selectedClient.id,
+        searchTerm,
+        filterTerms,
+        page: currentPage,
+        limit: itemsPerPage
+      });
+    }
+  }, [selectedClient, searchTerm, filterTerms, currentPage, itemsPerPage]);
+
+  // Filter zones by selected client, search term, and filter terms
   const filteredZones = useMemo(() => {
     let filtered = selectedClient ? zones.filter(zone => zone.clientId === selectedClient.id) : zones;
     
+    // Apply search term
     if (searchTerm) {
       filtered = filtered.filter(zone =>
+        zone.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         zone.organizationalUnit.toLowerCase().includes(searchTerm.toLowerCase()) ||
         zone.awsAccountId.includes(searchTerm) ||
         zone.accountName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -97,8 +135,21 @@ const Zones = () => {
       );
     }
     
+    // Apply filter terms
+    if (filterTerms.length > 0) {
+      filtered = filtered.filter(zone =>
+        filterTerms.every(term =>
+          zone.environment.toLowerCase().includes(term.toLowerCase()) ||
+          zone.organizationalUnit.toLowerCase().includes(term.toLowerCase()) ||
+          zone.accountName.toLowerCase().includes(term.toLowerCase()) ||
+          zone.name.toLowerCase().includes(term.toLowerCase()) ||
+          (zone.namespace && zone.namespace.toLowerCase().includes(term.toLowerCase()))
+        )
+      );
+    }
+    
     return filtered;
-  }, [zones, selectedClient, searchTerm]);
+  }, [zones, selectedClient, searchTerm, filterTerms]);
 
   // Pagination calculations
   const totalItems = filteredZones.length;
@@ -107,10 +158,27 @@ const Zones = () => {
   const endIndex = startIndex + itemsPerPage;
   const paginatedZones = filteredZones.slice(startIndex, endIndex);
 
-  // Reset to first page when client or search changes
+  // Reset to first page when client, search, or filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedClient, searchTerm]);
+  }, [selectedClient, searchTerm, filterTerms]);
+
+  const addFilterTerm = () => {
+    if (newFilterTerm.trim() && !filterTerms.includes(newFilterTerm.trim())) {
+      setFilterTerms([...filterTerms, newFilterTerm.trim()]);
+      setNewFilterTerm("");
+    }
+  };
+
+  const removeFilterTerm = (termToRemove: string) => {
+    setFilterTerms(filterTerms.filter(term => term !== termToRemove));
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      addFilterTerm();
+    }
+  };
 
   const handleDeleteZone = (zone: any) => {
     removeZone(zone.id);
@@ -191,27 +259,71 @@ const Zones = () => {
         </Button>
       </div>
 
-      {/* Search and Filters */}
-      <div className="flex gap-4 items-center">
-        <div className="flex-1 max-w-sm">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-            <Input
-              placeholder="Search zones..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9"
-            />
+      {/* Search and Filter Terms */}
+      <Card className="shadow-soft">
+        <CardContent className="p-4">
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search zones, accounts, environments..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Add filter term (environment, org unit, etc)..."
+                  value={newFilterTerm}
+                  onChange={(e) => setNewFilterTerm(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  className="flex-1"
+                />
+                <Button onClick={addFilterTerm} disabled={!newFilterTerm.trim()}>
+                  Add Filter
+                </Button>
+              </div>
+            </div>
+            
+            {filterTerms.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                <span className="text-sm text-muted-foreground self-center">Active Filters:</span>
+                {filterTerms.map((term) => (
+                  <Badge key={term} variant="secondary" className="flex items-center gap-1 px-3 py-1">
+                    {term}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-4 w-4 p-0 hover:bg-transparent"
+                      onClick={() => removeFilterTerm(term)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </Badge>
+                ))}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setFilterTerms([])}
+                  className="text-muted-foreground"
+                >
+                  Clear all filters
+                </Button>
+              </div>
+            )}
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            <span>
-              {selectedClient.name} Zones
-            </span>
+            <div className="flex items-center gap-2">
+              <span>{selectedClient.name} Zones ({totalItems})</span>
+            </div>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>Show:</span>
