@@ -314,7 +314,7 @@ export default function Portfolios() {
                 <TableCell>
                   <div>
                     <div className="font-medium">{portfolio.name}</div>
-                    <div className="text-sm text-muted-foreground">Code: {portfolio.code}</div>
+                    <div className="text-sm text-muted-foreground">{portfolio.code}</div>
                   </div>
                 </TableCell>
                 <TableCell>
