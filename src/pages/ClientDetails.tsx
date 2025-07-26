@@ -49,12 +49,20 @@ export default function ClientDetails() {
           <h1 className="text-3xl font-bold text-foreground">{client.name}</h1>
           <p className="text-muted-foreground">{client.slug}</p>
         </div>
-        <Button asChild>
-          <Link to={`/clients/${id}/edit`}>
-            <Edit className="mr-2 h-4 w-4" />
-            Edit Client
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link to={`/clients/${id}/portfolios`}>View Portfolios</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link to={`/clients/${id}/zones`}>View Zones</Link>
+          </Button>
+          <Button asChild>
+            <Link to={`/clients/${id}/edit`}>
+              <Edit className="mr-2 h-4 w-4" />
+              Edit Client
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

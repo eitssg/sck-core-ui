@@ -1,12 +1,14 @@
-import { useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { useEffect, useMemo } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { Plus, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import { useReduxData } from '@/hooks/useReduxData';
 
 const Zones = () => {
+  const { clientId } = useParams<{ clientId?: string }>();
   const { zones, clients, initializeZones, initializeClients } = useReduxData();
 
   useEffect(() => {
@@ -54,6 +56,13 @@ const Zones = () => {
     ]);
   }, [initializeZones, initializeClients]);
 
+  // Filter zones by client if clientId is provided
+  const filteredZones = useMemo(() => {
+    return clientId ? zones.filter(zone => zone.clientId === clientId) : zones;
+  }, [zones, clientId]);
+
+  const selectedClient = clientId ? clients.find(c => c.id === clientId) : null;
+
   const getClientName = (clientId: string) => {
     const client = clients.find(c => c.id === clientId);
     return client?.name || 'Unknown Client';
@@ -61,13 +70,31 @@ const Zones = () => {
 
   return (
     <div className="space-y-6">
+      {clientId && (
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="sm" asChild>
+            <Link to={`/clients/${clientId}`}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Client
+            </Link>
+          </Button>
+        </div>
+      )}
+      
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">Zones</h1>
-          <p className="text-muted-foreground">Manage your AWS zones and environments</p>
+          <h1 className="text-3xl font-bold">
+            {selectedClient ? `${selectedClient.name} - Zones` : 'Zones'}
+          </h1>
+          <p className="text-muted-foreground">
+            {selectedClient 
+              ? `Manage zones for ${selectedClient.name}`
+              : 'Manage your AWS zones and environments'
+            }
+          </p>
         </div>
         <Button asChild>
-          <Link to="/zones/create">
+          <Link to={clientId ? `/clients/${clientId}/zones/create` : "/zones/create"}>
             <Plus className="mr-2 h-4 w-4" />
             Add Zone
           </Link>
@@ -76,13 +103,15 @@ const Zones = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>All Zones</CardTitle>
+          <CardTitle>
+            {selectedClient ? `${selectedClient.name} Zones` : 'All Zones'}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Client</TableHead>
+                {!clientId && <TableHead>Client</TableHead>}
                 <TableHead>Organizational Unit</TableHead>
                 <TableHead>AWS Account ID</TableHead>
                 <TableHead>Account Name</TableHead>
@@ -91,22 +120,18 @@ const Zones = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {zones.map((zone) => (
+              {filteredZones.map((zone) => (
                 <TableRow key={zone.id}>
-                  <TableCell className="font-medium">{getClientName(zone.clientId)}</TableCell>
+                  {!clientId && (
+                    <TableCell className="font-medium">{getClientName(zone.clientId)}</TableCell>
+                  )}
                   <TableCell>{zone.organizationalUnit}</TableCell>
                   <TableCell>{zone.awsAccountId}</TableCell>
                   <TableCell>{zone.accountName}</TableCell>
                   <TableCell>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      zone.environment === 'production' 
-                        ? 'bg-red-100 text-red-800' 
-                        : zone.environment === 'development'
-                        ? 'bg-blue-100 text-blue-800'
-                        : 'bg-gray-100 text-gray-800'
-                    }`}>
+                    <Badge variant={zone.environment === 'production' ? 'destructive' : 'secondary'}>
                       {zone.environment}
-                    </span>
+                    </Badge>
                   </TableCell>
                   <TableCell>
                     <Button variant="outline" size="sm" asChild>

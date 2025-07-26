@@ -79,6 +79,12 @@ const App = () => (
           <Route path="/clients/:id/edit" element={<DashboardLayout />}>
             <Route index element={<CreateClient />} />
           </Route>
+          <Route path="/clients/:clientId/zones" element={<DashboardLayout />}>
+            <Route index element={<Zones />} />
+          </Route>
+          <Route path="/clients/:clientId/zones/create" element={<DashboardLayout />}>
+            <Route index element={<CreateZone />} />
+          </Route>
           <Route path="/zones" element={<DashboardLayout />}>
             <Route index element={<Zones />} />
           </Route>
