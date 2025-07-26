@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Play, Square, Trash2, GitBranch, Tag, MapPin, Server, Clock, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Play, Square, Trash2, GitBranch, Tag, MapPin, Server, Clock, AlertTriangle, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,11 +39,52 @@ const mockDeployment = {
   tags: ["production", "critical", "user-management"]
 };
 
+// Mock events data generator
+const generateMockEvents = (count: number, startId: number = 0) => {
+  const eventTypes = ['deploy', 'build', 'test', 'release', 'teardown', 'scale', 'config', 'monitor'];
+  const itemTypes = ['application', 'database', 'load-balancer', 'container', 'service', 'pipeline'];
+  const statuses = ['success', 'error', 'warning', 'info', 'in-progress'];
+  const messages = [
+    'Deployment started successfully',
+    'Build process completed',
+    'Unit tests passed',
+    'Integration tests failed',
+    'Database migration applied',
+    'Load balancer configured',
+    'Service scaled to 3 instances',
+    'Configuration updated',
+    'Health check passed',
+    'SSL certificate renewed',
+    'Cache cleared',
+    'Backup completed',
+    'Resource allocation updated',
+    'Security scan completed',
+    'Performance metrics collected'
+  ];
+
+  return Array.from({ length: count }, (_, i) => {
+    const timestamp = new Date();
+    timestamp.setMinutes(timestamp.getMinutes() - (startId + i) * 2);
+    
+    return {
+      id: startId + i,
+      timestamp: timestamp.toISOString(),
+      event_type: eventTypes[Math.floor(Math.random() * eventTypes.length)],
+      item_type: itemTypes[Math.floor(Math.random() * itemTypes.length)],
+      message: messages[Math.floor(Math.random() * messages.length)],
+      status: statuses[Math.floor(Math.random() * statuses.length)]
+    };
+  });
+};
+
 export default function DeploymentDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [deployment] = useState(mockDeployment);
   const [isLoading, setIsLoading] = useState(false);
+  const [events, setEvents] = useState(generateMockEvents(50));
+  const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+  const [hasMoreEvents, setHasMoreEvents] = useState(true);
 
   const handleRelease = () => {
     setIsLoading(true);
@@ -84,6 +127,53 @@ export default function DeploymentDetails() {
       default:
         return "bg-gray-100 text-gray-800";
     }
+  };
+
+  const getEventStatusColor = (status: string) => {
+    switch (status) {
+      case "success":
+        return "bg-green-100 text-green-800";
+      case "error":
+        return "bg-red-100 text-red-800";
+      case "warning":
+        return "bg-yellow-100 text-yellow-800";
+      case "in-progress":
+        return "bg-blue-100 text-blue-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const loadMoreEvents = useCallback(() => {
+    if (isLoadingEvents || !hasMoreEvents) return;
+    
+    setIsLoadingEvents(true);
+    // Simulate API call delay
+    setTimeout(() => {
+      const newEvents = generateMockEvents(25, events.length);
+      setEvents(prev => [...prev, ...newEvents]);
+      setIsLoadingEvents(false);
+      
+      // Simulate no more events after 200 total events
+      if (events.length + 25 >= 200) {
+        setHasMoreEvents(false);
+      }
+    }, 1000);
+  }, [events.length, isLoadingEvents, hasMoreEvents]);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+    
+    // Load more when scrolled 80% down
+    if (scrollPercentage > 0.8) {
+      loadMoreEvents();
+    }
+  }, [loadMoreEvents]);
+
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString();
   };
 
   return (
@@ -275,6 +365,73 @@ export default function DeploymentDetails() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Events Log */}
+      <Card className="shadow-medium">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            Events Log
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ScrollArea 
+            className="h-96 w-full"
+            onScrollCapture={handleScroll}
+          >
+            <div className="p-6 space-y-3">
+              {events.map((event, index) => (
+                <div key={event.id} className="flex items-start gap-4 p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors">
+                  <div className="flex-shrink-0 w-2 h-2 rounded-full bg-primary mt-2"></div>
+                  <div className="flex-grow space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs">
+                          {event.event_type}
+                        </Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          {event.item_type}
+                        </Badge>
+                        <Badge className={`text-xs ${getEventStatusColor(event.status)}`} variant="secondary">
+                          {event.status}
+                        </Badge>
+                      </div>
+                      <span className="text-xs text-muted-foreground font-mono">
+                        {formatTimestamp(event.timestamp)}
+                      </span>
+                    </div>
+                    <p className="text-sm text-foreground">{event.message}</p>
+                  </div>
+                </div>
+              ))}
+              
+              {isLoadingEvents && (
+                <div className="space-y-3">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="flex items-start gap-4 p-3">
+                      <Skeleton className="w-2 h-2 rounded-full mt-2" />
+                      <div className="flex-grow space-y-2">
+                        <div className="flex gap-2">
+                          <Skeleton className="h-5 w-16" />
+                          <Skeleton className="h-5 w-20" />
+                          <Skeleton className="h-5 w-14" />
+                        </div>
+                        <Skeleton className="h-4 w-3/4" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {!hasMoreEvents && events.length > 0 && (
+                <div className="text-center py-4">
+                  <p className="text-sm text-muted-foreground">No more events to load</p>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </CardContent>
+      </Card>
     </div>
   );
 }
