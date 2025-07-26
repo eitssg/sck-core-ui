@@ -149,16 +149,16 @@ const CreateZone = () => {
       });
     }
 
-    navigate('/zones');
+    navigate(isEditing ? `/zones/${id}` : '/zones');
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/zones">
+          <Link to={isEditing ? `/zones/${id}` : "/zones"}>
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Zones
+            {isEditing ? 'Back to Zone Details' : 'Back to Zones'}
           </Link>
         </Button>
         <div>
@@ -412,7 +412,7 @@ const CreateZone = () => {
 
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" asChild>
-              <Link to="/zones">Cancel</Link>
+              <Link to={isEditing ? `/zones/${id}` : "/zones"}>Cancel</Link>
             </Button>
             <Button type="submit">
               {isEditing ? 'Update Zone' : 'Create Zone'}
