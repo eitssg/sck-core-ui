@@ -9,6 +9,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import Profile from "./pages/Profile";
+import Settings from "./pages/Settings";
 import Portfolios from "./pages/Portfolios";
 import Applications from "./pages/Applications";
 import CreatePortfolio from "./pages/CreatePortfolio";
@@ -105,6 +106,9 @@ const App = () => (
           </Route>
           <Route path="/docs" element={<DashboardLayout />}>
             <Route index element={<Docs />} />
+          </Route>
+          <Route path="/settings" element={<DashboardLayout />}>
+            <Route index element={<Settings />} />
           </Route>
           
           {/* Catch-all route */}

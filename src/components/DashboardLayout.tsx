@@ -151,8 +151,10 @@ export default function DashboardLayout() {
                 </div>
               )}
               
-              <Button variant="ghost" size="icon">
-                <Settings className="h-5 w-5" />
+              <Button variant="ghost" size="icon" asChild>
+                <Link to="/settings">
+                  <Settings className="h-5 w-5" />
+                </Link>
               </Button>
               <Button variant="ghost" size="icon" onClick={handleLogout}>
                 <LogOut className="h-5 w-5" />
