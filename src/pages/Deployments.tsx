@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Play, Square, Eye, Trash2, Search, GitBranch, Building2, Users, MapPin, ExternalLink, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Play, Square, Eye, Trash2, Search, GitBranch, Building2, Users, MapPin, ExternalLink, ChevronLeft, ChevronRight, X, RefreshCw, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -163,6 +163,10 @@ export default function Deployments() {
   const [newFilterTerm, setNewFilterTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [isLoading, setIsLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState<NodeJS.Timeout | null>(null);
 
   // Generate mock deployment data if not already loaded
   useEffect(() => {
@@ -341,7 +345,87 @@ export default function Deployments() {
       dispatch(setEvents(mockEvents));
       console.log('Dispatched deployments to Redux store');
     }
+    setLastRefresh(new Date());
   }, [deployments.length, dispatch]);
+
+  // Simulate API call to refresh deployment data
+  const refreshDeployments = async () => {
+    if (!selectedClient) return;
+    
+    setIsLoading(true);
+    
+    try {
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // In a real app, this would be an API call:
+      // const response = await fetch(`/api/deployments?clientId=${selectedClient.id}`);
+      // const data = await response.json();
+      // dispatch(setDeployments(data.deployments));
+      // dispatch(setEvents(data.events));
+      
+      // For now, we'll simulate some status changes in existing deployments
+      const updatedDeployments = deployments.map(dep => {
+        // Randomly update some deployment statuses to simulate changes
+        if (Math.random() < 0.1) { // 10% chance of status change
+          const statuses: ('released' | 'not-released' | 'release-in-progress' | 'teardown-in-progress' | 'failed')[] = 
+            ['released', 'not-released', 'release-in-progress', 'teardown-in-progress', 'failed'];
+          const newStatus = statuses[Math.floor(Math.random() * statuses.length)];
+          return {
+            ...dep,
+            status: newStatus,
+            lastActivity: new Date().toISOString()
+          };
+        }
+        return dep;
+      });
+      
+      dispatch(setDeployments(updatedDeployments));
+      setLastRefresh(new Date());
+      
+      toast({
+        title: "Deployments refreshed",
+        description: "Latest deployment status has been loaded from server.",
+      });
+      
+    } catch (error) {
+      console.error('Failed to refresh deployments:', error);
+      toast({
+        title: "Refresh failed",
+        description: "Could not fetch latest deployment data. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Auto-refresh functionality
+  useEffect(() => {
+    if (autoRefresh && selectedClient) {
+      const interval = setInterval(() => {
+        refreshDeployments();
+      }, 30000); // Refresh every 30 seconds
+      
+      setAutoRefreshInterval(interval);
+      
+      return () => {
+        if (interval) clearInterval(interval);
+      };
+    } else if (autoRefreshInterval) {
+      clearInterval(autoRefreshInterval);
+      setAutoRefreshInterval(null);
+    }
+  }, [autoRefresh, selectedClient]);
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+      }
+    };
+  }, [autoRefreshInterval]);
 
   // Initialize filters from URL parameters
   useEffect(() => {
@@ -565,7 +649,47 @@ export default function Deployments() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Deployments</h1>
-          <p className="text-muted-foreground">Manage application deployments for {selectedClient.name}</p>
+          <p className="text-muted-foreground">
+            Manage application deployments for {selectedClient.name}
+            {lastRefresh && (
+              <span className="ml-2 text-xs">
+                Last updated: {lastRefresh.toLocaleTimeString()}
+              </span>
+            )}
+          </p>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          {/* Auto-refresh toggle */}
+          <div className="flex items-center gap-2 text-sm">
+            <label className="text-muted-foreground">Auto-refresh:</label>
+            <Button
+              variant={autoRefresh ? "default" : "outline"}
+              size="sm"
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              className="text-xs"
+            >
+              {autoRefresh ? "ON" : "OFF"}
+            </Button>
+            {autoRefresh && (
+              <span className="text-xs text-muted-foreground">(30s)</span>
+            )}
+          </div>
+          
+          {/* Manual refresh button */}
+          <Button
+            onClick={refreshDeployments}
+            disabled={isLoading}
+            variant="outline"
+            className="gap-2"
+          >
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            {isLoading ? "Refreshing..." : "Refresh"}
+          </Button>
         </div>
       </div>
 
