@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, FolderOpen, Edit, Trash2, ExternalLink, X, Building2, Users, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -65,18 +65,84 @@ const mockApplications = [
 
 export default function Applications() {
   const navigate = useNavigate();
-  const { selectedClient } = useReduxData();
-  const [applications] = useState(mockApplications);
+  const { selectedClient, applications, portfolios, initializeApplications, initializePortfolios } = useReduxData();
   const [searchTerms, setSearchTerms] = useState<string[]>([]);
   const [newTerm, setNewTerm] = useState("");
 
+  // Initialize data
+  useEffect(() => {
+    if (applications.length === 0) {
+      initializeApplications([
+        {
+          id: '1',
+          name: 'User Management',
+          slug: 'user-management',
+          code: 'ENT-USR-001',
+          description: 'Centralized user administration system',
+          portfolioId: '1',
+          status: 'running',
+          version: 'v2.1.3',
+          lastDeploy: '2 days ago'
+        },
+        {
+          id: '2',
+          name: 'Analytics Dashboard',
+          slug: 'analytics-dashboard',
+          code: 'ENT-ANL-002',
+          description: 'Real-time business intelligence platform',
+          portfolioId: '1',
+          status: 'running',
+          version: 'v1.8.2',
+          lastDeploy: '1 week ago'
+        },
+        {
+          id: '3',
+          name: 'Customer Portal',
+          slug: 'customer-portal',
+          code: 'MOB-CUS-003',
+          description: 'Mobile customer service application',
+          portfolioId: '2',
+          status: 'deploying',
+          version: 'v0.9.1',
+          lastDeploy: '3 days ago'
+        },
+        {
+          id: '4',
+          name: 'Data Warehouse',
+          slug: 'data-warehouse',
+          code: 'ANL-DWH-004',
+          description: 'Central data storage and processing system',
+          portfolioId: '3',
+          status: 'stopped',
+          version: 'v3.2.1',
+          lastDeploy: '5 days ago'
+        },
+        {
+          id: '5',
+          name: 'Payment Gateway',
+          slug: 'payment-gateway',
+          code: 'ENT-PAY-005',
+          description: 'Secure payment processing service',
+          portfolioId: '1',
+          status: 'running',
+          version: 'v1.5.7',
+          lastDeploy: '1 day ago'
+        }
+      ]);
+    }
+  }, [applications.length, initializeApplications]);
+
   const filteredApplications = applications.filter(app => {
+    // Get the portfolio for this application
+    const portfolio = portfolios.find(p => p.id === app.portfolioId);
+    
     if (searchTerms.length === 0) return true;
     
     return searchTerms.every(term =>
       app.name.toLowerCase().includes(term.toLowerCase()) ||
-      app.portfolio.toLowerCase().includes(term.toLowerCase()) ||
-      app.description.toLowerCase().includes(term.toLowerCase())
+      (portfolio?.name.toLowerCase().includes(term.toLowerCase())) ||
+      app.description.toLowerCase().includes(term.toLowerCase()) ||
+      app.code.toLowerCase().includes(term.toLowerCase())
     );
   });
 
@@ -251,14 +317,18 @@ export default function Applications() {
                       </div>
                       <div>
                         <div className="font-medium">{app.name}</div>
-                        <div className="text-xs text-muted-foreground">CMDB code: {app.applicationCode}</div>
+                        <div className="text-xs text-muted-foreground">CMDB code: {app.code}</div>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div>
-                      <div className="font-medium">{app.portfolio}</div>
-                      <div className="text-xs text-muted-foreground">CMDB code: {app.portfolioCode}</div>
+                      <div className="font-medium">
+                        {portfolios.find(p => p.id === app.portfolioId)?.name || 'Unknown Portfolio'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        CMDB code: {portfolios.find(p => p.id === app.portfolioId)?.code || 'N/A'}
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="max-w-xs truncate">{app.description}</TableCell>

@@ -4,6 +4,7 @@ export interface Application {
   id: string;
   name: string;
   slug: string;
+  code: string;
   description: string;
   portfolioId: string;
   status: 'running' | 'stopped' | 'error' | 'deploying';
