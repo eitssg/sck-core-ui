@@ -131,6 +131,21 @@ const mockDeployments = [
     region: "us-west-2",
     status: "not-released",
     lastActivity: "4 hours ago"
+  },
+  {
+    id: 7,
+    prn: "prn:enterprise-suite:inventory-system:main:build-777",
+    clientId: 1,
+    portfolio: "Enterprise Suite",
+    application: "Inventory System",
+    description: "Real-time inventory management and tracking system",
+    branch: "main",
+    build: "build-777",
+    environment: "production",
+    tag: "v1.2.0",
+    region: "us-east-1",
+    status: "teardown-in-progress",
+    lastActivity: "15 minutes ago"
   }
 ];
 
@@ -227,6 +242,8 @@ export default function Deployments() {
         return "Are you sure?";
       case "release-in-progress":
         return "Cannot teardown a deployment when release is in progress";
+      case "teardown-in-progress":
+        return "The deployment is already in process of teardown. Is something wrong? Shall we try again?";
       case "torndown":
         return "This deployment has already been torn down";
       default:
@@ -269,6 +286,8 @@ export default function Deployments() {
         return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300";
       case "release-in-progress":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
+      case "teardown-in-progress":
+        return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300";
       case "torndown":
         return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
       default:
@@ -480,6 +499,7 @@ export default function Deployments() {
                         {deployment.status === "released" ? "Released" : 
                          deployment.status === "not-released" ? "Not Released" :
                          deployment.status === "release-in-progress" ? "Release in Progress" :
+                         deployment.status === "teardown-in-progress" ? "Teardown in Progress" :
                          deployment.status === "torndown" ? "Torn Down" :
                          deployment.status}
                       </Badge>
