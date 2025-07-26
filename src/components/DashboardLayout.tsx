@@ -114,53 +114,59 @@ export default function DashboardLayout() {
 
   return (
     <SidebarProvider open={!sidebarCollapsed} onOpenChange={(open) => setSidebarCollapsed(!open)}>
-      <div className="min-h-screen w-full flex">
-        <AppSidebar 
-          navigation={navigation} 
-          isActive={isActive} 
-          handleLogout={handleLogout} 
-          collapsed={sidebarCollapsed}
-        />
-        
-        {/* Main content */}
-        <div className="flex flex-col flex-1">
-          {/* Header */}
-          <header className="bg-dashboard-header shadow-soft border-b border-border">
-            <div className="flex items-center justify-between px-4 py-4">
-              <div className="flex items-center gap-4">
-                <SidebarTrigger />
+      <div className="min-h-screen w-full flex flex-col">
+        {/* Full width header with portal branding */}
+        <header className="bg-dashboard-header shadow-soft border-b border-border w-full">
+          <div className="flex items-center justify-between px-4 py-4">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary-light rounded-lg flex items-center justify-center">
+                  <Briefcase className="h-5 w-5 text-white" />
+                </div>
+                <h1 className="text-xl font-bold text-foreground">Admin Portal</h1>
               </div>
-
-              <div className="flex items-center gap-4">
-                {/* Client Selection Dropdown */}
-                {clients.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <Select value={selectedClient?.id || ""} onValueChange={(value) => selectClient(value || null)}>
-                      <SelectTrigger className="w-48">
-                        <SelectValue placeholder="Select client..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {clients.map((client) => (
-                          <SelectItem key={client.id} value={client.id}>
-                            {client.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                
-                <Button variant="ghost" size="icon">
-                  <Settings className="h-5 w-5" />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={handleLogout}>
-                  <LogOut className="h-5 w-5" />
-                </Button>
-              </div>
+              <SidebarTrigger />
             </div>
-          </header>
 
-          {/* Page content */}
+            <div className="flex items-center gap-4">
+              {/* Client Selection Dropdown */}
+              {clients.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Select value={selectedClient?.id || ""} onValueChange={(value) => selectClient(value || null)}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="Select client..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients.map((client) => (
+                        <SelectItem key={client.id} value={client.id}>
+                          {client.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              
+              <Button variant="ghost" size="icon">
+                <Settings className="h-5 w-5" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={handleLogout}>
+                <LogOut className="h-5 w-5" />
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        {/* Content area with sidebar and main content */}
+        <div className="flex flex-1">
+          <AppSidebar 
+            navigation={navigation} 
+            isActive={isActive} 
+            handleLogout={handleLogout} 
+            collapsed={sidebarCollapsed}
+          />
+          
+          {/* Main content */}
           <main className="flex-1 p-6">
             <Outlet />
           </main>
@@ -191,16 +197,9 @@ function AppSidebar({ navigation, isActive, handleLogout, collapsed }: AppSideba
       collapsible="none"
     >
       <SidebarContent>
-        {/* Logo/Brand */}
-        <div className={`flex items-center gap-3 p-6 border-b border-border ${collapsed ? 'justify-center' : ''}`}>
-          <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary-light rounded-lg flex items-center justify-center flex-shrink-0">
-            <Briefcase className="h-5 w-5 text-white" />
-          </div>
-          {!collapsed && <h1 className="text-xl font-bold text-foreground">Admin Portal</h1>}
-        </div>
 
         {/* Navigation */}
-        <SidebarGroup>
+        <SidebarGroup className="pt-4">
           {!collapsed && <SidebarGroupLabel>Navigation</SidebarGroupLabel>}
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1">
