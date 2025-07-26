@@ -33,17 +33,105 @@ const mockApplications = [
   { id: 5, name: "Data Warehouse", description: "Central data storage system", portfolio: "Analytics Platform", status: "maintenance" },
 ];
 
-// Client-specific stats that update based on selected client
-const getClientStats = (clientId: string) => [
-  { label: "Portfolios", value: "12", icon: Briefcase, change: "+2 this month", subtext: "Active portfolios" },
-  { label: "Total Zones", value: "179", icon: Server, change: "+8 this month", subtext: "Across all environments" },
-  { label: "Applications", value: "67", icon: FolderOpen, change: "+5 this month", subtext: "Deployed applications" },
-  { label: "Daily Deployments", value: "18", icon: Activity, change: "+12 today", subtext: "Last 24 hours" },
-  { label: "Monthly Deployments", value: "165", icon: GitBranch, change: "+23 this month", subtext: "New deployments" },
-  { label: "Zone Environments", value: "4", icon: Database, change: "Prod, Staging, Dev, Test", subtext: "Active environments" },
-  { label: "Released Apps", value: "145", icon: TrendingUp, change: "87% success rate", subtext: "Successfully deployed" },
-  { label: "Broken Deployments", value: "8", icon: AlertTriangle, change: "3 teardown, 5 release", subtext: "Needs attention", isAlert: true },
-];
+// Client-specific stats that update based on selected client AND filters
+const getClientStats = (clientId: string, filters: FilterState) => {
+  // Smart keyword taxonomy (same as in DeploymentChart)
+  const categorizeKeyword = (keyword: string) => {
+    const lowerKeyword = keyword.toLowerCase();
+    
+    const environments = ['production', 'prod', 'staging', 'stage', 'development', 'dev', 'test', 'testing'];
+    if (environments.some(env => lowerKeyword.includes(env))) {
+      return { type: 'environment', value: lowerKeyword };
+    }
+    
+    const statuses = ['failed', 'success', 'released', 'pending', 'progress', 'teardown'];
+    if (statuses.some(status => lowerKeyword.includes(status))) {
+      return { type: 'status', value: lowerKeyword };
+    }
+    
+    return { type: 'general', value: lowerKeyword };
+  };
+
+  // Apply filters to calculate filtered stats
+  let portfolioCount = 12;
+  let zoneCount = 179;
+  let appCount = 67;
+  let dailyDeployments = 18;
+  let monthlyDeployments = 165;
+  let environmentCount = 4;
+  let releasedApps = 145;
+  let brokenCount = 8;
+
+  // Apply keyword filtering
+  if (filters.keywords) {
+    const keywordInfo = categorizeKeyword(filters.keywords);
+    
+    switch (keywordInfo.type) {
+      case 'environment':
+        if (keywordInfo.value.includes('prod')) {
+          // Production environment filtering
+          portfolioCount = 8; // Fewer portfolios in prod
+          zoneCount = 45; // Only prod zones
+          appCount = 32; // Only prod apps
+          dailyDeployments = 11; // Reduced daily deployments
+          monthlyDeployments = 98; // Reduced monthly
+          environmentCount = 1; // Only production
+          releasedApps = 87; // Fewer released apps
+          brokenCount = 3; // Fewer broken deployments
+        } else if (keywordInfo.value.includes('staging') || keywordInfo.value.includes('stage')) {
+          portfolioCount = 6;
+          zoneCount = 32;
+          appCount = 24;
+          dailyDeployments = 5;
+          monthlyDeployments = 45;
+          environmentCount = 1;
+          releasedApps = 32;
+          brokenCount = 2;
+        }
+        break;
+      case 'status':
+        if (keywordInfo.value.includes('failed')) {
+          portfolioCount = 3; // Portfolios with failed deployments
+          appCount = 15; // Apps with failures
+          dailyDeployments = 3; // Failed deployments today
+          monthlyDeployments = 23; // Failed deployments this month
+          releasedApps = 0; // No released apps when filtering failed
+          brokenCount = 8; // All broken deployments
+        }
+        break;
+    }
+  }
+
+  // Apply explicit environment filter
+  if (filters.environment) {
+    if (filters.environment === 'Production') {
+      portfolioCount = 8;
+      zoneCount = 45;
+      appCount = 32;
+    } else if (filters.environment === 'Staging') {
+      portfolioCount = 6;
+      zoneCount = 32;
+      appCount = 24;
+    }
+  }
+
+  // Apply portfolio filter
+  if (filters.portfolios.length > 0) {
+    portfolioCount = filters.portfolios.length;
+    appCount = Math.floor(appCount * (filters.portfolios.length / 12)); // Proportional apps
+  }
+
+  return [
+    { label: "Portfolios", value: portfolioCount.toString(), icon: Briefcase, change: "+2 this month", subtext: "Active portfolios" },
+    { label: "Total Zones", value: zoneCount.toString(), icon: Server, change: "+8 this month", subtext: "Across all environments" },
+    { label: "Applications", value: appCount.toString(), icon: FolderOpen, change: "+5 this month", subtext: "Deployed applications" },
+    { label: "Daily Deployments", value: dailyDeployments.toString(), icon: Activity, change: "+12 today", subtext: "Last 24 hours" },
+    { label: "Monthly Deployments", value: monthlyDeployments.toString(), icon: GitBranch, change: "+23 this month", subtext: "New deployments" },
+    { label: "Zone Environments", value: environmentCount.toString(), icon: Database, change: "Prod, Staging, Dev, Test", subtext: "Active environments" },
+    { label: "Released Apps", value: releasedApps.toString(), icon: TrendingUp, change: "87% success rate", subtext: "Successfully deployed" },
+    { label: "Broken Deployments", value: brokenCount.toString(), icon: AlertTriangle, change: "3 teardown, 5 release", subtext: "Needs attention", isAlert: brokenCount > 0 },
+  ];
+};
 
 // Mock deployment issues with dates - updated to include failed status
 const brokenDeployments = [
@@ -62,7 +150,7 @@ export default function Dashboard() {
     dateRange: { from: undefined, to: undefined },
   });
   
-  const clientStats = getClientStats(selectedClient.id);
+  const clientStats = getClientStats(selectedClient.id, filters);
 
   const handleFiltersChange = (newFilters: FilterState) => {
     setFilters(newFilters);
@@ -101,7 +189,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stats Grid */}
+      {/* Dashboard Filters - NOW AT TOP */}
+      <DashboardFilters clientId={selectedClient.id} onFiltersChange={handleFiltersChange} />
+
+      {/* Stats Grid - NOW FILTERED */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {clientStats.map((stat) => {
           const Icon = stat.icon;
@@ -137,9 +228,6 @@ export default function Dashboard() {
           );
         })}
       </div>
-
-      {/* Dashboard Filters */}
-      <DashboardFilters clientId={selectedClient.id} onFiltersChange={handleFiltersChange} />
 
       {/* Broken Deployments Alert */}
       {brokenDeployments.length > 0 && (
