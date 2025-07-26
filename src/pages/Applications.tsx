@@ -20,7 +20,9 @@ const mockApplications = [
   {
     id: 1,
     portfolio: "Enterprise Suite",
+    portfolioCode: "ENT-001",
     name: "User Management",
+    applicationCode: "ENT-USR-001",
     description: "Centralized user administration system",
     status: "active",
     version: "v2.1.3",
@@ -29,7 +31,9 @@ const mockApplications = [
   {
     id: 2,
     portfolio: "Enterprise Suite",
+    portfolioCode: "ENT-001",
     name: "Analytics Dashboard",
+    applicationCode: "ENT-ANL-002",
     description: "Real-time business intelligence platform",
     status: "active",
     version: "v1.8.2",
@@ -38,7 +42,9 @@ const mockApplications = [
   {
     id: 3,
     portfolio: "Mobile Apps",
+    portfolioCode: "MOB-002",
     name: "Customer Portal",
+    applicationCode: "MOB-CUS-003",
     description: "Mobile customer service application",
     status: "development",
     version: "v0.9.1",
@@ -47,7 +53,9 @@ const mockApplications = [
   {
     id: 4,
     portfolio: "Analytics Platform",
+    portfolioCode: "ANL-003",
     name: "Data Warehouse",
+    applicationCode: "ANL-DWH-004",
     description: "Central data storage and processing system",
     status: "maintenance",
     version: "v3.2.1",
@@ -241,10 +249,18 @@ export default function Applications() {
                       <div className="w-8 h-8 bg-primary/10 rounded-md flex items-center justify-center">
                         <FolderOpen className="h-4 w-4 text-primary" />
                       </div>
-                      {app.name}
+                      <div>
+                        <div className="font-medium">{app.name}</div>
+                        <div className="text-xs text-muted-foreground">CMDB code: {app.applicationCode}</div>
+                      </div>
                     </div>
                   </TableCell>
-                  <TableCell>{app.portfolio}</TableCell>
+                  <TableCell>
+                    <div>
+                      <div className="font-medium">{app.portfolio}</div>
+                      <div className="text-xs text-muted-foreground">CMDB code: {app.portfolioCode}</div>
+                    </div>
+                  </TableCell>
                   <TableCell className="max-w-xs truncate">{app.description}</TableCell>
                   <TableCell>
                     <Badge className={getStatusColor(app.status)} variant="secondary">
