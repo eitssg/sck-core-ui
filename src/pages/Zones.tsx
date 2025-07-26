@@ -1,16 +1,16 @@
 
 import { useEffect, useMemo } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Plus, ArrowLeft, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useReduxData } from '@/hooks/useReduxData';
 
 const Zones = () => {
-  const { clientId } = useParams<{ clientId?: string }>();
-  const { zones, clients, initializeZones, initializeClients } = useReduxData();
+  const { zones, clients, selectedClient, initializeZones, initializeClients, selectClient } = useReduxData();
 
   useEffect(() => {
     // Initialize with mock data - replace with API calls
@@ -57,15 +57,36 @@ const Zones = () => {
     ]);
   }, []);
 
-  // Filter zones by client if clientId is provided
+  // Filter zones by selected client
   const filteredZones = useMemo(() => {
-    return clientId ? zones.filter(zone => zone.clientId === clientId) : zones;
-  }, [zones, clientId]);
-
-  const selectedClient = clientId ? clients.find(c => c.id === clientId) : null;
+    return selectedClient ? zones.filter(zone => zone.clientId === selectedClient.id) : zones;
+  }, [zones, selectedClient]);
 
   return (
     <div className="space-y-6">
+      {/* Client Selection */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <label className="text-sm font-medium text-muted-foreground">Select Client Tenant</label>
+              <Select value={selectedClient?.id || ""} onValueChange={(value) => selectClient(value || null)}>
+                <SelectTrigger className="w-full max-w-md">
+                  <SelectValue placeholder="Choose a client to manage zones..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Selected Client Header - Prominent Display */}
       {selectedClient && (
         <Card className="border-l-4 border-l-primary bg-primary/5">
@@ -86,9 +107,9 @@ const Zones = () => {
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" asChild>
-                  <Link to={`/clients/${clientId}`}>
+                  <Link to={`/clients/${selectedClient.id}`}>
                     <ArrowLeft className="mr-2 h-4 w-4" />
-                    Back to Client
+                    View Client Details
                   </Link>
                 </Button>
               </div>
@@ -109,8 +130,8 @@ const Zones = () => {
             }
           </p>
         </div>
-        <Button asChild>
-          <Link to={clientId ? `/clients/${clientId}/zones/create` : "/zones/create"}>
+        <Button asChild disabled={!selectedClient}>
+          <Link to={selectedClient ? `/clients/${selectedClient.id}/zones/create` : "/zones/create"}>
             <Plus className="mr-2 h-4 w-4" />
             Add Zone
           </Link>
