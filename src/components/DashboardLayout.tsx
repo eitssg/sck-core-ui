@@ -223,11 +223,13 @@ export default function DashboardLayout() {
           return new Date(randomTime);
         };
         
-        // Helper to get client ID from portfolio
+        // Helper to get client ID from portfolio - Weight heavily toward Client 1 (Acme Corp)
         const getClientId = (portfolioId) => {
+          // Put 80% of deployments in Client 1 (Acme Corp) for better demo experience
+          if (Math.random() < 0.8) return '1'; // 80% go to Acme Corp
           if (['p4', 'p5'].includes(portfolioId)) return '2'; // TechStart Inc
           if (['p6', 'p7', 'p8', 'p9', 'p10'].includes(portfolioId)) return '3'; // Global Systems
-          return '1'; // Acme Corp
+          return '1'; // Default to Acme Corp
         };
         
         // Helper to create deployment
