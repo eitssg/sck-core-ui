@@ -62,89 +62,104 @@ export default function Profile() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="space-y-6">
         {/* Client Access Management */}
-        <Card className="shadow-medium">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-primary" />
-              Client Access
-            </CardTitle>
-            <CardDescription>
-              Manage your client access and set your default client
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {clients.length === 0 ? (
-              <div className="text-center py-8">
-                <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-sm text-muted-foreground">No clients available</p>
-                <p className="text-xs text-muted-foreground mt-1">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">Client Access</h2>
+              <p className="text-sm text-muted-foreground">
+                Manage your client access and set your default client
+              </p>
+            </div>
+            {defaultClient && (
+              <Badge variant="secondary" className="text-sm">
+                Default: {defaultClient.name}
+              </Badge>
+            )}
+          </div>
+
+          {clients.length === 0 ? (
+            <Card className="shadow-medium">
+              <CardContent className="text-center py-12">
+                <Building2 className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-foreground mb-2">No clients available</h3>
+                <p className="text-sm text-muted-foreground">
                   Contact your administrator to request client access
                 </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Available Clients ({clients.length})</Label>
-                  {defaultClient && (
-                    <Badge variant="secondary" className="text-xs">
-                      Default: {defaultClient.name}
-                    </Badge>
-                  )}
-                </div>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {clients.map((client) => (
-                    <div
-                      key={client.id}
-                      className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                        defaultClientId === client.id 
-                          ? 'bg-primary/5 border-primary/20' 
-                          : 'bg-card hover:bg-muted/50'
-                      }`}
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-sm font-medium">{client.name}</h4>
-                          {defaultClientId === client.id && (
-                            <Check className="h-4 w-4 text-primary" />
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">{client.description}</p>
-                        <div className="flex items-center gap-4 mt-1">
-                          <span className="text-xs text-muted-foreground">
-                            {client.memberCount} members
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {client.portfolioCount} portfolios
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {client.primaryAwsRegion}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        {defaultClientId !== client.id && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs"
-                            onClick={() => handleSetDefaultClient(client.id)}
-                          >
-                            Set Default
-                          </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {clients.map((client) => (
+                <Card
+                  key={client.id}
+                  className={`shadow-medium transition-colors ${
+                    defaultClientId === client.id 
+                      ? 'ring-2 ring-primary/20 bg-primary/5' 
+                      : 'hover:bg-muted/50'
+                  }`}
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="h-5 w-5 text-primary" />
+                        <CardTitle className="text-lg">{client.name}</CardTitle>
+                        {defaultClientId === client.id && (
+                          <Check className="h-4 w-4 text-primary" />
                         )}
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    <CardDescription className="text-sm">
+                      {client.description}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Members</p>
+                        <p className="font-medium">{client.memberCount}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Portfolios</p>
+                        <p className="font-medium">{client.portfolioCount}</p>
+                      </div>
+                      <div className="col-span-2">
+                        <p className="text-muted-foreground">AWS Region</p>
+                        <p className="font-medium">{client.primaryAwsRegion}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between pt-2">
+                      <div className="text-xs text-muted-foreground">
+                        <a href={client.homepage} target="_blank" rel="noopener noreferrer" className="hover:text-foreground">
+                          {client.homepage}
+                        </a>
+                      </div>
+                      {defaultClientId !== client.id && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleSetDefaultClient(client.id)}
+                        >
+                          Set Default
+                        </Button>
+                      )}
+                      {defaultClientId === client.id && (
+                        <Badge variant="default" className="text-xs">
+                          Default Client
+                        </Badge>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* User Information */}
-        <Card className="shadow-medium">
+        <Card className="shadow-medium max-w-2xl">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <User className="h-5 w-5 text-primary" />
