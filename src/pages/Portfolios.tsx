@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Search, ExternalLink, Filter, Edit, Trash2, Folder, Building2, ArrowLeft } from "lucide-react";
+import { Plus, Search, ExternalLink, Filter, Edit, Trash2, Folder, Building2, ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -83,6 +83,8 @@ export default function Portfolios() {
   const navigate = useNavigate();
   const { portfolios, clients, selectedClient, initializePortfolios, initializeClients } = useReduxData();
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
 
   // Initialize data
   useEffect(() => {
@@ -159,6 +161,18 @@ export default function Portfolios() {
     
     return filtered;
   }, [portfolios, selectedClient, searchTerm]);
+
+  // Pagination calculations
+  const totalItems = filteredPortfolios.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedPortfolios = filteredPortfolios.slice(startIndex, endIndex);
+
+  // Reset to first page when client or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedClient, searchTerm]);
 
   const handleViewPortfolio = (portfolioId: string) => {
     navigate(`/portfolio/${portfolioId}`);
@@ -243,8 +257,25 @@ export default function Portfolios() {
           </div>
         </div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>Show:</span>
+          <Select value={itemsPerPage.toString()} onValueChange={(value) => {
+            setItemsPerPage(Number(value));
+            setCurrentPage(1);
+          }}>
+            <SelectTrigger className="w-20">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="10">10</SelectItem>
+              <SelectItem value="25">25</SelectItem>
+              <SelectItem value="50">50</SelectItem>
+              <SelectItem value="100">100</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Filter className="h-4 w-4" />
-          {filteredPortfolios.length} portfolio{filteredPortfolios.length !== 1 ? 's' : ''}
+          {totalItems} portfolio{totalItems !== 1 ? 's' : ''}
         </div>
       </div>
 
@@ -262,7 +293,7 @@ export default function Portfolios() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredPortfolios.map((portfolio) => (
+            {paginatedPortfolios.map((portfolio) => (
               <TableRow 
                 key={portfolio.id} 
                 className="cursor-pointer hover:bg-muted/50"
@@ -341,20 +372,77 @@ export default function Portfolios() {
                 </TableCell>
               </TableRow>
             ))}
+            {paginatedPortfolios.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  {selectedClient 
+                    ? `No portfolios found for ${selectedClient.name}`
+                    : 'No portfolios found'
+                  }
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </div>
 
-      {filteredPortfolios.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-muted-foreground">
-            {selectedClient 
-              ? `No portfolios found for ${selectedClient.name}`
-              : 'No portfolios found'
-            }
-          </p>
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            Showing {startIndex + 1} to {Math.min(endIndex, totalItems)} of {totalItems} portfolios
+          </div>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                
+                return (
+                  <Button
+                    key={pageNum}
+                    variant={currentPage === pageNum ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setCurrentPage(pageNum)}
+                    className="w-10"
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
+            </div>
+            
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       )}
+
     </div>
   );
 }
