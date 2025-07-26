@@ -18,11 +18,11 @@ const dailyDeployments = [
 ];
 
 const deploymentStatus = [
-  { name: "Released", value: 145, color: "hsl(var(--success))" },
-  { name: "Not Released", value: 32, color: "hsl(var(--warning))" },
-  { name: "Failed", value: 15, color: "hsl(var(--destructive))" },
-  { name: "Teardown in Progress", value: 8, color: "hsl(var(--destructive))" },
-  { name: "Release in Progress", value: 12, color: "hsl(var(--info))" },
+  { name: "Released", value: 145, color: "hsl(142 71% 45%)" }, // Green
+  { name: "Not Released", value: 32, color: "hsl(48 96% 53%)" }, // Yellow  
+  { name: "Failed", value: 15, color: "hsl(0 84% 60%)" }, // Red
+  { name: "Teardown in Progress", value: 8, color: "hsl(0 72% 50%)" }, // Dark red
+  { name: "Release in Progress", value: 12, color: "hsl(221 83% 53%)" }, // Blue
 ];
 
 const zoneEnvironments = [
