@@ -167,39 +167,21 @@ export default function Deployments() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Deployments</h1>
-          <p className="text-muted-foreground">Manage application deployments for {selectedClient.name}</p>
-        </div>
-      </div>
-
-      {/* Client Details Card */}
-      <Card className="shadow-soft">
+      {/* Selected Client Header - Prominent Display */}
+      <Card className="border-l-4 border-l-primary bg-primary/5">
         <CardContent className="p-6">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start space-x-4">
-              <div className="p-2 bg-primary/10 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
                 <Building2 className="h-6 w-6 text-primary" />
               </div>
-              <div className="space-y-1">
-                <h2 className="text-xl font-semibold text-foreground">{selectedClient.name}</h2>
-                <p className="text-muted-foreground">{selectedClient.description}</p>
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <div className="flex items-center gap-1">
-                    <Users className="h-4 w-4" />
-                    {selectedClient.memberCount} members
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Building2 className="h-4 w-4" />
-                    {selectedClient.portfolioCount} portfolios
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <MapPin className="h-4 w-4" />
-                    {selectedClient.primaryAwsRegion}
-                  </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">ACTIVE CLIENT</span>
+                  <Badge variant="secondary" className="bg-primary/10 text-primary">Tenant</Badge>
                 </div>
+                <h2 className="text-2xl font-bold text-foreground">{selectedClient.name}</h2>
+                <p className="text-sm text-muted-foreground">{selectedClient.description}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -213,6 +195,14 @@ export default function Deployments() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Page Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Deployments</h1>
+          <p className="text-muted-foreground">Manage application deployments for {selectedClient.name}</p>
+        </div>
+      </div>
 
       {/* Search and Filters */}
       <Card className="shadow-soft">
