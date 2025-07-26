@@ -211,24 +211,24 @@ export default function Applications() {
                   onClick={() => navigate(`/applications/${app.id}`)}
                 >
                   <TableCell>
-                    <div>
-                      <div className="font-medium">
-                        {portfolios.find(p => p.id === app.portfolioId)?.name || 'Unknown Portfolio'}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {portfolios.find(p => p.id === app.portfolioId)?.code || 'N/A'}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 bg-primary/10 rounded-md flex items-center justify-center">
                         <FolderOpen className="h-4 w-4 text-primary" />
                       </div>
                       <div>
-                        <div className="font-medium">{app.name}</div>
-                        <div className="text-xs text-muted-foreground">{app.code}</div>
+                        <div className="font-medium">
+                          {portfolios.find(p => p.id === app.portfolioId)?.name || 'Unknown Portfolio'}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {portfolios.find(p => p.id === app.portfolioId)?.code || 'N/A'}
+                        </div>
                       </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    <div>
+                      <div className="font-medium">{app.name}</div>
+                      <div className="text-xs text-muted-foreground">{app.code}</div>
                     </div>
                   </TableCell>
                   <TableCell className="max-w-xs truncate">{app.description}</TableCell>
