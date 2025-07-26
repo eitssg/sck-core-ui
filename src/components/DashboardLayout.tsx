@@ -24,6 +24,19 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
 import { useReduxData } from "@/hooks/useReduxData";
 
 // Mock data - will be replaced with real data later
@@ -34,7 +47,6 @@ const mockPortfolios = [
 ];
 
 export default function DashboardLayout() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentPortfolio, setCurrentPortfolio] = useState(mockPortfolios[0]);
   const navigate = useNavigate();
   const location = useLocation();
@@ -97,141 +109,134 @@ export default function DashboardLayout() {
     navigate("/login");
   };
 
-  const isActive = (href: string) => location.pathname === href;
+  const isActive = (href: string) => location.pathname === href || location.pathname.startsWith(href + '/');
 
   return (
-    <div className="min-h-screen bg-dashboard-bg">
-      {/* Mobile sidebar */}
-      <div className={`fixed inset-0 z-50 lg:hidden ${sidebarOpen ? 'block' : 'hidden'}`}>
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-75" onClick={() => setSidebarOpen(false)} />
-        <div className="fixed inset-y-0 left-0 w-64 bg-dashboard-sidebar shadow-large animate-slide-in">
-          <SidebarContent 
-            navigation={navigation} 
-            isActive={isActive}
-            onClose={() => setSidebarOpen(false)}
-          />
+    <SidebarProvider>
+      <div className="min-h-screen w-full flex">
+        <AppSidebar navigation={navigation} isActive={isActive} handleLogout={handleLogout} />
+        
+        {/* Main content */}
+        <div className="flex flex-col flex-1">
+          {/* Header */}
+          <header className="bg-dashboard-header shadow-soft border-b border-border">
+            <div className="flex items-center justify-between px-4 py-4">
+              <div className="flex items-center gap-4">
+                <SidebarTrigger />
+              </div>
+
+              <div className="flex items-center gap-4">
+                {/* Client Selection Dropdown */}
+                {clients.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Select value={selectedClient?.id || ""} onValueChange={(value) => selectClient(value || null)}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="Select client..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {clients.map((client) => (
+                          <SelectItem key={client.id} value={client.id}>
+                            {client.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                
+                <Button variant="ghost" size="icon">
+                  <Settings className="h-5 w-5" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={handleLogout}>
+                  <LogOut className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+          </header>
+
+          {/* Page content */}
+          <main className="flex-1 p-6">
+            <Outlet />
+          </main>
         </div>
       </div>
-
-      {/* Desktop sidebar */}
-      <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
-        <div className="flex flex-col flex-grow bg-dashboard-sidebar shadow-medium">
-          <SidebarContent navigation={navigation} isActive={isActive} />
-        </div>
-      </div>
-
-      {/* Main content */}
-      <div className="lg:ml-64 flex flex-col flex-1">
-        {/* Header */}
-        <header className="bg-dashboard-header shadow-soft border-b border-border">
-          <div className="flex items-center justify-between px-4 py-4">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="lg:hidden"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <Menu className="h-5 w-5" />
-              </Button>
-              
-            </div>
-
-            <div className="flex items-center gap-4">
-              {/* Client Selection Dropdown */}
-              {clients.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <Select value={selectedClient?.id || ""} onValueChange={(value) => selectClient(value || null)}>
-                    <SelectTrigger className="w-48">
-                      <SelectValue placeholder="Select client..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {clients.map((client) => (
-                        <SelectItem key={client.id} value={client.id}>
-                          {client.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              
-              <Button variant="ghost" size="icon">
-                <Settings className="h-5 w-5" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={handleLogout}>
-                <LogOut className="h-5 w-5" />
-              </Button>
-            </div>
-          </div>
-        </header>
-
-        {/* Page content */}
-        <main className="flex-1 p-6">
-          <Outlet />
-        </main>
-      </div>
-    </div>
+    </SidebarProvider>
   );
 }
 
-interface SidebarContentProps {
+interface AppSidebarProps {
   navigation: Array<{
     name: string;
     href: string;
     icon: React.ComponentType<{ className?: string }>;
   }>;
   isActive: (href: string) => boolean;
-  onClose?: () => void;
+  handleLogout: () => void;
 }
 
-function SidebarContent({ navigation, isActive, onClose }: SidebarContentProps) {
+function AppSidebar({ navigation, isActive, handleLogout }: AppSidebarProps) {
+  const { state } = useSidebar();
+  const collapsed = state === 'collapsed';
+
   return (
-    <div className="flex flex-col h-full">
-      {/* Logo/Brand */}
-      <div className="flex items-center justify-between p-6 border-b border-border">
-        <div className="flex items-center gap-3">
+    <Sidebar className="border-r bg-dashboard-sidebar">
+      <SidebarContent>
+        {/* Logo/Brand */}
+        <div className="flex items-center gap-3 p-6 border-b border-border">
           <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary-light rounded-lg flex items-center justify-center">
             <Briefcase className="h-5 w-5 text-white" />
           </div>
-          <h1 className="text-xl font-bold text-foreground">Admin Portal</h1>
+          {!collapsed && <h1 className="text-xl font-bold text-foreground">Admin Portal</h1>}
         </div>
-        {onClose && (
-          <Button variant="ghost" size="icon" onClick={onClose} className="lg:hidden">
-            <X className="h-5 w-5" />
-          </Button>
-        )}
-      </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2">
-        {navigation.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.name}
-              to={item.href}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                isActive(item.href)
-                  ? "bg-primary text-primary-foreground shadow-soft"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
-              onClick={onClose}
-            >
-              <Icon className="h-5 w-5" />
-              {item.name}
-            </Link>
-          );
-        })}
-      </nav>
+        {/* Navigation */}
+        <SidebarGroup>
+          <SidebarGroupLabel className={collapsed ? "sr-only" : ""}>Navigation</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navigation.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <SidebarMenuItem key={item.name}>
+                    <SidebarMenuButton asChild isActive={isActive(item.href)}>
+                      <Link to={item.href} className="flex items-center gap-3">
+                        <Icon className="h-5 w-5" />
+                        {!collapsed && <span>{item.name}</span>}
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
 
-      {/* Quick Actions */}
-      <div className="p-4 border-t border-border">
-        <Button variant="gradient" className="w-full gap-2" onClick={() => {}}>
-          <Plus className="h-4 w-4" />
-          Quick Create
-        </Button>
-      </div>
-    </div>
+        {/* Quick Actions & Logout */}
+        <div className="mt-auto p-4 border-t border-border space-y-2">
+          {!collapsed && (
+            <Button variant="gradient" className="w-full gap-2">
+              <Plus className="h-4 w-4" />
+              Quick Create
+            </Button>
+          )}
+          {collapsed && (
+            <Button variant="gradient" size="icon" className="w-full">
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
+          
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild>
+                <button onClick={handleLogout} className="flex items-center gap-3 w-full text-left">
+                  <LogOut className="h-5 w-5" />
+                  {!collapsed && <span>Logout</span>}
+                </button>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </div>
+      </SidebarContent>
+    </Sidebar>
   );
 }
