@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Play, Square, Eye, Trash2, Search, GitBranch, Tag, MapPin, ChevronDown } from "lucide-react";
+import { Play, Square, Eye, Trash2, Search, GitBranch, Building2, Users, MapPin, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,12 +13,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Table,
   TableBody,
   TableCell,
@@ -26,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useReduxData } from '@/hooks/useReduxData';
 
 // Mock data
 const mockClients = [
@@ -99,15 +94,15 @@ const mockDeployments = [
 
 export default function Deployments() {
   const navigate = useNavigate();
-  const [selectedClient, setSelectedClient] = useState(mockClients[0]);
+  const { selectedClient } = useReduxData();
   const [searchTerm, setSearchTerm] = useState("");
   const [portfolioFilter, setPortfolioFilter] = useState("all");
   const [applicationFilter, setApplicationFilter] = useState("all");
 
   // Filter deployments by selected client
-  const clientDeployments = mockDeployments.filter(
-    deployment => deployment.clientId === selectedClient.id
-  );
+  const clientDeployments = selectedClient 
+    ? mockDeployments.filter(deployment => deployment.clientId === parseInt(selectedClient.id))
+    : [];
 
   // Get unique portfolios and applications for filters
   const portfolios = ["all", ...new Set(clientDeployments.map(d => d.portfolio))];
@@ -152,6 +147,24 @@ export default function Deployments() {
     }
   };
 
+  if (!selectedClient) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <Card>
+          <CardContent className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <Building2 className="mx-auto h-12 w-12 text-muted-foreground" />
+              <h3 className="mt-2 text-sm font-medium text-foreground">No Client Selected</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Please select a client from the header to view deployments.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Page Header */}
@@ -160,28 +173,46 @@ export default function Deployments() {
           <h1 className="text-3xl font-bold text-foreground">Deployments</h1>
           <p className="text-muted-foreground">Manage application deployments for {selectedClient.name}</p>
         </div>
-        
-        {/* Client Selector */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="gap-2 bg-background z-50">
-              {selectedClient.name}
-              <ChevronDown className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 bg-background border shadow-lg z-50">
-            {mockClients.map((client) => (
-              <DropdownMenuItem
-                key={client.id}
-                onClick={() => setSelectedClient(client)}
-                className={selectedClient.id === client.id ? "bg-accent" : ""}
-              >
-                {client.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
+
+      {/* Client Details Card */}
+      <Card className="shadow-soft">
+        <CardContent className="p-6">
+          <div className="flex items-start justify-between">
+            <div className="flex items-start space-x-4">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Building2 className="h-6 w-6 text-primary" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-xl font-semibold text-foreground">{selectedClient.name}</h2>
+                <p className="text-muted-foreground">{selectedClient.description}</p>
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-1">
+                    <Users className="h-4 w-4" />
+                    {selectedClient.memberCount} members
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Building2 className="h-4 w-4" />
+                    {selectedClient.portfolioCount} portfolios
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <MapPin className="h-4 w-4" />
+                    {selectedClient.primaryAwsRegion}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <a href={selectedClient.homepage} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-4 w-4 mr-1" />
+                  Website
+                </a>
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Search and Filters */}
       <Card className="shadow-soft">
