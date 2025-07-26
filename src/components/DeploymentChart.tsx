@@ -8,18 +8,19 @@ interface DeploymentChartProps {
 }
 
 const dailyDeployments = [
-  { date: "Mon", deployments: 12, newApps: 3 },
-  { date: "Tue", deployments: 15, newApps: 5 },
-  { date: "Wed", deployments: 8, newApps: 2 },
-  { date: "Thu", deployments: 20, newApps: 7 },
-  { date: "Fri", deployments: 18, newApps: 4 },
-  { date: "Sat", deployments: 5, newApps: 1 },
-  { date: "Sun", deployments: 3, newApps: 0 },
+  { date: "Mon", successful: 9, failed: 3, total: 12 },
+  { date: "Tue", successful: 12, failed: 3, total: 15 },
+  { date: "Wed", successful: 6, failed: 2, total: 8 },
+  { date: "Thu", successful: 16, failed: 4, total: 20 },
+  { date: "Fri", successful: 15, failed: 3, total: 18 },
+  { date: "Sat", successful: 4, failed: 1, total: 5 },
+  { date: "Sun", successful: 2, failed: 1, total: 3 },
 ];
 
 const deploymentStatus = [
   { name: "Released", value: 145, color: "hsl(var(--success))" },
   { name: "Not Released", value: 32, color: "hsl(var(--warning))" },
+  { name: "Failed", value: 15, color: "hsl(var(--destructive))" },
   { name: "Teardown in Progress", value: 8, color: "hsl(var(--destructive))" },
   { name: "Release in Progress", value: 12, color: "hsl(var(--info))" },
 ];
@@ -32,13 +33,13 @@ const zoneEnvironments = [
 ];
 
 const chartConfig = {
-  deployments: {
-    label: "Deployments",
-    color: "hsl(var(--primary))",
+  successful: {
+    label: "Successful",
+    color: "hsl(var(--success))",
   },
-  newApps: {
-    label: "New Apps",
-    color: "hsl(var(--secondary))",
+  failed: {
+    label: "Failed",
+    color: "hsl(var(--destructive))",
   },
 };
 
@@ -50,7 +51,7 @@ export default function DeploymentChart({ clientId }: DeploymentChartProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calendar className="h-5 w-5 text-primary" />
-            Daily Deployments (Last 7 Days)
+            Daily Deployments: Success vs Failed (Last 7 Days)
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -59,8 +60,8 @@ export default function DeploymentChart({ clientId }: DeploymentChartProps) {
               <XAxis dataKey="date" />
               <YAxis />
               <ChartTooltip content={<ChartTooltipContent />} />
-              <Bar dataKey="deployments" fill="var(--color-deployments)" />
-              <Bar dataKey="newApps" fill="var(--color-newApps)" />
+              <Bar dataKey="successful" fill="var(--color-successful)" />
+              <Bar dataKey="failed" fill="var(--color-failed)" />
             </BarChart>
           </ChartContainer>
         </CardContent>
@@ -120,22 +121,22 @@ export default function DeploymentChart({ clientId }: DeploymentChartProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-primary" />
-            Monthly Deployment Trend
+            Monthly Deployment Trend: Success vs Failed
           </CardTitle>
         </CardHeader>
         <CardContent>
           <ChartContainer config={chartConfig} className="h-64">
             <LineChart data={[
-              { month: "Oct", deployments: 120, newApps: 25 },
-              { month: "Nov", deployments: 145, newApps: 32 },
-              { month: "Dec", deployments: 180, newApps: 38 },
-              { month: "Jan", deployments: 165, newApps: 28 },
+              { month: "Oct", successful: 105, failed: 15 },
+              { month: "Nov", successful: 128, failed: 17 },
+              { month: "Dec", successful: 162, failed: 18 },
+              { month: "Jan", successful: 145, failed: 20 },
             ]}>
               <XAxis dataKey="month" />
               <YAxis />
               <ChartTooltip content={<ChartTooltipContent />} />
-              <Line type="monotone" dataKey="deployments" stroke="var(--color-deployments)" strokeWidth={2} />
-              <Line type="monotone" dataKey="newApps" stroke="var(--color-newApps)" strokeWidth={2} />
+              <Line type="monotone" dataKey="successful" stroke="var(--color-successful)" strokeWidth={2} />
+              <Line type="monotone" dataKey="failed" stroke="var(--color-failed)" strokeWidth={2} />
             </LineChart>
           </ChartContainer>
         </CardContent>

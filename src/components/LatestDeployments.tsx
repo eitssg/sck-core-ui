@@ -60,17 +60,31 @@ const mockDeployments: Deployment[] = [
     appName: "Inventory Tracker",
     version: "v3.1.2",
     environment: "Development",
-    status: "teardown-in-progress",
+    status: "failed",
     deployedAt: "2024-01-26T08:45:00Z",
     deployedBy: "mike.wilson@techcorp.com",
     events: [
-      { id: "evt-007", type: "deploy", message: "Deployment failed", timestamp: "2024-01-26T08:45:00Z", status: "failed" },
-      { id: "evt-008", type: "error", message: "Database connection timeout", timestamp: "2024-01-26T08:47:00Z", status: "failed" },
-      { id: "evt-009", type: "rollback", message: "Initiating teardown...", timestamp: "2024-01-26T08:50:00Z", status: "pending" }
+      { id: "evt-007", type: "deploy", message: "Deployment started", timestamp: "2024-01-26T08:45:00Z", status: "success" },
+      { id: "evt-008", type: "test", message: "Tests failed - database connection timeout", timestamp: "2024-01-26T08:47:00Z", status: "failed" },
+      { id: "evt-009", type: "error", message: "Deployment completed with failures", timestamp: "2024-01-26T08:50:00Z", status: "failed" }
     ]
   },
   {
     id: "dep-004",
+    appName: "Payment Gateway",
+    version: "v1.5.3",
+    environment: "Staging", 
+    status: "teardown-in-progress",
+    deployedAt: "2024-01-26T07:30:00Z",
+    deployedBy: "alex.taylor@techcorp.com",
+    events: [
+      { id: "evt-010", type: "deploy", message: "Deployment failed during startup", timestamp: "2024-01-26T07:30:00Z", status: "failed" },
+      { id: "evt-011", type: "error", message: "Critical service unavailable", timestamp: "2024-01-26T07:35:00Z", status: "failed" },
+      { id: "evt-012", type: "rollback", message: "Initiating teardown process...", timestamp: "2024-01-26T07:40:00Z", status: "pending" }
+    ]
+  },
+  {
+    id: "dep-005",
     appName: "Customer Portal",
     version: "v2.0.5",
     environment: "Production",
@@ -78,13 +92,13 @@ const mockDeployments: Deployment[] = [
     deployedAt: "2024-01-25T16:20:00Z",
     deployedBy: "sarah.johnson@techcorp.com",
     events: [
-      { id: "evt-010", type: "deploy", message: "Deployment successful", timestamp: "2024-01-25T16:20:00Z", status: "success" },
-      { id: "evt-011", type: "test", message: "Automated tests completed", timestamp: "2024-01-25T16:25:00Z", status: "success" },
-      { id: "evt-012", type: "test", message: "Manual testing required", timestamp: "2024-01-25T16:30:00Z", status: "pending" }
+      { id: "evt-013", type: "deploy", message: "Deployment successful", timestamp: "2024-01-25T16:20:00Z", status: "success" },
+      { id: "evt-014", type: "test", message: "Automated tests completed", timestamp: "2024-01-25T16:25:00Z", status: "success" },
+      { id: "evt-015", type: "test", message: "Manual testing required", timestamp: "2024-01-25T16:30:00Z", status: "pending" }
     ]
   },
   {
-    id: "dep-005",
+    id: "dep-006",
     appName: "Data Warehouse ETL",
     version: "v4.2.0",
     environment: "Production",
@@ -92,9 +106,9 @@ const mockDeployments: Deployment[] = [
     deployedAt: "2024-01-25T14:10:00Z",
     deployedBy: "alex.brown@techcorp.com",
     events: [
-      { id: "evt-013", type: "deploy", message: "Deployment initiated", timestamp: "2024-01-25T14:10:00Z", status: "success" },
-      { id: "evt-014", type: "test", message: "Performance tests passed", timestamp: "2024-01-25T14:15:00Z", status: "success" },
-      { id: "evt-015", type: "release", message: "Successfully released", timestamp: "2024-01-25T14:20:00Z", status: "success" }
+      { id: "evt-016", type: "deploy", message: "Deployment initiated", timestamp: "2024-01-25T14:10:00Z", status: "success" },
+      { id: "evt-017", type: "test", message: "Performance tests passed", timestamp: "2024-01-25T14:15:00Z", status: "success" },
+      { id: "evt-018", type: "release", message: "Successfully released", timestamp: "2024-01-25T14:20:00Z", status: "success" }
     ]
   }
 ];

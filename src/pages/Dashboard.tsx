@@ -44,11 +44,11 @@ const getClientStats = (clientId: string) => [
   { label: "Broken Deployments", value: "8", icon: AlertTriangle, change: "3 teardown, 5 release", subtext: "Needs attention", isAlert: true },
 ];
 
-// Mock deployment issues with dates
+// Mock deployment issues with dates - updated to include failed status
 const brokenDeployments = [
-  { id: "1", app: "Analytics API", type: "teardown-in-progress", date: "2024-01-26", environment: "staging" },
-  { id: "2", app: "User Portal", type: "release-in-progress", date: "2024-01-25", environment: "production" },
-  { id: "3", app: "Data Pipeline", type: "teardown-in-progress", date: "2024-01-25", environment: "development" },
+  { id: "1", app: "Inventory Tracker", type: "failed", date: "2024-01-26", environment: "development" },
+  { id: "2", app: "Payment Gateway", type: "teardown-in-progress", date: "2024-01-26", environment: "staging" },
+  { id: "3", app: "Analytics API", type: "release-in-progress", date: "2024-01-25", environment: "production" },
 ];
 
 export default function Dashboard() {
