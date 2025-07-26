@@ -66,9 +66,6 @@ const ZoneDetails = () => {
               Back to Zones
             </Link>
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold">{zone.accountName}</h1>
-          </div>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" asChild>
