@@ -39,7 +39,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useReduxData } from "@/hooks/useReduxData";
-import { useAppDispatch } from '@/store';
+import { useAppDispatch, useAppSelector } from '@/store';
 import { setDeployments, setEvents } from '@/store/slices/deploymentsSlice';
 
 // Mock data - will be replaced with real data later
@@ -55,12 +55,15 @@ export default function DashboardLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const dispatch = useAppDispatch();
+  const deployments = useAppSelector(state => state.deployments.deployments);
   const { clients, selectedClient, defaultClient, initializeClients, selectClient, initializePortfolios, initializeApplications, initializeZones } = useReduxData();
 
   // Initialize all store data with realistic aligned mock data
   useEffect(() => {
     console.log('DashboardLayout useEffect triggered, clients.length:', clients.length);
-    if (clients.length === 0) {
+    console.log('Current deployments in store:', deployments.length);
+    
+    if (clients.length === 0 || deployments.length === 0) {
       // Initialize clients
       const mockClients = [
         {
@@ -378,7 +381,7 @@ export default function DashboardLayout() {
         selectClient(mockClients[0].id);
       }
     }
-  }, [clients.length, dispatch]);
+  }, [clients.length, deployments.length, dispatch]);
 
   const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: Home },
