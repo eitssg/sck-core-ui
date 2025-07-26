@@ -62,18 +62,16 @@ export default function Profile() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Client Access Management - Left Side */}
-        <div className="xl:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-foreground">Client Access</h2>
-              <p className="text-sm text-muted-foreground">
-                Manage your client access and set your default client
-              </p>
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Client Access Management - Left Side (40%) */}
+        <div className="lg:col-span-2 space-y-4">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Client Access</h2>
+            <p className="text-sm text-muted-foreground">
+              Manage your client access and set your default client
+            </p>
             {defaultClient && (
-              <Badge variant="secondary" className="text-sm">
+              <Badge variant="secondary" className="text-xs mt-2">
                 Default: {defaultClient.name}
               </Badge>
             )}
@@ -81,16 +79,16 @@ export default function Profile() {
 
           {clients.length === 0 ? (
             <Card className="shadow-medium">
-              <CardContent className="text-center py-12">
-                <Building2 className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-foreground mb-2">No clients available</h3>
-                <p className="text-sm text-muted-foreground">
+              <CardContent className="text-center py-8">
+                <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                <h3 className="text-base font-medium text-foreground mb-1">No clients available</h3>
+                <p className="text-xs text-muted-foreground">
                   Contact your administrator to request client access
                 </p>
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="space-y-3">
               {clients.map((client) => (
                 <Card
                   key={client.id}
@@ -100,22 +98,22 @@ export default function Profile() {
                       : 'hover:bg-muted/50'
                   }`}
                 >
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <Building2 className="h-5 w-5 text-primary" />
-                        <CardTitle className="text-lg">{client.name}</CardTitle>
+                        <Building2 className="h-4 w-4 text-primary flex-shrink-0" />
+                        <h3 className="text-sm font-medium">{client.name}</h3>
                         {defaultClientId === client.id && (
-                          <Check className="h-4 w-4 text-primary" />
+                          <Check className="h-3 w-3 text-primary" />
                         )}
                       </div>
                     </div>
-                    <CardDescription className="text-sm">
+                    
+                    <p className="text-xs text-muted-foreground mb-3 line-clamp-2">
                       {client.description}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
+                    </p>
+                    
+                    <div className="grid grid-cols-2 gap-2 text-xs mb-3">
                       <div>
                         <p className="text-muted-foreground">Members</p>
                         <p className="font-medium">{client.memberCount}</p>
@@ -124,30 +122,21 @@ export default function Profile() {
                         <p className="text-muted-foreground">Portfolios</p>
                         <p className="font-medium">{client.portfolioCount}</p>
                       </div>
-                      <div className="col-span-2">
-                        <p className="text-muted-foreground">AWS Region</p>
-                        <p className="font-medium">{client.primaryAwsRegion}</p>
-                      </div>
                     </div>
                     
-                    <div className="flex items-center justify-between pt-2">
-                      <div className="text-xs text-muted-foreground">
-                        <a href={client.homepage} target="_blank" rel="noopener noreferrer" className="hover:text-foreground">
-                          {client.homepage}
-                        </a>
-                      </div>
-                      {defaultClientId !== client.id && (
+                    <div className="flex items-center justify-between">
+                      {defaultClientId !== client.id ? (
                         <Button
                           size="sm"
                           variant="outline"
+                          className="text-xs h-7"
                           onClick={() => handleSetDefaultClient(client.id)}
                         >
                           Set Default
                         </Button>
-                      )}
-                      {defaultClientId === client.id && (
+                      ) : (
                         <Badge variant="default" className="text-xs">
-                          Default Client
+                          Default
                         </Badge>
                       )}
                     </div>
@@ -158,8 +147,8 @@ export default function Profile() {
           )}
         </div>
 
-        {/* User Information - Right Side */}
-        <div className="xl:col-span-1">
+        {/* User Information - Right Side (60%) */}
+        <div className="lg:col-span-3">
           <Card className="shadow-medium sticky top-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
