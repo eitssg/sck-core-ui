@@ -25,61 +25,46 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-
-// Mock data
-const mockApplication = {
-  id: 1,
-  name: "User Management",
-  portfolio: "Enterprise Suite",
-  description: "Centralized user administration system",
-  status: "active",
-  version: "v2.1.3",
-  lastDeploy: "2 days ago",
-  environment: "production",
-  deployments: 45,
-  uptime: "99.9%"
-};
-
-const mockPortfolios = [
-  { id: 1, name: "Enterprise Suite", code: "ENT" },
-  { id: 2, name: "Mobile Apps", code: "MOB" },
-  { id: 3, name: "Analytics Platform", code: "ANL" }
-];
-
-// Mock deployments data (same as in Deployments.tsx)
-const mockDeployments = [
-  {
-    id: 1,
-    application: "User Management",
-    lastActivity: "2 hours ago",
-    status: "released"
-  },
-  {
-    id: 2,
-    application: "Analytics Dashboard", 
-    lastActivity: "1 day ago",
-    status: "not-released"
-  },
-  {
-    id: 3,
-    application: "User Management",
-    lastActivity: "3 days ago", 
-    status: "released"
-  }
-];
+import { useReduxData } from "@/hooks/useReduxData";
+import { useAppSelector } from "@/store";
 
 export default function ApplicationDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { applications, portfolios } = useReduxData();
+  const deployments = useAppSelector(state => state.deployments.deployments);
+  
+  // Find the application from Redux store
+  const application = applications.find(app => app.id === id);
+  const portfolio = application ? portfolios.find(p => p.id === application.portfolioId) : null;
+
+  // Get deployments for this application
+  const applicationDeployments = deployments.filter(dep => dep.applicationId === id);
+  
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
-    name: mockApplication.name,
-    portfolio: mockApplication.portfolio,
-    description: mockApplication.description,
-    version: mockApplication.version,
-    environment: mockApplication.environment
+    name: application?.name || '',
+    portfolio: portfolio?.name || '',
+    description: application?.description || '',
+    version: application?.version || '',
+    environment: 'production'
   });
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Handle case where application is not found
+  if (!application) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <Card>
+          <CardContent className="p-12 text-center">
+            <h3 className="text-lg font-semibold mb-2">Application Not Found</h3>
+            <p className="text-muted-foreground mb-6">The requested application could not be found.</p>
+            <Button onClick={() => navigate('/applications')}>Return to Applications</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const handleSave = async () => {
     setIsLoading(true);
@@ -91,35 +76,21 @@ export default function ApplicationDetails() {
   };
 
   const handleViewLogs = () => {
-    // Find the latest deployment for this application
-    const applicationDeployments = mockDeployments.filter(
-      deployment => deployment.application === mockApplication.name
-    );
-    
+    // Navigate to the latest deployment for this application
     if (applicationDeployments.length === 0) {
-      // No deployments found for this application
       navigate("/deployments");
       return;
     }
     
-    // Sort by most recent activity (this is a simplified sort - in real app would use proper date comparison)
-    const latestDeployment = applicationDeployments.reduce((latest, current) => {
-      // Simple comparison based on the mock "time ago" format
-      const getHours = (timeStr: string) => {
-        if (timeStr.includes("hour")) return parseInt(timeStr);
-        if (timeStr.includes("day")) return parseInt(timeStr) * 24;
-        return 999; // fallback for other formats
-      };
-      
-      return getHours(current.lastActivity) < getHours(latest.lastActivity) ? current : latest;
-    });
+    // Get the most recent deployment
+    const latestDeployment = applicationDeployments.sort((a, b) => 
+      new Date(b.deployedAt).getTime() - new Date(a.deployedAt).getTime()
+    )[0];
     
     navigate(`/deployments/${latestDeployment.id}`);
   };
 
   const handleViewPortfolio = () => {
-    // Find the portfolio that matches this application's portfolio
-    const portfolio = mockPortfolios.find(p => p.name === mockApplication.portfolio);
     if (portfolio) {
       navigate(`/portfolios/${portfolio.id}`);
     }
@@ -132,12 +103,14 @@ export default function ApplicationDetails() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "active":
+      case "running":
         return "bg-green-100 text-green-800";
-      case "development":
+      case "deploying":
         return "bg-blue-100 text-blue-800";
-      case "maintenance":
-        return "bg-orange-100 text-orange-800";
+      case "stopped":
+        return "bg-red-100 text-red-800";
+      case "error":
+        return "bg-red-100 text-red-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -232,9 +205,9 @@ export default function ApplicationDetails() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {mockPortfolios.map((portfolio) => (
-                            <SelectItem key={portfolio.id} value={portfolio.name}>
-                              {portfolio.name} ({portfolio.code})
+                          {portfolios.map((portfolioOption) => (
+                            <SelectItem key={portfolioOption.id} value={portfolioOption.name}>
+                              {portfolioOption.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -278,21 +251,21 @@ export default function ApplicationDetails() {
               ) : (
                 <div className="space-y-4">
                   <div>
-                    <h2 className="text-2xl font-bold text-foreground">{mockApplication.name}</h2>
+                    <h2 className="text-2xl font-bold text-foreground">{application.name}</h2>
                     <div className="flex items-center gap-2 mt-1">
                       <Building2 className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">{mockApplication.portfolio}</span>
+                      <span className="text-muted-foreground">{portfolio?.name || 'Unknown Portfolio'}</span>
                     </div>
                   </div>
-                  <p className="text-foreground">{mockApplication.description}</p>
+                  <p className="text-foreground">{application.description}</p>
                   <div className="grid grid-cols-2 gap-4 pt-2">
                     <div className="flex items-center gap-2">
                       <Code className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-mono text-sm">{mockApplication.version}</span>
+                      <span className="font-mono text-sm">{application.version}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Activity className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm capitalize">{mockApplication.environment}</span>
+                      <span className="text-sm capitalize">Production</span>
                     </div>
                   </div>
                 </div>
@@ -310,21 +283,21 @@ export default function ApplicationDetails() {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Status</span>
-                <Badge className={getStatusColor(mockApplication.status)} variant="secondary">
-                  {mockApplication.status}
+                <Badge className={getStatusColor(application.status)} variant="secondary">
+                  {application.status}
                 </Badge>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Last Deploy</span>
-                <span className="font-medium">{mockApplication.lastDeploy}</span>
+                <span className="font-medium">{new Date(application.lastDeploy).toLocaleDateString()}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Total Deployments</span>
-                <span className="font-medium">{mockApplication.deployments}</span>
+                <span className="font-medium">{applicationDeployments.length}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Uptime</span>
-                <span className="font-medium text-green-600">{mockApplication.uptime}</span>
+                <span className="font-medium text-green-600">99.9%</span>
               </div>
             </CardContent>
           </Card>
@@ -352,7 +325,7 @@ export default function ApplicationDetails() {
                 variant="outline" 
                 size="sm" 
                 className="w-full justify-start"
-                onClick={() => navigate(`/deployments?application=${encodeURIComponent(mockApplication.name)}`)}
+                onClick={() => navigate(`/deployments?application=${encodeURIComponent(application.name)}`)}
               >
                 <GitBranch className="h-4 w-4 mr-2" />
                 View Deployments
@@ -366,6 +339,37 @@ export default function ApplicationDetails() {
                 <Building2 className="h-4 w-4 mr-2" />
                 View Portfolio
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* Recent Deployments */}
+          <Card className="shadow-soft">
+            <CardHeader>
+              <CardTitle className="text-lg">Recent Deployments</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {applicationDeployments.slice(0, 5).map((deployment) => (
+                  <div 
+                    key={deployment.id} 
+                    className="flex items-center justify-between p-2 border rounded hover:bg-accent cursor-pointer"
+                    onClick={() => navigate(`/deployments/${deployment.id}`)}
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{deployment.tag}</p>
+                      <p className="text-xs text-muted-foreground">{deployment.environment}</p>
+                    </div>
+                    <Badge className={getStatusColor(deployment.status)} variant="secondary">
+                      {deployment.status}
+                    </Badge>
+                  </div>
+                ))}
+                {applicationDeployments.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No deployments found
+                  </p>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>

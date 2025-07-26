@@ -35,7 +35,7 @@ const Zones = () => {
   }, [searchParams]);
 
   useEffect(() => {
-    // Initialize with mock data - replace with API calls
+    // All zone data comes from Redux store
     initializeClients([
       {
         id: '1',
