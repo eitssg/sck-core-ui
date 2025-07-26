@@ -193,12 +193,17 @@ const getClientStats = (clientId: string, filters: FilterState, clients: any[], 
   ];
 };
 
-// Mock deployment issues with dates - updated to include failed status
-const brokenDeployments = [
-  { id: "1", app: "Inventory Tracker", type: "failed", date: "2024-01-26", environment: "development" },
-  { id: "2", app: "Payment Gateway", type: "teardown-in-progress", date: "2024-01-26", environment: "staging" },
-  { id: "3", app: "Analytics API", type: "release-in-progress", date: "2024-01-25", environment: "production" },
-];
+// Get broken deployments from Redux data
+const getBrokenDeployments = (clientId: string, deployments: any[], applications: any[]) => {
+  const clientDeployments = deployments.filter(d => d.clientId === clientId && d.status === 'failed');
+  return clientDeployments.map(deployment => ({
+    id: deployment.id,
+    app: applications.find(a => a.id === deployment.applicationId)?.name || 'Unknown App',
+    type: deployment.status,
+    date: new Date(deployment.deployedAt).toLocaleDateString(),
+    environment: deployment.environment
+  }));
+};
 
 export default function Dashboard() {
   // Get the selected client from Redux store instead of local state
@@ -218,6 +223,9 @@ export default function Dashboard() {
   });
   
   const clientStats = getClientStats(currentClient.id, filters, clients, portfolios || [], applications || [], zones || [], deployments || [], events || []);
+  
+  // Get broken deployments from Redux data
+  const brokenDeployments = getBrokenDeployments(currentClient.id, deployments || [], applications || []);
 
   const handleFiltersChange = (newFilters: FilterState) => {
     setFilters(newFilters);
