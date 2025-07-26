@@ -192,13 +192,36 @@ export default function DashboardLayout() {
       
       initializeZones(mockZones);
       
-      // Initialize 60 deployments with specific status distribution
+      // Initialize 60 deployments with specific status distribution and date clustering
       const generateDeployments = () => {
         const deployments = [];
         const events = [];
         const environments = ['production', 'staging', 'development'];
         const applications = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9', 'a10', 'a11', 'a12', 'a13', 'a14', 'a15', 'a16', 'a17', 'a18', 'a19', 'a20', 'a21', 'a22', 'a23', 'a24', 'a25', 'a26', 'a27', 'a28', 'a29', 'a30'];
-        const usedApps = new Set(); // Track which apps have deployments
+        const usedApps = new Set();
+        
+        // Helper to generate realistic deployment dates over last 30 days
+        const generateDeploymentDate = (index, total) => {
+          const now = new Date();
+          const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          
+          // Create clustering around the 15th of the month
+          const dayOfMonth = now.getDate();
+          const fifteenthThisMonth = new Date(now.getFullYear(), now.getMonth(), 15);
+          const fifteenthLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 15);
+          
+          // 40% of deployments cluster around the 15th (±3 days)
+          if (index <= total * 0.4) {
+            const clusterCenter = fifteenthThisMonth > now ? fifteenthLastMonth : fifteenthThisMonth;
+            const variance = (Math.random() - 0.5) * 6 * 24 * 60 * 60 * 1000; // ±3 days
+            return new Date(clusterCenter.getTime() + variance);
+          }
+          
+          // Remaining 60% spread across the 30 days
+          const timeRange = now.getTime() - thirtyDaysAgo.getTime();
+          const randomTime = thirtyDaysAgo.getTime() + (Math.random() * timeRange);
+          return new Date(randomTime);
+        };
         
         // Helper to get client ID from portfolio
         const getClientId = (portfolioId) => {
@@ -237,6 +260,7 @@ export default function DashboardLayout() {
           const clientId = getClientId(portfolioId);
           const environment = environments[Math.floor(Math.random() * environments.length)];
           const deploymentId = `dep-${index.toString().padStart(3, '0')}`;
+          const deploymentDate = generateDeploymentDate(index, 60);
           
           const deployment = {
             id: deploymentId,
@@ -251,9 +275,9 @@ export default function DashboardLayout() {
             tag: `v${Math.floor(Math.random() * 3) + 1}.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 10)}`,
             region: 'us-east-1',
             status,
-            deployedAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
+            deployedAt: deploymentDate.toISOString(),
             deployedBy: `user${Math.floor(Math.random() * 10) + 1}@${clientId === '1' ? 'acme' : clientId === '2' ? 'techstart' : 'globalsystems'}.com`,
-            lastActivity: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString()
+            lastActivity: new Date(deploymentDate.getTime() + Math.random() * 24 * 60 * 60 * 1000).toISOString()
           };
           
           return deployment;
@@ -316,7 +340,7 @@ export default function DashboardLayout() {
               deploymentId: deployment.id,
               type: eventType,
               message,
-              timestamp: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
+              timestamp: new Date(deployment.deployedAt).toISOString(),
               status
             });
           }
