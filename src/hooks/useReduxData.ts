@@ -1,5 +1,5 @@
 import { useAppSelector, useAppDispatch } from '@/store';
-import { setClients, setSelectedClient } from '@/store/slices/clientsSlice';
+import { setClients, setSelectedClient, setDefaultClient } from '@/store/slices/clientsSlice';
 import { setPortfolios, setSelectedPortfolio } from '@/store/slices/portfoliosSlice';
 import { setApplications, setSelectedApplication } from '@/store/slices/applicationsSlice';
 import { setZones, setSelectedZone, addZone, updateZone, removeZone } from '@/store/slices/zonesSlice';
@@ -15,8 +15,12 @@ export const useReduxData = () => {
   // Selectors
   const clients = useAppSelector(state => state.clients.clients);
   const selectedClientId = useAppSelector(state => state.clients.selectedClientId);
+  const defaultClientId = useAppSelector(state => state.clients.defaultClientId);
   const selectedClient = useAppSelector(state => 
     state.clients.clients.find(client => client.id === state.clients.selectedClientId)
+  );
+  const defaultClient = useAppSelector(state => 
+    state.clients.clients.find(client => client.id === state.clients.defaultClientId)
   );
   
   const portfolios = useAppSelector(state => state.portfolios.portfolios);
@@ -40,10 +44,18 @@ export const useReduxData = () => {
   // Actions
   const initializeClients = (clientsData: Client[]) => {
     dispatch(setClients(clientsData));
+    // Auto-select first client as default if none exists
+    if (clientsData.length > 0 && !defaultClientId) {
+      dispatch(setDefaultClient(clientsData[0].id));
+    }
   };
   
   const selectClient = (clientId: string | null) => {
     dispatch(setSelectedClient(clientId));
+  };
+
+  const setUserDefaultClient = (clientId: string | null) => {
+    dispatch(setDefaultClient(clientId));
   };
   
   const initializePortfolios = (portfoliosData: Portfolio[]) => {
@@ -87,6 +99,8 @@ export const useReduxData = () => {
     clients,
     selectedClientId,
     selectedClient,
+    defaultClientId,
+    defaultClient,
     portfolios,
     selectedPortfolioId,
     selectedPortfolio,
@@ -100,6 +114,7 @@ export const useReduxData = () => {
     // Actions
     initializeClients,
     selectClient,
+    setUserDefaultClient,
     initializePortfolios,
     selectPortfolio,
     initializeApplications,

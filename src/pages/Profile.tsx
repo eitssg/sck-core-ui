@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { User, Mail, Phone, Building, Calendar, Settings } from "lucide-react";
+import { User, Mail, Phone, Building, Calendar, Settings, Building2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { useReduxData } from "@/hooks/useReduxData";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,10 +34,15 @@ export default function Profile() {
   const [isEditing, setIsEditing] = useState(false);
   const [currentProfile, setCurrentProfile] = useState(mockPortfolios[0]);
   const [userData, setUserData] = useState(mockUser);
+  const { clients, defaultClient, defaultClientId, setUserDefaultClient } = useReduxData();
 
   const handleSave = () => {
     // TODO: Implement save logic
     setIsEditing(false);
+  };
+
+  const handleSetDefaultClient = (clientId: string) => {
+    setUserDefaultClient(clientId);
   };
 
   return (
@@ -55,41 +62,89 @@ export default function Profile() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Current Profile Selection */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Client Access Management */}
         <Card className="shadow-medium">
           <CardHeader>
-            <CardTitle>Current Profile</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-primary" />
+              Client Access
+            </CardTitle>
+            <CardDescription>
+              Manage your client access and set your default client
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2">
-                  <Building className="h-4 w-4" />
-                  {currentProfile.name}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-full">
-                {mockPortfolios.map((portfolio) => (
-                  <DropdownMenuItem
-                    key={portfolio.id}
-                    onClick={() => setCurrentProfile(portfolio)}
-                  >
-                    <Building className="mr-2 h-4 w-4" />
-                    {portfolio.name} ({portfolio.code})
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <div className="text-sm text-muted-foreground">
-              <p>Portfolio Code: <span className="font-medium">{currentProfile.code}</span></p>
-              <p>Access Level: <span className="font-medium text-green-600">Administrator</span></p>
-            </div>
+            {clients.length === 0 ? (
+              <div className="text-center py-8">
+                <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-sm text-muted-foreground">No clients available</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Contact your administrator to request client access
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Available Clients ({clients.length})</Label>
+                  {defaultClient && (
+                    <Badge variant="secondary" className="text-xs">
+                      Default: {defaultClient.name}
+                    </Badge>
+                  )}
+                </div>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {clients.map((client) => (
+                    <div
+                      key={client.id}
+                      className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
+                        defaultClientId === client.id 
+                          ? 'bg-primary/5 border-primary/20' 
+                          : 'bg-card hover:bg-muted/50'
+                      }`}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-medium">{client.name}</h4>
+                          {defaultClientId === client.id && (
+                            <Check className="h-4 w-4 text-primary" />
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{client.description}</p>
+                        <div className="flex items-center gap-4 mt-1">
+                          <span className="text-xs text-muted-foreground">
+                            {client.memberCount} members
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {client.portfolioCount} portfolios
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {client.primaryAwsRegion}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {defaultClientId !== client.id && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs"
+                            onClick={() => handleSetDefaultClient(client.id)}
+                          >
+                            Set Default
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
         {/* User Information */}
-        <Card className="shadow-medium lg:col-span-2">
+        <Card className="shadow-medium">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <User className="h-5 w-5 text-primary" />

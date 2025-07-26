@@ -15,6 +15,7 @@ export interface Client {
 interface ClientsState {
   clients: Client[];
   selectedClientId: string | null;
+  defaultClientId: string | null;
   loading: boolean;
   error: string | null;
 }
@@ -22,6 +23,7 @@ interface ClientsState {
 const initialState: ClientsState = {
   clients: [],
   selectedClientId: null,
+  defaultClientId: null,
   loading: false,
   error: null,
 };
@@ -48,6 +50,13 @@ const clientsSlice = createSlice({
     setSelectedClient: (state, action: PayloadAction<string | null>) => {
       state.selectedClientId = action.payload;
     },
+    setDefaultClient: (state, action: PayloadAction<string | null>) => {
+      state.defaultClientId = action.payload;
+      // If no client is currently selected, use the default
+      if (!state.selectedClientId && action.payload) {
+        state.selectedClientId = action.payload;
+      }
+    },
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload;
     },
@@ -63,6 +72,7 @@ export const {
   updateClient,
   removeClient,
   setSelectedClient,
+  setDefaultClient,
   setLoading,
   setError,
 } = clientsSlice.actions;

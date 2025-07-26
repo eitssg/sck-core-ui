@@ -51,7 +51,7 @@ export default function DashboardLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { clients, selectedClient, initializeClients, selectClient } = useReduxData();
+  const { clients, selectedClient, defaultClient, initializeClients, selectClient } = useReduxData();
 
   // Initialize clients data
   useEffect(() => {
@@ -132,7 +132,10 @@ export default function DashboardLayout() {
               {/* Client Selection Dropdown */}
               {clients.length > 0 && (
                 <div className="flex items-center gap-2">
-                  <Select value={selectedClient?.id || ""} onValueChange={(value) => selectClient(value || null)}>
+                  <Select 
+                    value={selectedClient?.id || defaultClient?.id || ""} 
+                    onValueChange={(value) => selectClient(value || null)}
+                  >
                     <SelectTrigger className="w-48">
                       <SelectValue placeholder="Select client..." />
                     </SelectTrigger>
