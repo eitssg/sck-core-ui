@@ -62,6 +62,7 @@ export default function DashboardLayout() {
   const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: Home },
     { name: "Clients", href: "/clients", icon: Building2 },
+    { name: "Zones", href: "/zones", icon: GitBranch },
     { name: "Portfolios", href: "/portfolios", icon: Briefcase },
     { name: "Applications", href: "/applications", icon: FolderOpen },
     { name: "Deployments", href: "/deployments", icon: GitBranch },
