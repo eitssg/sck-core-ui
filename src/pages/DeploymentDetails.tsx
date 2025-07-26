@@ -286,77 +286,77 @@ export default function DeploymentDetails() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Deployment Information */}
         <Card className="shadow-medium">
-          <CardHeader>
-            <CardTitle>Deployment Information</CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Deployment Information</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-2 pt-0">
             <div>
-              <label className="text-sm font-medium text-muted-foreground">Portfolio</label>
-              <p className="text-foreground">{deployment.portfolio}</p>
+              <label className="text-xs font-medium text-muted-foreground">Portfolio</label>
+              <p className="text-sm text-foreground">{deployment.portfolio}</p>
             </div>
             <Separator />
             <div>
-              <label className="text-sm font-medium text-muted-foreground">Application</label>
-              <p className="text-foreground">{deployment.application}</p>
+              <label className="text-xs font-medium text-muted-foreground">Application</label>
+              <p className="text-sm text-foreground">{deployment.application}</p>
             </div>
             <Separator />
             <div>
-              <label className="text-sm font-medium text-muted-foreground">Branch</label>
+              <label className="text-xs font-medium text-muted-foreground">Branch</label>
               <div className="flex items-center gap-2">
-                <GitBranch className="h-4 w-4 text-muted-foreground" />
-                <code className="text-sm bg-muted px-2 py-1 rounded">{deployment.branch}</code>
+                <GitBranch className="h-3 w-3 text-muted-foreground" />
+                <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{deployment.branch}</code>
               </div>
             </div>
             <Separator />
             <div>
-              <label className="text-sm font-medium text-muted-foreground">Tag/Version</label>
+              <label className="text-xs font-medium text-muted-foreground">Tag/Version</label>
               <div className="flex items-center gap-2">
-                <Tag className="h-4 w-4 text-muted-foreground" />
-                <code className="text-sm bg-muted px-2 py-1 rounded">{deployment.tag}</code>
+                <Tag className="h-3 w-3 text-muted-foreground" />
+                <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{deployment.tag}</code>
               </div>
             </div>
             <Separator />
             <div>
-              <label className="text-sm font-medium text-muted-foreground">Build ID</label>
-              <code className="text-sm bg-muted px-2 py-1 rounded block mt-1">{deployment.build}</code>
+              <label className="text-xs font-medium text-muted-foreground">Build ID</label>
+              <code className="text-xs bg-muted px-1.5 py-0.5 rounded block mt-1">{deployment.build}</code>
             </div>
           </CardContent>
         </Card>
 
         {/* Deployment Details */}
         <Card className="shadow-medium">
-          <CardHeader>
-            <CardTitle>Additional Details</CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Additional Details</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-2 pt-0">
             <div>
-              <label className="text-sm font-medium text-muted-foreground">Description</label>
-              <p className="text-foreground">{deployment.description}</p>
+              <label className="text-xs font-medium text-muted-foreground">Description</label>
+              <p className="text-sm text-foreground">{deployment.description}</p>
             </div>
             <Separator />
             <div>
-              <label className="text-sm font-medium text-muted-foreground">Resources</label>
-              <p className="text-foreground">{deployment.resources}</p>
+              <label className="text-xs font-medium text-muted-foreground">Resources</label>
+              <p className="text-sm text-foreground">{deployment.resources}</p>
             </div>
             <Separator />
             <div>
-              <label className="text-sm font-medium text-muted-foreground">Created</label>
-              <p className="text-foreground">{deployment.createdAt}</p>
+              <label className="text-xs font-medium text-muted-foreground">Created</label>
+              <p className="text-sm text-foreground">{deployment.createdAt}</p>
             </div>
             <Separator />
             <div>
-              <label className="text-sm font-medium text-muted-foreground">Release Date</label>
-              <p className="text-foreground">{deployment.releaseDate || "Not released"}</p>
+              <label className="text-xs font-medium text-muted-foreground">Release Date</label>
+              <p className="text-sm text-foreground">{deployment.releaseDate || "Not released"}</p>
             </div>
             <Separator />
             <div>
-              <label className="text-sm font-medium text-muted-foreground">Tags</label>
-              <div className="flex flex-wrap gap-2 mt-1">
+              <label className="text-xs font-medium text-muted-foreground">Tags</label>
+              <div className="flex flex-wrap gap-1 mt-1">
                 {deployment.tags.map((tag) => (
-                  <Badge key={tag} variant="outline" className="text-xs">
+                  <Badge key={tag} variant="outline" className="text-xs px-1.5 py-0.5">
                     {tag}
                   </Badge>
                 ))}
