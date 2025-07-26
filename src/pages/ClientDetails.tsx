@@ -4,39 +4,32 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-
-// Mock data
-const client = {
-  id: "1",
-  name: "TechCorp Solutions",
-  slug: "techcorp",
-  description: "Leading technology solutions provider for enterprise clients with a focus on digital transformation and cloud-native solutions. We help organizations modernize their infrastructure and accelerate their digital journey.",
-  homepage: "https://techcorp.com",
-  contactName: "Sarah Johnson",
-  contactEmail: "sarah@techcorp.com",
-  primaryAwsRegion: "us-east-1",
-  memberCount: 45,
-  portfolioCount: 12,
-  createdAt: "2024-01-15",
-  lastUpdated: "2024-07-10"
-};
-
-const recentPortfolios = [
-  { id: "1", name: "E-commerce Platform", description: "Modern shopping experience", lastUpdated: "2024-07-15" },
-  { id: "2", name: "Analytics Dashboard", description: "Real-time business insights", lastUpdated: "2024-07-12" },
-  { id: "3", name: "Mobile Banking App", description: "Secure financial services", lastUpdated: "2024-07-08" }
-];
-
-const recentMembers = [
-  { id: "1", name: "John Smith", role: "Senior Developer", joinedAt: "2024-06-01" },
-  { id: "2", name: "Lisa Wong", role: "Product Manager", joinedAt: "2024-05-15" },
-  { id: "3", name: "David Garcia", role: "DevOps Engineer", joinedAt: "2024-05-10" }
-];
+import { useReduxData } from "@/hooks/useReduxData";
 
 export default function ClientDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
-
+  const { clients, portfolios } = useReduxData();
+  
+  // Find client from Redux store  
+  const client = clients.find(c => c.id === id);
+  const clientPortfolios = portfolios.filter(p => p.clientId === id);
+  
+  // Handle case where client is not found
+  if (!client) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <Card>
+          <CardContent className="p-12 text-center">
+            <h3 className="text-lg font-semibold mb-2">Client Not Found</h3>
+            <p className="text-muted-foreground mb-6">The requested client could not be found.</p>
+            <Button onClick={() => navigate('/dashboard')}>Return to Dashboard</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -142,7 +135,7 @@ export default function ClientDetails() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {recentPortfolios.map((portfolio) => (
+                {clientPortfolios.slice(0, 3).map((portfolio) => (
                   <div 
                     key={portfolio.id} 
                     className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors group"
@@ -201,21 +194,8 @@ export default function ClientDetails() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {recentMembers.map((member) => (
-                  <div key={member.id} className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center">
-                      <User className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-foreground">{member.name}</p>
-                      <p className="text-xs text-muted-foreground">{member.role}</p>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {member.joinedAt}
-                    </p>
-                  </div>
-                ))}
+              <div className="text-center py-4">
+                <p className="text-sm text-muted-foreground">No recent members data available</p>
               </div>
             </CardContent>
           </Card>

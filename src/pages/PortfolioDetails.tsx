@@ -19,42 +19,37 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-// Mock data - would come from API based on ID
-const mockPortfolio = {
-  id: 1,
-  name: "Enterprise Suite",
-  slug: "enterprise-suite",
-  code: "ENT",
-  description: "Comprehensive enterprise applications for business management",
-  homePageUrl: "https://enterprise.company.com",
-  applicationCount: 12,
-  lastUpdated: "2024-01-15",
-  status: "active",
-  client: {
-    id: 1,
-    name: "TechCorp Solutions",
-    slug: "techcorp"
-  },
-  applications: [
-    { id: 1, name: "User Management", slug: "user-mgmt", status: "active", lastUpdated: "2024-01-20T10:30:00Z", lastActivity: "Deployment status changed to released" },
-    { id: 2, name: "Analytics Dashboard", slug: "analytics-dash", status: "active", lastUpdated: "2024-01-19T15:45:00Z", lastActivity: "New deployment created" },
-    { id: 3, name: "Inventory Tracker", slug: "inventory-track", status: "development", lastUpdated: "2024-01-18T09:15:00Z", lastActivity: "Code update pushed" },
-    { id: 4, name: "Payment Gateway", slug: "payment-gateway", status: "active", lastUpdated: "2024-01-17T14:20:00Z", lastActivity: "Deployment rolled back" },
-    { id: 5, name: "Notification System", slug: "notification-system", status: "maintenance", lastUpdated: "2024-01-16T11:30:00Z", lastActivity: "System maintenance completed" },
-  ]
-};
-
 export default function PortfolioDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { portfolios, applications } = useReduxData();
+  
+  // Find portfolio from Redux store
+  const portfolio = portfolios.find(p => p.id === id);
+  const portfolioApplications = applications.filter(app => app.portfolioId === id);
+  
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
-    name: mockPortfolio.name,
-    code: mockPortfolio.code,
-    description: mockPortfolio.description,
-    homePageUrl: mockPortfolio.homePageUrl
+    name: portfolio?.name || '',
+    code: portfolio?.code || '',
+    description: portfolio?.description || '',
+    homePageUrl: portfolio?.homePageUrl || ''
   });
-  const [isLoading, setIsLoading] = useState(false);
+  
+  // Handle case where portfolio is not found
+  if (!portfolio) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <Card>
+          <CardContent className="p-12 text-center">
+            <h3 className="text-lg font-semibold mb-2">Portfolio Not Found</h3>
+            <p className="text-muted-foreground mb-6">The requested portfolio could not be found.</p>
+            <Button onClick={() => navigate('/portfolios')}>Return to Portfolios</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const handleSave = async () => {
     setIsLoading(true);
