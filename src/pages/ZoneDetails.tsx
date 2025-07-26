@@ -68,9 +68,6 @@ const ZoneDetails = () => {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">{zone.accountName}</h1>
-            <p className="text-muted-foreground">
-              prn:{client?.name || 'unknown'}:{zone.id}
-            </p>
           </div>
         </div>
         <div className="flex gap-2">
