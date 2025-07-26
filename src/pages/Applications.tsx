@@ -194,8 +194,8 @@ export default function Applications() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Application</TableHead>
                 <TableHead>Portfolio</TableHead>
+                <TableHead>Application</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Version</TableHead>
@@ -210,6 +210,16 @@ export default function Applications() {
                   className="cursor-pointer hover:bg-muted/50 transition-colors"
                   onClick={() => navigate(`/applications/${app.id}`)}
                 >
+                  <TableCell>
+                    <div>
+                      <div className="font-medium">
+                        {portfolios.find(p => p.id === app.portfolioId)?.name || 'Unknown Portfolio'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {portfolios.find(p => p.id === app.portfolioId)?.code || 'N/A'}
+                      </div>
+                    </div>
+                  </TableCell>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 bg-primary/10 rounded-md flex items-center justify-center">
@@ -218,16 +228,6 @@ export default function Applications() {
                       <div>
                         <div className="font-medium">{app.name}</div>
                         <div className="text-xs text-muted-foreground">{app.code}</div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">
-                        {portfolios.find(p => p.id === app.portfolioId)?.name || 'Unknown Portfolio'}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {portfolios.find(p => p.id === app.portfolioId)?.code || 'N/A'}
                       </div>
                     </div>
                   </TableCell>
