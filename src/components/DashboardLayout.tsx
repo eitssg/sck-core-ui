@@ -59,6 +59,7 @@ export default function DashboardLayout() {
 
   // Initialize all store data with realistic aligned mock data
   useEffect(() => {
+    console.log('DashboardLayout useEffect triggered, clients.length:', clients.length);
     if (clients.length === 0) {
       // Initialize clients
       const mockClients = [
@@ -367,15 +368,17 @@ export default function DashboardLayout() {
       };
 
       const { deployments, events } = generateDeployments();
+      console.log('Generated deployments:', deployments.length, 'events:', events.length);
       dispatch(setDeployments(deployments));
       dispatch(setEvents(events));
+      console.log('Dispatched deployments to Redux store');
       
       // Auto-select first client as default if none exists
       if (!defaultClient) {
         selectClient(mockClients[0].id);
       }
     }
-  }, [clients.length, initializeClients, initializePortfolios, initializeApplications, initializeZones, defaultClient, selectClient]);
+  }, [clients.length, dispatch]);
 
   const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: Home },
