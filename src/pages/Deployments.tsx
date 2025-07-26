@@ -191,28 +191,63 @@ export default function Deployments() {
       // dispatch(setDeployments(data.deployments));
       // dispatch(setEvents(data.events));
       
-      // For now, we'll simulate some status changes in existing deployments
-      const updatedDeployments = deployments.map(dep => {
-        // Randomly update some deployment statuses to simulate changes
-        if (Math.random() < 0.1) { // 10% chance of status change
-          const statuses: ('released' | 'not-released' | 'release-in-progress' | 'teardown-in-progress' | 'failed')[] = 
-            ['released', 'not-released', 'release-in-progress', 'teardown-in-progress', 'failed'];
-          const newStatus = statuses[Math.floor(Math.random() * statuses.length)];
-          return {
-            ...dep,
-            status: newStatus,
-            lastActivity: new Date().toISOString()
-          };
-        }
-        return dep;
-      });
+      // For now, regenerate all deployment data to simulate fresh server data
+      // Clear existing deployments and regenerate
+      dispatch(setDeployments([]));
+      dispatch(setEvents([]));
       
-      dispatch(setDeployments(updatedDeployments));
+      // Force regeneration by calling the generation logic
+      // We'll create a simplified version here that ensures most go to current client
+      const mockDeployments = [];
+      const mockEvents = [];
+      
+      for (let i = 1; i <= 60; i++) {
+        const isForCurrentClient = i <= 48; // First 48 go to current client, last 12 to others
+        const clientId = isForCurrentClient ? selectedClient.id : (Math.random() > 0.5 ? '2' : '3');
+        
+        const deployment = {
+          id: `dep-${i.toString().padStart(3, '0')}`,
+          prn: `prn:enterprise:app-${i}:production:build-${i}`,
+          clientId,
+          portfolioId: clientId === '1' ? 'p1' : clientId === '2' ? 'p4' : 'p6',
+          applicationId: `a${i % 30 + 1}`,
+          description: `Refreshed deployment ${i}`,
+          branch: Math.random() > 0.7 ? 'develop' : 'main',
+          build: `build-${i}`,
+          environment: ['production', 'staging', 'development'][Math.floor(Math.random() * 3)],
+          tag: `v${Math.floor(Math.random() * 3) + 1}.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 10)}`,
+          region: 'us-east-1',
+          status: i <= 20 ? 'released' : 
+                 i <= 45 ? 'not-released' : 
+                 i <= 50 ? 'failed' :
+                 i <= 55 ? 'teardown-in-progress' : 'release-in-progress',
+          deployedAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
+          deployedBy: `user${Math.floor(Math.random() * 10) + 1}@company.com`,
+          lastActivity: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString()
+        };
+        
+        mockDeployments.push(deployment);
+        
+        // Add 3 events per deployment
+        for (let j = 1; j <= 3; j++) {
+          mockEvents.push({
+            id: `${deployment.id}-evt-${j}`,
+            deploymentId: deployment.id,
+            type: ['deploy', 'test', 'release'][j-1],
+            message: `Event ${j} for deployment ${i}`,
+            timestamp: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
+            status: 'success'
+          });
+        }
+      }
+      
+      dispatch(setDeployments(mockDeployments));
+      dispatch(setEvents(mockEvents));
       setLastRefresh(new Date());
       
       toast({
         title: "Deployments refreshed",
-        description: "Latest deployment status has been loaded from server.",
+        description: `Loaded 60 deployments (48 for ${selectedClient.name}) from server.`,
       });
       
     } catch (error) {
