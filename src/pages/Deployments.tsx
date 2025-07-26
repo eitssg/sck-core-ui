@@ -172,7 +172,7 @@ export default function Deployments() {
 
   // Filter deployments by selected client and convert format
   const clientDeployments = selectedClient 
-    ? deployments.filter(deployment => deployment.clientId === selectedClient.id).map(dep => ({
+    ? deployments.filter(deployment => deployment.clientId === selectedClient.id).map((dep, index) => ({
         id: parseInt(dep.id.replace('dep-', '')),
         prn: dep.prn,
         clientId: parseInt(dep.clientId),
