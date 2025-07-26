@@ -19,6 +19,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useAppSelector } from '@/store';
+import { useToast } from '@/hooks/use-toast';
 
 // Mock data
 const mockDeployment = {
@@ -81,19 +83,42 @@ const generateMockEvents = (count: number, startId: number = 0) => {
 export default function DeploymentDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [deployment] = useState(mockDeployment);
+  const { toast } = useToast();
+  
+  // Get deployment and events from Redux store
+  const deployments = useAppSelector(state => state.deployments.deployments);
+  const allEvents = useAppSelector(state => state.deployments.events);
+  
+  // Find the specific deployment by ID
+  const deployment = deployments.find(dep => dep.id === `dep-${id?.padStart(3, '0')}`);
+  
+  // Filter events for this specific deployment (should be exactly 3)
+  const deploymentEvents = allEvents.filter(event => event.deploymentId === deployment?.id);
+  
   const [isLoading, setIsLoading] = useState(false);
-  const [events, setEvents] = useState(generateMockEvents(50));
-  const [isLoadingEvents, setIsLoadingEvents] = useState(false);
-  const [hasMoreEvents, setHasMoreEvents] = useState(true);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+
+  // If deployment not found, redirect back
+  useEffect(() => {
+    if (!deployment && deployments.length > 0) {
+      toast({
+        title: "Deployment not found",
+        description: "The requested deployment could not be found.",
+        variant: "destructive",
+      });
+      navigate("/deployments");
+    }
+  }, [deployment, deployments.length, navigate, toast]);
 
   const handleRelease = () => {
     setIsLoading(true);
     // Simulate API call
     setTimeout(() => {
       setIsLoading(false);
-      // Would update deployment status
+      toast({
+        title: "Release initiated",
+        description: `Release process started for ${deployment?.applicationId}`,
+      });
     }, 2000);
   };
 
@@ -102,6 +127,10 @@ export default function DeploymentDetails() {
     // Simulate API call
     setTimeout(() => {
       setIsLoading(false);
+      toast({
+        title: "Teardown completed",
+        description: `Deployment ${deployment?.id} has been torn down`,
+      });
       navigate("/deployments");
     }, 2000);
   };
@@ -135,48 +164,42 @@ export default function DeploymentDetails() {
     switch (status) {
       case "success":
         return "bg-green-100 text-green-800";
-      case "error":
+      case "failed":
         return "bg-red-100 text-red-800";
-      case "warning":
+      case "pending":
         return "bg-yellow-100 text-yellow-800";
-      case "in-progress":
-        return "bg-blue-100 text-blue-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
   };
 
-  const loadMoreEvents = useCallback(() => {
-    if (isLoadingEvents || !hasMoreEvents) return;
-    
-    setIsLoadingEvents(true);
-    // Simulate API call delay
-    setTimeout(() => {
-      const newEvents = generateMockEvents(25, events.length);
-      setEvents(prev => [...prev, ...newEvents]);
-      setIsLoadingEvents(false);
-      
-      // Simulate no more events after 200 total events
-      if (events.length + 25 >= 200) {
-        setHasMoreEvents(false);
-      }
-    }, 1000);
-  }, [events.length, isLoadingEvents, hasMoreEvents]);
-
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
-    
-    // Load more when scrolled 80% down
-    if (scrollPercentage > 0.8) {
-      loadMoreEvents();
-    }
-  }, [loadMoreEvents]);
-
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
     return date.toLocaleString();
   };
+
+  // If no deployment found, show loading or not found
+  if (!deployment) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/deployments")}
+            className="gap-2"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Deployments
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Deployment Not Found</h1>
+            <p className="text-muted-foreground">The requested deployment could not be found.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -193,7 +216,7 @@ export default function DeploymentDetails() {
             Back to Deployments
           </Button>
           <div>
-            <h1 className="text-3xl font-bold text-foreground">{deployment.application}</h1>
+            <h1 className="text-3xl font-bold text-foreground">{deployment.applicationId}</h1>
             <p className="text-muted-foreground font-mono text-sm">{deployment.prn}</p>
           </div>
         </div>
@@ -281,7 +304,7 @@ export default function DeploymentDetails() {
               <Clock className="h-5 w-5 text-primary" />
               <div>
                 <p className="text-sm text-muted-foreground">Last Activity</p>
-                <p className="font-medium">{deployment.lastActivity}</p>
+                <p className="font-medium">{new Date(deployment.lastActivity).toLocaleDateString()}</p>
               </div>
             </div>
           </div>
@@ -311,12 +334,12 @@ export default function DeploymentDetails() {
                   <h3 className="text-sm font-semibold text-foreground mb-3">Information</h3>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">Portfolio</label>
-                    <p className="text-sm text-foreground">{deployment.portfolio}</p>
+                    <p className="text-sm text-foreground">{deployment.portfolioId}</p>
                   </div>
                   <Separator />
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">Application</label>
-                    <p className="text-sm text-foreground">{deployment.application}</p>
+                    <p className="text-sm text-foreground">{deployment.applicationId}</p>
                   </div>
                   <Separator />
                   <div>
@@ -350,29 +373,20 @@ export default function DeploymentDetails() {
                   </div>
                   <Separator />
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground">Resources</label>
-                    <p className="text-sm text-foreground">{deployment.resources}</p>
+                    <label className="text-xs font-medium text-muted-foreground">Deployed By</label>
+                    <p className="text-sm text-foreground">{deployment.deployedBy}</p>
                   </div>
                   <Separator />
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground">Created</label>
-                    <p className="text-sm text-foreground">{deployment.createdAt}</p>
+                    <label className="text-xs font-medium text-muted-foreground">Deployed At</label>
+                    <p className="text-sm text-foreground">{new Date(deployment.deployedAt).toLocaleString()}</p>
                   </div>
                   <Separator />
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground">Release Date</label>
-                    <p className="text-sm text-foreground">{deployment.releaseDate || "Not released"}</p>
-                  </div>
-                  <Separator />
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">Tags</label>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {deployment.tags.map((tag) => (
-                        <Badge key={tag} variant="outline" className="text-xs px-1.5 py-0.5">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
+                    <label className="text-xs font-medium text-muted-foreground">Status</label>
+                    <Badge className={getStatusColor(deployment.status)} variant="secondary">
+                      {deployment.status}
+                    </Badge>
                   </div>
                 </div>
               </div>
@@ -386,61 +400,37 @@ export default function DeploymentDetails() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Activity className="h-5 w-5" />
-            Events Log
+            Events Log ({deploymentEvents.length} events)
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <ScrollArea 
-            className="h-[28rem] w-full"
-            onScrollCapture={handleScroll}
-          >
+          <ScrollArea className="h-[28rem] w-full">
             <div className="p-6 space-y-3">
-              {events.map((event, index) => (
-                <div key={event.id} className="flex items-start gap-4 p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors">
-                  <div className="flex-shrink-0 w-2 h-2 rounded-full bg-primary mt-2"></div>
-                  <div className="flex-grow space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">
-                          {event.event_type}
-                        </Badge>
-                        <Badge variant="secondary" className="text-xs">
-                          {event.item_type}
-                        </Badge>
-                        <Badge className={`text-xs ${getEventStatusColor(event.status)}`} variant="secondary">
-                          {event.status}
-                        </Badge>
-                      </div>
-                      <span className="text-xs text-muted-foreground font-mono">
-                        {formatTimestamp(event.timestamp)}
-                      </span>
-                    </div>
-                    <p className="text-sm text-foreground">{event.message}</p>
-                  </div>
-                </div>
-              ))}
-              
-              {isLoadingEvents && (
-                <div className="space-y-3">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="flex items-start gap-4 p-3">
-                      <Skeleton className="w-2 h-2 rounded-full mt-2" />
-                      <div className="flex-grow space-y-2">
-                        <div className="flex gap-2">
-                          <Skeleton className="h-5 w-16" />
-                          <Skeleton className="h-5 w-20" />
-                          <Skeleton className="h-5 w-14" />
+              {deploymentEvents.length > 0 ? (
+                deploymentEvents.map((event) => (
+                  <div key={event.id} className="flex items-start gap-4 p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors">
+                    <div className="flex-shrink-0 w-2 h-2 rounded-full bg-primary mt-2"></div>
+                    <div className="flex-grow space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">
+                            {event.type}
+                          </Badge>
+                          <Badge className={`text-xs ${getEventStatusColor(event.status)}`} variant="secondary">
+                            {event.status}
+                          </Badge>
                         </div>
-                        <Skeleton className="h-4 w-3/4" />
+                        <span className="text-xs text-muted-foreground font-mono">
+                          {formatTimestamp(event.timestamp)}
+                        </span>
                       </div>
+                      <p className="text-sm text-foreground">{event.message}</p>
                     </div>
-                  ))}
-                </div>
-              )}
-              
-              {!hasMoreEvents && events.length > 0 && (
-                <div className="text-center py-4">
-                  <p className="text-sm text-muted-foreground">No more events to load</p>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-sm text-muted-foreground">No events found for this deployment</p>
                 </div>
               )}
             </div>
