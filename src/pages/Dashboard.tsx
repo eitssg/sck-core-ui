@@ -166,27 +166,10 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold text-foreground">Dashboard - {selectedClient.name}</h1>
           <p className="text-muted-foreground">Overview of {selectedClient.name}'s infrastructure and deployments</p>
         </div>
-        <div className="flex gap-2">
-          <Select value={selectedClient.id} onValueChange={(value) => {
-            const client = mockClients.find(c => c.id === value);
-            if (client) setSelectedClient(client);
-          }}>
-            <SelectTrigger className="w-64">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {mockClients.map((client) => (
-                <SelectItem key={client.id} value={client.id}>
-                  {client.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="gradient" className="gap-2">
-            <Plus className="h-4 w-4" />
-            Create New
-          </Button>
-        </div>
+        <Button variant="gradient" className="gap-2">
+          <Plus className="h-4 w-4" />
+          Create New
+        </Button>
       </div>
 
       {/* Dashboard Filters - NOW AT TOP */}
