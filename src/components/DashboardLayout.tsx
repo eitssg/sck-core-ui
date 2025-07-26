@@ -47,13 +47,35 @@ export default function DashboardLayout() {
         {
           id: '1',
           name: 'Acme Corp',
-          description: 'Main client',
+          description: 'Main enterprise client with comprehensive applications',
           homepage: 'https://acme.com',
           contactName: 'John Doe',
           contactEmail: 'john@acme.com',
           primaryAwsRegion: 'us-east-1',
           memberCount: 50,
           portfolioCount: 3,
+        },
+        {
+          id: '2',
+          name: 'TechStart Inc',
+          description: 'Innovative startup focused on mobile solutions',
+          homepage: 'https://techstart.com',
+          contactName: 'Jane Smith',
+          contactEmail: 'jane@techstart.com',
+          primaryAwsRegion: 'us-west-2',
+          memberCount: 25,
+          portfolioCount: 2,
+        },
+        {
+          id: '3',
+          name: 'Global Systems',
+          description: 'International corporation with distributed infrastructure',
+          homepage: 'https://globalsystems.com',
+          contactName: 'Bob Johnson',
+          contactEmail: 'bob@globalsystems.com',
+          primaryAwsRegion: 'eu-west-1',
+          memberCount: 150,
+          portfolioCount: 5,
         }
       ]);
     }
@@ -119,7 +141,6 @@ export default function DashboardLayout() {
               {/* Client Selection Dropdown */}
               {clients.length > 0 && (
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Client:</span>
                   <Select value={selectedClient?.id || ""} onValueChange={(value) => selectClient(value || null)}>
                     <SelectTrigger className="w-48">
                       <SelectValue placeholder="Select client..." />
