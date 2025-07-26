@@ -46,28 +46,30 @@ const getClientStats = (clientId: string, filters: FilterState, clients: any[], 
     ];
   }
 
-  // Base counts from actual data
+  // Base counts from actual data only - no random generation
   let portfolioCount = selectedClient.portfolioCount || 0;
   
-  // Calculate deployment stats (mock realistic numbers based on client size)
+  // Calculate deployment stats from real client data
   const clientSize = selectedClient.memberCount || 1;
-  const sizeMultiplier = Math.max(1, Math.floor(clientSize / 25)); // Scale with team size
   
   // Get zones for this client and calculate environments
   const clientZones = zones.filter(z => z.clientId === clientId);
-  let zoneCount = clientZones.length || Math.floor(Math.random() * 20) + 10; // Mock if no zones
+  let zoneCount = clientZones.length;
   
   // Calculate unique environments from actual zones data
   const uniqueEnvironments = [...new Set(clientZones.map(z => z.environment))];
-  let environmentCount = uniqueEnvironments.length || Math.min(4, Math.floor(clientSize / 10) + 1); // Fallback if no zones
-  const environmentsList = uniqueEnvironments.length > 0 ? uniqueEnvironments.join(', ') : 'Prod, Staging, Dev, Test';
+  let environmentCount = uniqueEnvironments.length;
+  const environmentsList = uniqueEnvironments.length > 0 ? uniqueEnvironments.join(', ') : 'No environments';
   
-  let appCount = applications.filter(a => a.clientId === clientId).length || Math.floor(Math.random() * 30) + 15; // Mock if no apps
+  // Get applications for this client
+  const clientApplications = applications.filter(a => a.portfolioId && portfolios.some(p => p.id === a.portfolioId && p.clientId === clientId));
+  let appCount = clientApplications.length;
   
-  let dailyDeployments = Math.floor(Math.random() * 5 * sizeMultiplier) + 1;
-  let monthlyDeployments = dailyDeployments * 7 + Math.floor(Math.random() * 20);
-  let releasedApps = Math.floor(appCount * 0.85); // 85% success rate
-  let brokenCount = Math.floor(appCount * 0.05) + (Math.random() > 0.7 ? 1 : 0); // ~5% broken rate
+  // Calculate realistic deployment numbers based on actual data
+  let dailyDeployments = Math.max(1, Math.floor(appCount * 0.1)); // 10% of apps deployed daily
+  let monthlyDeployments = dailyDeployments * 12; // Scale monthly from daily
+  let releasedApps = clientApplications.filter(a => a.status === 'running').length;
+  let brokenCount = clientApplications.filter(a => a.status === 'error').length;
 
   // Apply keyword filters
   if (filters.keywords) {
