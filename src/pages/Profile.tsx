@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { User, Mail, Phone, Building, Calendar, Settings, Building2, Check } from "lucide-react";
+import { User, Mail, Phone, Building, Calendar, Settings, Building2, Check, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,6 +7,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { useReduxData } from "@/hooks/useReduxData";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,7 +44,11 @@ export default function Profile() {
   const [isEditing, setIsEditing] = useState(false);
   const [currentProfile, setCurrentProfile] = useState(mockPortfolios[0]);
   const [userData, setUserData] = useState(mockUser);
+  const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
+  const [requestedClientName, setRequestedClientName] = useState("");
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const { clients, defaultClient, defaultClientId, setUserDefaultClient } = useReduxData();
+  const { toast } = useToast();
 
   const handleSave = () => {
     // TODO: Implement save logic
@@ -43,6 +57,47 @@ export default function Profile() {
 
   const handleSetDefaultClient = (clientId: string) => {
     setUserDefaultClient(clientId);
+  };
+
+  const generateRequestId = () => {
+    return Math.random().toString(36).substring(2, 14).toUpperCase();
+  };
+
+  const handleRequestClientAccess = async () => {
+    if (!requestedClientName.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a client name.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmittingRequest(true);
+    
+    // Simulate API call
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      const requestId = generateRequestId();
+      
+      toast({
+        title: "Request Submitted",
+        description: `Your request has been delivered. An administrator will process your request shortly. Your request ID is ${requestId}. If you contact support at support@mynet.com, please reference your request id.`,
+        duration: 10000,
+      });
+
+      setIsRequestDialogOpen(false);
+      setRequestedClientName("");
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to submit request. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmittingRequest(false);
+    }
   };
 
   return (
@@ -161,11 +216,63 @@ export default function Profile() {
                 Manage your client access and set your default client
               </p>
             </div>
-            {defaultClient && (
-              <Badge variant="secondary" className="text-sm">
-                Default: {defaultClient.name}
-              </Badge>
-            )}
+            <div className="flex items-center gap-3">
+              {defaultClient && (
+                <Badge variant="secondary" className="text-sm">
+                  Default: {defaultClient.name}
+                </Badge>
+              )}
+              <Dialog open={isRequestDialogOpen} onOpenChange={setIsRequestDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    Request Client Access
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Request Client Access</DialogTitle>
+                    <DialogDescription>
+                      Enter the name of the client you would like to request access to.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="clientName">Client Name</Label>
+                      <Input
+                        id="clientName"
+                        placeholder="Enter client name..."
+                        value={requestedClientName}
+                        onChange={(e) => setRequestedClientName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            handleRequestClientAccess();
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setIsRequestDialogOpen(false);
+                        setRequestedClientName("");
+                      }}
+                      disabled={isSubmittingRequest}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleRequestClientAccess}
+                      disabled={isSubmittingRequest}
+                    >
+                      {isSubmittingRequest ? "Submitting..." : "Submit Request"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
 
           {clients.length === 0 ? (
