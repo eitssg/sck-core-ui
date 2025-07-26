@@ -1,7 +1,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, ArrowLeft, Building2, ExternalLink, Edit, Trash2 } from 'lucide-react';
+import { Plus, ArrowLeft, Building2, ExternalLink, Edit, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -14,6 +14,8 @@ import { useToast } from '@/hooks/use-toast';
 const Zones = () => {
   const { zones, clients, selectedClient, initializeZones, initializeClients, selectClient, removeZone } = useReduxData();
   const { toast } = useToast();
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
 
   useEffect(() => {
     // Initialize with mock data - replace with API calls
@@ -65,12 +67,31 @@ const Zones = () => {
     return selectedClient ? zones.filter(zone => zone.clientId === selectedClient.id) : zones;
   }, [zones, selectedClient]);
 
+  // Pagination calculations
+  const totalItems = filteredZones.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedZones = filteredZones.slice(startIndex, endIndex);
+
+  // Reset to first page when client changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedClient]);
+
   const handleDeleteZone = (zone: any) => {
     removeZone(zone.id);
     toast({
       title: "Zone deleted",
       description: `Zone ${zone.accountName} has been deleted successfully.`,
     });
+    
+    // Adjust current page if we deleted the last item on current page
+    const newTotalItems = filteredZones.length - 1;
+    const newTotalPages = Math.ceil(newTotalItems / itemsPerPage);
+    if (currentPage > newTotalPages && newTotalPages > 0) {
+      setCurrentPage(newTotalPages);
+    }
   };
 
   return (
@@ -132,7 +153,26 @@ const Zones = () => {
             <span>
               {selectedClient ? `${selectedClient.name} Zones` : 'All Zones'}
             </span>
-            <Badge variant="outline">{filteredZones.length} zones</Badge>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>Show:</span>
+                <Select value={itemsPerPage.toString()} onValueChange={(value) => {
+                  setItemsPerPage(Number(value));
+                  setCurrentPage(1);
+                }}>
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Badge variant="outline">{totalItems} zones</Badge>
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -147,7 +187,7 @@ const Zones = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredZones.map((zone) => (
+              {paginatedZones.map((zone) => (
                 <TableRow key={zone.id}>
                   <TableCell className="font-medium">{zone.organizationalUnit}</TableCell>
                   <TableCell className="font-mono text-sm">{zone.awsAccountId}</TableCell>
@@ -212,7 +252,7 @@ const Zones = () => {
                   </TableCell>
                 </TableRow>
               ))}
-              {filteredZones.length === 0 && (
+              {paginatedZones.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                     {selectedClient 
@@ -226,6 +266,63 @@ const Zones = () => {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            Showing {startIndex + 1} to {Math.min(endIndex, totalItems)} of {totalItems} zones
+          </div>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                
+                return (
+                  <Button
+                    key={pageNum}
+                    variant={currentPage === pageNum ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setCurrentPage(pageNum)}
+                    className="w-10"
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
+            </div>
+            
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
