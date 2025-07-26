@@ -33,7 +33,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useReduxData } from '@/hooks/useReduxData';
 import { useToast } from '@/hooks/use-toast';
-import { useAppSelector } from '@/store';
+import { useAppSelector, useAppDispatch } from '@/store';
+import { setDeployments, setEvents } from '@/store/slices/deploymentsSlice';
 
 // Mock data
 const mockClients = [
@@ -155,12 +156,192 @@ export default function Deployments() {
   const [searchParams] = useSearchParams();
   const { selectedClient } = useReduxData();
   const deployments = useAppSelector(state => state.deployments.deployments);
+  const dispatch = useAppDispatch();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterTerms, setFilterTerms] = useState<string[]>([]);
   const [newFilterTerm, setNewFilterTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
+
+  // Generate mock deployment data if not already loaded
+  useEffect(() => {
+    if (deployments.length === 0) {
+      console.log('Generating 60 deployment records...');
+      
+      // Generate deployment data with specific status distribution
+      const generateDeployments = () => {
+        const mockDeployments = [];
+        const mockEvents = [];
+        const environments = ['production', 'staging', 'development'];
+        const applications = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9', 'a10', 'a11', 'a12', 'a13', 'a14', 'a15', 'a16', 'a17', 'a18', 'a19', 'a20', 'a21', 'a22', 'a23', 'a24', 'a25', 'a26', 'a27', 'a28', 'a29', 'a30'];
+        const usedApps = new Set();
+        
+        // Helper to get client ID from application
+        const getClientId = (appId) => {
+          if (['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9', 'a10', 'a11', 'a12', 'a13', 'a14', 'a15', 'a16', 'a17', 'a18'].includes(appId)) return '1'; // Acme Corp
+          if (['a19', 'a20', 'a21', 'a22', 'a23', 'a24', 'a25', 'a26'].includes(appId)) return '2'; // TechStart Inc  
+          return '3'; // Global Systems
+        };
+        
+        // Helper to get portfolio ID from application
+        const getPortfolioId = (appId) => {
+          if (['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'].includes(appId)) return 'p1';
+          if (['a9', 'a10', 'a11', 'a12', 'a13', 'a14'].includes(appId)) return 'p2';
+          if (['a15', 'a16', 'a17', 'a18'].includes(appId)) return 'p3';
+          if (['a19', 'a20', 'a21', 'a22', 'a23'].includes(appId)) return 'p4';
+          if (['a24', 'a25', 'a26'].includes(appId)) return 'p5';
+          return 'p6';
+        };
+        
+        // Helper to create deployment
+        const createDeployment = (index, status, appId = null) => {
+          let applicationId = appId;
+          if (!applicationId) {
+            const availableApps = index <= 25 
+              ? applications.filter(id => !usedApps.has(id))
+              : applications;
+            
+            applicationId = availableApps.length > 0 
+              ? availableApps[Math.floor(Math.random() * availableApps.length)]
+              : applications[Math.floor(Math.random() * applications.length)];
+          }
+          
+          if (index <= 25) usedApps.add(applicationId);
+          
+          const clientId = getClientId(applicationId);
+          const portfolioId = getPortfolioId(applicationId);
+          const environment = environments[Math.floor(Math.random() * environments.length)];
+          const deploymentId = `dep-${index.toString().padStart(3, '0')}`;
+          
+          return {
+            id: deploymentId,
+            prn: `prn:enterprise:${applicationId}:${environment}:build-${index}`,
+            clientId,
+            portfolioId,
+            applicationId,
+            description: `Deployment ${index} for application ${applicationId}`,
+            branch: Math.random() > 0.7 ? 'develop' : 'main',
+            build: `build-${index}`,
+            environment,
+            tag: `v${Math.floor(Math.random() * 3) + 1}.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 10)}`,
+            region: 'us-east-1',
+            status,
+            deployedAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
+            deployedBy: `user${Math.floor(Math.random() * 10) + 1}@${clientId === '1' ? 'acme' : clientId === '2' ? 'techstart' : 'globalsystems'}.com`,
+            lastActivity: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString()
+          };
+        };
+        
+        // Helper to create events for deployment
+        const createEventsForDeployment = (deployment) => {
+          const eventCount = Math.floor(Math.random() * 3) + 3;
+          const deploymentEvents = [];
+          
+          for (let j = 1; j <= eventCount; j++) {
+            const eventTypes = ['deploy', 'test', 'release', 'rollback', 'error'];
+            let eventType = eventTypes[Math.floor(Math.random() * eventTypes.length)];
+            let status = 'success';
+            let message = '';
+            
+            if (j === 1) {
+              eventType = 'deploy';
+              message = `Deployment initiated for ${deployment.applicationId} in ${deployment.environment}`;
+              status = 'success';
+            } else if (deployment.status === 'failed' && j === eventCount) {
+              eventType = 'error';
+              message = `Deployment failed: Build validation error in ${deployment.environment}`;
+              status = 'failed';
+            } else {
+              switch (eventType) {
+                case 'deploy':
+                  message = `Building application ${deployment.applicationId}`;
+                  break;
+                case 'test':
+                  message = `Integration tests completed for ${deployment.build}`;
+                  break;
+                case 'release':
+                  message = `Preparing release ${deployment.tag}`;
+                  status = deployment.status === 'release-in-progress' ? 'pending' : 'success';
+                  break;
+                case 'rollback':
+                  message = `Rollback procedure initiated`;
+                  break;
+                case 'error':
+                  message = `Warning: Minor issue detected during deployment`;
+                  status = 'failed';
+                  break;
+              }
+            }
+            
+            deploymentEvents.push({
+              id: `${deployment.id}-evt-${j}`,
+              deploymentId: deployment.id,
+              type: eventType,
+              message,
+              timestamp: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
+              status
+            });
+          }
+          
+          return deploymentEvents;
+        };
+        
+        let deploymentIndex = 1;
+        
+        // First 25 deployments: 20 "released", 5 "not-released"
+        for (let i = 0; i < 20; i++) {
+          const deployment = createDeployment(deploymentIndex++, 'released');
+          mockDeployments.push(deployment);
+          mockEvents.push(...createEventsForDeployment(deployment));
+        }
+        
+        for (let i = 0; i < 5; i++) {
+          const deployment = createDeployment(deploymentIndex++, 'not-released');
+          mockDeployments.push(deployment);
+          mockEvents.push(...createEventsForDeployment(deployment));
+        }
+        
+        // Next 20 deployments: all "not-released"
+        for (let i = 0; i < 20; i++) {
+          const deployment = createDeployment(deploymentIndex++, 'not-released');
+          mockDeployments.push(deployment);
+          mockEvents.push(...createEventsForDeployment(deployment));
+        }
+        
+        // Next 5 deployments: "failed"
+        for (let i = 0; i < 5; i++) {
+          const deployment = createDeployment(deploymentIndex++, 'failed');
+          mockDeployments.push(deployment);
+          mockEvents.push(...createEventsForDeployment(deployment));
+        }
+        
+        // Next 5 deployments: "teardown-in-progress"
+        for (let i = 0; i < 5; i++) {
+          const deployment = createDeployment(deploymentIndex++, 'teardown-in-progress');
+          mockDeployments.push(deployment);
+          mockEvents.push(...createEventsForDeployment(deployment));
+        }
+        
+        // Final 5 deployments: "release-in-progress"
+        for (let i = 0; i < 5; i++) {
+          const deployment = createDeployment(deploymentIndex++, 'release-in-progress');
+          mockDeployments.push(deployment);
+          mockEvents.push(...createEventsForDeployment(deployment));
+        }
+        
+        return { mockDeployments, mockEvents };
+      };
+      
+      const { mockDeployments, mockEvents } = generateDeployments();
+      console.log('Generated deployments:', mockDeployments.length, 'events:', mockEvents.length);
+      
+      // Dispatch to Redux store
+      dispatch(setDeployments(mockDeployments));
+      dispatch(setEvents(mockEvents));
+      console.log('Dispatched deployments to Redux store');
+    }
+  }, [deployments.length, dispatch]);
 
   // Initialize filters from URL parameters
   useEffect(() => {
