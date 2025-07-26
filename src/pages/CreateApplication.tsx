@@ -85,6 +85,8 @@ export default function CreateApplication() {
         code: formData.code.trim(),
         description: formData.description.trim(),
         portfolioId: formData.portfolioId,
+        zoneId: 'z1', // Default zone - should be selectable in a real form
+        appSelector: `^${formData.slug.trim()}.*$`, // Generate default app selector from slug
         status: 'stopped' as const,
         version: '1.0.0',
         lastDeploy: new Date().toISOString(),

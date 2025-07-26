@@ -18,7 +18,7 @@ import { useReduxData } from '@/hooks/useReduxData';
 export default function Applications() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { selectedClient, applications, portfolios } = useReduxData();
+  const { selectedClient, applications, portfolios, zones } = useReduxData();
   const [searchTerms, setSearchTerms] = useState<string[]>([]);
   const [newTerm, setNewTerm] = useState("");
 
@@ -194,9 +194,9 @@ export default function Applications() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Portfolio</TableHead>
-                <TableHead>Application</TableHead>
-                <TableHead>Description</TableHead>
+                <TableHead>Portfolio / Application</TableHead>
+                <TableHead>App Selector</TableHead>
+                <TableHead>Zone</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Version</TableHead>
                 <TableHead>Last Deploy</TableHead>
@@ -216,22 +216,34 @@ export default function Applications() {
                         <FolderOpen className="h-4 w-4 text-primary" />
                       </div>
                       <div>
-                        <div className="font-medium">
+                        <div className="font-medium text-sm">
                           {portfolios.find(p => p.id === app.portfolioId)?.name || 'Unknown Portfolio'}
                         </div>
+                        <div className="font-medium">{app.name}</div>
+                        <div className="text-xs text-muted-foreground">{app.code}</div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                      {app.appSelector}
+                    </code>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 bg-accent/10 rounded flex items-center justify-center">
+                        <MapPin className="h-3 w-3 text-accent" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-sm">
+                          {zones.find(z => z.id === app.zoneId)?.name || 'Unknown Zone'}
+                        </div>
                         <div className="text-xs text-muted-foreground">
-                          {portfolios.find(p => p.id === app.portfolioId)?.code || 'N/A'}
+                          {zones.find(z => z.id === app.zoneId)?.environment || 'N/A'}
                         </div>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="font-medium">
-                    <div>
-                      <div className="font-medium">{app.name}</div>
-                      <div className="text-xs text-muted-foreground">{app.code}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate">{app.description}</TableCell>
                   <TableCell>
                     <Badge className={getStatusColor(app.status)} variant="secondary">
                       {app.status}

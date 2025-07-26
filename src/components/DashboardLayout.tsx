@@ -127,43 +127,43 @@ export default function DashboardLayout() {
       // Initialize applications aligned with portfolio counts
       const mockApplications = [
         // Acme Corp applications (18 total: 8+6+4)
-        { id: 'a1', name: 'User Management API', slug: 'user-mgmt-api', code: 'UMA', description: 'Core user management service', portfolioId: 'p1', status: 'running' as const, version: '2.1.3', lastDeploy: '2024-01-25' },
-        { id: 'a2', name: 'Order Processing', slug: 'order-processing', code: 'ORP', description: 'Order processing service', portfolioId: 'p1', status: 'running' as const, version: '1.8.2', lastDeploy: '2024-01-24' },
-        { id: 'a3', name: 'Inventory Service', slug: 'inventory-service', code: 'INV', description: 'Inventory management service', portfolioId: 'p1', status: 'deploying' as const, version: '1.5.1', lastDeploy: '2024-01-26' },
-        { id: 'a4', name: 'Payment Gateway', slug: 'payment-gateway', code: 'PAY', description: 'Payment processing gateway', portfolioId: 'p1', status: 'running' as const, version: '3.2.1', lastDeploy: '2024-01-23' },
-        { id: 'a5', name: 'Notification Service', slug: 'notification-service', code: 'NOT', description: 'Notification delivery service', portfolioId: 'p1', status: 'error' as const, version: '1.3.4', lastDeploy: '2024-01-22' },
-        { id: 'a6', name: 'Audit Logger', slug: 'audit-logger', code: 'AUD', description: 'System audit logging', portfolioId: 'p1', status: 'running' as const, version: '2.0.1', lastDeploy: '2024-01-25' },
-        { id: 'a7', name: 'Configuration Manager', slug: 'config-manager', code: 'CFG', description: 'Application configuration management', portfolioId: 'p1', status: 'running' as const, version: '1.7.3', lastDeploy: '2024-01-24' },
-        { id: 'a8', name: 'Health Monitor', slug: 'health-monitor', code: 'HLT', description: 'System health monitoring', portfolioId: 'p1', status: 'running' as const, version: '2.3.2', lastDeploy: '2024-01-26' },
-        
-        { id: 'a9', name: 'Customer Portal Web', slug: 'customer-portal-web', code: 'CPW', description: 'Customer web portal', portfolioId: 'p2', status: 'running' as const, version: '4.1.2', lastDeploy: '2024-01-25' },
-        { id: 'a10', name: 'Customer Mobile App', slug: 'customer-mobile-app', code: 'CMA', description: 'Customer mobile application', portfolioId: 'p2', status: 'running' as const, version: '3.8.1', lastDeploy: '2024-01-24' },
-        { id: 'a11', name: 'Customer API Gateway', slug: 'customer-api-gateway', code: 'CAG', description: 'Customer API gateway', portfolioId: 'p2', status: 'running' as const, version: '2.5.3', lastDeploy: '2024-01-23' },
-        { id: 'a12', name: 'Support Portal', slug: 'support-portal', code: 'SUP', description: 'Customer support portal', portfolioId: 'p2', status: 'stopped' as const, version: '1.9.4', lastDeploy: '2024-01-22' },
-        { id: 'a13', name: 'Feedback System', slug: 'feedback-system', code: 'FBK', description: 'Customer feedback system', portfolioId: 'p2', status: 'running' as const, version: '1.4.2', lastDeploy: '2024-01-26' },
-        { id: 'a14', name: 'Chat Service', slug: 'chat-service', code: 'CHT', description: 'Customer chat service', portfolioId: 'p2', status: 'running' as const, version: '2.1.1', lastDeploy: '2024-01-25' },
-        
-        { id: 'a15', name: 'Data Pipeline', slug: 'data-pipeline', code: 'DPL', description: 'Data processing pipeline', portfolioId: 'p3', status: 'running' as const, version: '3.4.2', lastDeploy: '2024-01-24' },
-        { id: 'a16', name: 'Analytics Dashboard', slug: 'analytics-dashboard', code: 'ADB', description: 'Analytics dashboard frontend', portfolioId: 'p3', status: 'running' as const, version: '2.7.1', lastDeploy: '2024-01-23' },
-        { id: 'a17', name: 'Reporting Engine', slug: 'reporting-engine', code: 'RPT', description: 'Report generation engine', portfolioId: 'p3', status: 'running' as const, version: '1.8.3', lastDeploy: '2024-01-22' },
-        { id: 'a18', name: 'ML Model Service', slug: 'ml-model-service', code: 'MLS', description: 'Machine learning model service', portfolioId: 'p3', status: 'deploying' as const, version: '0.9.2', lastDeploy: '2024-01-26' },
-        
+        { id: 'a1', name: 'User Management API', slug: 'user-mgmt-api', code: 'UMA', description: 'Core user management service', portfolioId: 'p1', zoneId: 'z1', appSelector: '^user-mgmt.*$', status: 'running' as const, version: '2.1.3', lastDeploy: '2024-01-25' },
+        { id: 'a2', name: 'Order Processing', slug: 'order-processing', code: 'ORP', description: 'Order processing service', portfolioId: 'p1', zoneId: 'z1', appSelector: '^order.*$', status: 'running' as const, version: '1.8.2', lastDeploy: '2024-01-24' },
+        { id: 'a3', name: 'Inventory Service', slug: 'inventory-service', code: 'INV', description: 'Inventory management service', portfolioId: 'p1', zoneId: 'z2', appSelector: '^inventory.*$', status: 'deploying' as const, version: '1.5.1', lastDeploy: '2024-01-26' },
+        { id: 'a4', name: 'Payment Gateway', slug: 'payment-gateway', code: 'PAY', description: 'Payment processing gateway', portfolioId: 'p1', zoneId: 'z1', appSelector: '^payment.*$', status: 'running' as const, version: '3.2.1', lastDeploy: '2024-01-23' },
+        { id: 'a5', name: 'Notification Service', slug: 'notification-service', code: 'NOT', description: 'Notification delivery service', portfolioId: 'p1', zoneId: 'z3', appSelector: '^notification.*$', status: 'error' as const, version: '1.3.4', lastDeploy: '2024-01-22' },
+        { id: 'a6', name: 'Audit Logger', slug: 'audit-logger', code: 'AUD', description: 'System audit logging', portfolioId: 'p1', zoneId: 'z1', appSelector: '^audit.*$', status: 'running' as const, version: '2.0.1', lastDeploy: '2024-01-25' },
+        { id: 'a7', name: 'Configuration Manager', slug: 'config-manager', code: 'CFG', description: 'Application configuration management', portfolioId: 'p1', zoneId: 'z2', appSelector: '^config.*$', status: 'running' as const, version: '1.7.3', lastDeploy: '2024-01-24' },
+        { id: 'a8', name: 'Health Monitor', slug: 'health-monitor', code: 'HLT', description: 'System health monitoring', portfolioId: 'p1', zoneId: 'z1', appSelector: '^health.*$', status: 'running' as const, version: '2.3.2', lastDeploy: '2024-01-26' },
+
+        { id: 'a9', name: 'Customer Portal Web', slug: 'customer-portal-web', code: 'CPW', description: 'Customer web portal', portfolioId: 'p2', zoneId: 'z1', appSelector: '^customer-portal.*$', status: 'running' as const, version: '4.1.2', lastDeploy: '2024-01-25' },
+        { id: 'a10', name: 'Customer Mobile App', slug: 'customer-mobile-app', code: 'CMA', description: 'Customer mobile application', portfolioId: 'p2', zoneId: 'z2', appSelector: '^customer-mobile.*$', status: 'running' as const, version: '3.8.1', lastDeploy: '2024-01-24' },
+        { id: 'a11', name: 'Customer API Gateway', slug: 'customer-api-gateway', code: 'CAG', description: 'Customer API gateway', portfolioId: 'p2', zoneId: 'z1', appSelector: '^customer-api.*$', status: 'running' as const, version: '2.5.3', lastDeploy: '2024-01-23' },
+        { id: 'a12', name: 'Support Portal', slug: 'support-portal', code: 'SUP', description: 'Customer support portal', portfolioId: 'p2', zoneId: 'z3', appSelector: '^support.*$', status: 'stopped' as const, version: '1.9.4', lastDeploy: '2024-01-22' },
+        { id: 'a13', name: 'Feedback System', slug: 'feedback-system', code: 'FBK', description: 'Customer feedback system', portfolioId: 'p2', zoneId: 'z2', appSelector: '^feedback.*$', status: 'running' as const, version: '1.4.2', lastDeploy: '2024-01-26' },
+        { id: 'a14', name: 'Chat Service', slug: 'chat-service', code: 'CHT', description: 'Customer chat service', portfolioId: 'p2', zoneId: 'z1', appSelector: '^chat.*$', status: 'running' as const, version: '2.1.1', lastDeploy: '2024-01-25' },
+
+        { id: 'a15', name: 'Data Pipeline', slug: 'data-pipeline', code: 'DPL', description: 'Data processing pipeline', portfolioId: 'p3', zoneId: 'z1', appSelector: '^data-pipeline.*$', status: 'running' as const, version: '3.4.2', lastDeploy: '2024-01-24' },
+        { id: 'a16', name: 'Analytics Dashboard', slug: 'analytics-dashboard', code: 'ADB', description: 'Analytics dashboard frontend', portfolioId: 'p3', zoneId: 'z2', appSelector: '^analytics.*$', status: 'running' as const, version: '2.7.1', lastDeploy: '2024-01-23' },
+        { id: 'a17', name: 'Reporting Engine', slug: 'reporting-engine', code: 'RPT', description: 'Report generation engine', portfolioId: 'p3', zoneId: 'z1', appSelector: '^reporting.*$', status: 'running' as const, version: '1.8.3', lastDeploy: '2024-01-22' },
+        { id: 'a18', name: 'ML Model Service', slug: 'ml-model-service', code: 'MLS', description: 'Machine learning model service', portfolioId: 'p3', zoneId: 'z4', appSelector: '^ml-model.*$', status: 'deploying' as const, version: '0.9.2', lastDeploy: '2024-01-26' },
+
         // TechStart Inc applications (8 total: 5+3)
-        { id: 'a19', name: 'iOS App', slug: 'ios-app', code: 'IOS', description: 'iOS mobile application', portfolioId: 'p4', status: 'running' as const, version: '2.4.1', lastDeploy: '2024-01-25' },
-        { id: 'a20', name: 'Android App', slug: 'android-app', code: 'AND', description: 'Android mobile application', portfolioId: 'p4', status: 'running' as const, version: '2.4.0', lastDeploy: '2024-01-25' },
-        { id: 'a21', name: 'PWA Frontend', slug: 'pwa-frontend', code: 'PWA', description: 'Progressive web app frontend', portfolioId: 'p4', status: 'running' as const, version: '1.3.2', lastDeploy: '2024-01-24' },
-        { id: 'a22', name: 'Push Notification Service', slug: 'push-notification', code: 'PNS', description: 'Push notification service', portfolioId: 'p4', status: 'running' as const, version: '1.2.1', lastDeploy: '2024-01-23' },
-        { id: 'a23', name: 'Mobile Analytics', slug: 'mobile-analytics', code: 'MAN', description: 'Mobile app analytics', portfolioId: 'p4', status: 'running' as const, version: '1.1.4', lastDeploy: '2024-01-22' },
-        
-        { id: 'a24', name: 'Core API', slug: 'core-api', code: 'API', description: 'Core backend API', portfolioId: 'p5', status: 'running' as const, version: '3.1.2', lastDeploy: '2024-01-26' },
-        { id: 'a25', name: 'Authentication Service', slug: 'auth-service', code: 'AUTH', description: 'Authentication service', portfolioId: 'p5', status: 'running' as const, version: '2.3.1', lastDeploy: '2024-01-25' },
-        { id: 'a26', name: 'Data Sync Service', slug: 'data-sync', code: 'DSS', description: 'Data synchronization service', portfolioId: 'p5', status: 'error' as const, version: '1.5.3', lastDeploy: '2024-01-24' },
-        
+        { id: 'a19', name: 'iOS App', slug: 'ios-app', code: 'IOS', description: 'iOS mobile application', portfolioId: 'p4', zoneId: 'z5', appSelector: '^ios.*$', status: 'running' as const, version: '2.4.1', lastDeploy: '2024-01-25' },
+        { id: 'a20', name: 'Android App', slug: 'android-app', code: 'AND', description: 'Android mobile application', portfolioId: 'p4', zoneId: 'z5', appSelector: '^android.*$', status: 'running' as const, version: '2.4.0', lastDeploy: '2024-01-25' },
+        { id: 'a21', name: 'PWA Frontend', slug: 'pwa-frontend', code: 'PWA', description: 'Progressive web app frontend', portfolioId: 'p4', zoneId: 'z6', appSelector: '^pwa.*$', status: 'running' as const, version: '1.3.2', lastDeploy: '2024-01-24' },
+        { id: 'a22', name: 'Push Notification Service', slug: 'push-notification', code: 'PNS', description: 'Push notification service', portfolioId: 'p4', zoneId: 'z5', appSelector: '^push.*$', status: 'running' as const, version: '1.2.1', lastDeploy: '2024-01-23' },
+        { id: 'a23', name: 'Mobile Analytics', slug: 'mobile-analytics', code: 'MAN', description: 'Mobile app analytics', portfolioId: 'p4', zoneId: 'z7', appSelector: '^mobile-analytics.*$', status: 'running' as const, version: '1.1.4', lastDeploy: '2024-01-22' },
+
+        { id: 'a24', name: 'Core API', slug: 'core-api', code: 'API', description: 'Core backend API', portfolioId: 'p5', zoneId: 'z5', appSelector: '^core-api.*$', status: 'running' as const, version: '3.1.2', lastDeploy: '2024-01-26' },
+        { id: 'a25', name: 'Authentication Service', slug: 'auth-service', code: 'AUTH', description: 'Authentication service', portfolioId: 'p5', zoneId: 'z6', appSelector: '^auth.*$', status: 'running' as const, version: '2.3.1', lastDeploy: '2024-01-25' },
+        { id: 'a26', name: 'Data Sync Service', slug: 'data-sync', code: 'DSS', description: 'Data synchronization service', portfolioId: 'p5', zoneId: 'z7', appSelector: '^data-sync.*$', status: 'error' as const, version: '1.5.3', lastDeploy: '2024-01-24' },
+
         // Global Systems applications (sample - keeping list shorter for readability)
-        { id: 'a27', name: 'ERP Core', slug: 'erp-core', code: 'ERC', description: 'Core ERP system', portfolioId: 'p6', status: 'running' as const, version: '5.2.1', lastDeploy: '2024-01-26' },
-        { id: 'a28', name: 'Procurement Module', slug: 'procurement-module', code: 'PRC', description: 'Procurement management', portfolioId: 'p6', status: 'running' as const, version: '2.8.3', lastDeploy: '2024-01-25' },
-        { id: 'a29', name: 'Finance Module', slug: 'finance-module', code: 'FIN', description: 'Financial management module', portfolioId: 'p6', status: 'running' as const, version: '3.1.4', lastDeploy: '2024-01-24' },
-        { id: 'a30', name: 'Inventory Module', slug: 'inventory-module', code: 'INM', description: 'Inventory management module', portfolioId: 'p6', status: 'running' as const, version: '2.5.2', lastDeploy: '2024-01-23' },
+        { id: 'a27', name: 'ERP Core', slug: 'erp-core', code: 'ERC', description: 'Core ERP system', portfolioId: 'p6', zoneId: 'z8', appSelector: '^erp.*$', status: 'running' as const, version: '5.2.1', lastDeploy: '2024-01-26' },
+        { id: 'a28', name: 'Procurement Module', slug: 'procurement-module', code: 'PRC', description: 'Procurement management', portfolioId: 'p6', zoneId: 'z8', appSelector: '^procurement.*$', status: 'running' as const, version: '2.8.3', lastDeploy: '2024-01-25' },
+        { id: 'a29', name: 'Finance Module', slug: 'finance-module', code: 'FIN', description: 'Financial management module', portfolioId: 'p6', zoneId: 'z9', appSelector: '^finance.*$', status: 'running' as const, version: '3.1.4', lastDeploy: '2024-01-24' },
+        { id: 'a30', name: 'Inventory Module', slug: 'inventory-module', code: 'INM', description: 'Inventory management module', portfolioId: 'p6', zoneId: 'z8', appSelector: '^inventory.*$', status: 'running' as const, version: '2.5.2', lastDeploy: '2024-01-23' },
       ];
       
       initializeApplications(mockApplications);

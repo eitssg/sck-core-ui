@@ -7,6 +7,8 @@ export interface Application {
   code: string;
   description: string;
   portfolioId: string;
+  zoneId: string;
+  appSelector: string; // Regular expression to match app slug name
   status: 'running' | 'stopped' | 'error' | 'deploying';
   version: string;
   lastDeploy: string;
