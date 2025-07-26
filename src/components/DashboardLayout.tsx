@@ -188,62 +188,179 @@ export default function DashboardLayout() {
       
       initializeZones(mockZones);
       
-      // Initialize 75 deployments with aligned data
+      // Initialize 60 deployments with specific status distribution
       const generateDeployments = () => {
         const deployments = [];
         const events = [];
-        const statuses = ['released', 'not-released', 'release-in-progress', 'teardown-in-progress', 'failed'];
-        const environments = ['Production', 'Staging', 'Development'];
-        const portfolios = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10'];
+        const environments = ['production', 'staging', 'development'];
         const applications = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9', 'a10', 'a11', 'a12', 'a13', 'a14', 'a15', 'a16', 'a17', 'a18', 'a19', 'a20', 'a21', 'a22', 'a23', 'a24', 'a25', 'a26', 'a27', 'a28', 'a29', 'a30'];
+        const usedApps = new Set(); // Track which apps have deployments
         
-        for (let i = 1; i <= 75; i++) {
-          const deploymentId = `dep-${i.toString().padStart(3, '0')}`;
-          const status = statuses[Math.floor(Math.random() * statuses.length)];
-          const environment = environments[Math.floor(Math.random() * environments.length)];
-          const portfolioId = portfolios[Math.floor(Math.random() * portfolios.length)];
-          const applicationId = applications[Math.floor(Math.random() * applications.length)];
+        // Helper to get client ID from portfolio
+        const getClientId = (portfolioId) => {
+          if (['p4', 'p5'].includes(portfolioId)) return '2'; // TechStart Inc
+          if (['p6', 'p7', 'p8', 'p9', 'p10'].includes(portfolioId)) return '3'; // Global Systems
+          return '1'; // Acme Corp
+        };
+        
+        // Helper to create deployment
+        const createDeployment = (index, status, appId = null) => {
+          let applicationId = appId;
+          if (!applicationId) {
+            // For first 25 deployments, use unique apps. For others, allow reuse
+            const availableApps = index <= 25 
+              ? applications.filter(id => !usedApps.has(id))
+              : applications;
+            
+            if (availableApps.length === 0) {
+              applicationId = applications[Math.floor(Math.random() * applications.length)];
+            } else {
+              applicationId = availableApps[Math.floor(Math.random() * availableApps.length)];
+            }
+          }
           
-          // Get client ID based on portfolio
-          let clientId = '1'; // Default to Acme Corp
-          if (['p4', 'p5'].includes(portfolioId)) clientId = '2'; // TechStart Inc
-          if (['p6', 'p7', 'p8', 'p9', 'p10'].includes(portfolioId)) clientId = '3'; // Global Systems
+          if (index <= 25) usedApps.add(applicationId);
+          
+          // Get portfolio for this application
+          let portfolioId;
+          if (['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'].includes(applicationId)) portfolioId = 'p1';
+          else if (['a9', 'a10', 'a11', 'a12', 'a13', 'a14'].includes(applicationId)) portfolioId = 'p2';
+          else if (['a15', 'a16', 'a17', 'a18'].includes(applicationId)) portfolioId = 'p3';
+          else if (['a19', 'a20', 'a21', 'a22', 'a23'].includes(applicationId)) portfolioId = 'p4';
+          else if (['a24', 'a25', 'a26'].includes(applicationId)) portfolioId = 'p5';
+          else portfolioId = 'p6'; // Default for remaining apps
+          
+          const clientId = getClientId(portfolioId);
+          const environment = environments[Math.floor(Math.random() * environments.length)];
+          const deploymentId = `dep-${index.toString().padStart(3, '0')}`;
           
           const deployment = {
             id: deploymentId,
-            prn: `prn:enterprise:${applicationId}:${environment.toLowerCase()}:build-${i}`,
+            prn: `prn:enterprise:${applicationId}:${environment}:build-${index}`,
             clientId,
             portfolioId,
             applicationId,
-            description: `Deployment ${i} for application ${applicationId}`,
+            description: `Deployment ${index} for application ${applicationId}`,
             branch: Math.random() > 0.7 ? 'develop' : 'main',
-            build: `build-${i}`,
-            environment: environment.toLowerCase(),
+            build: `build-${index}`,
+            environment,
             tag: `v${Math.floor(Math.random() * 3) + 1}.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 10)}`,
             region: 'us-east-1',
             status,
             deployedAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
             deployedBy: `user${Math.floor(Math.random() * 10) + 1}@${clientId === '1' ? 'acme' : clientId === '2' ? 'techstart' : 'globalsystems'}.com`,
-            lastActivity: `${Math.floor(Math.random() * 24)} hours ago`
+            lastActivity: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString()
           };
           
-          deployments.push(deployment);
+          return deployment;
+        };
+        
+        // Helper to create realistic events for a deployment
+        const createEventsForDeployment = (deployment) => {
+          const eventCount = Math.floor(Math.random() * 3) + 3; // 3-5 events per deployment
+          const deploymentEvents = [];
           
-          // Generate 2-4 events per deployment
-          const eventCount = Math.floor(Math.random() * 3) + 2;
           for (let j = 1; j <= eventCount; j++) {
             const eventTypes = ['deploy', 'test', 'release', 'rollback', 'error'];
-            const eventStatuses = ['success', 'failed', 'pending'];
+            let eventType = eventTypes[Math.floor(Math.random() * eventTypes.length)];
+            let status = 'success';
+            let message = '';
             
-            events.push({
-              id: `${deploymentId}-evt-${j}`,
-              deploymentId,
-              type: eventTypes[Math.floor(Math.random() * eventTypes.length)],
-              message: `Event ${j} for deployment ${i}`,
+            // Create realistic event flow based on deployment status
+            if (j === 1) {
+              eventType = 'deploy';
+              message = `Deployment initiated for ${deployment.applicationId} in ${deployment.environment}`;
+              status = 'success';
+            } else if (j === 2) {
+              eventType = 'test';
+              message = `Running automated tests for build ${deployment.build}`;
+              status = deployment.status === 'failed' && Math.random() > 0.5 ? 'failed' : 'success';
+            } else if (j === eventCount && deployment.status === 'released') {
+              eventType = 'release';
+              message = `Successfully released ${deployment.tag} to ${deployment.environment}`;
+              status = 'success';
+            } else if (deployment.status === 'failed' && j === eventCount) {
+              eventType = 'error';
+              message = `Deployment failed: Build validation error in ${deployment.environment}`;
+              status = 'failed';
+            } else {
+              // Random event for middle events
+              switch (eventType) {
+                case 'deploy':
+                  message = `Building application ${deployment.applicationId}`;
+                  break;
+                case 'test':
+                  message = `Integration tests completed for ${deployment.build}`;
+                  break;
+                case 'release':
+                  message = `Preparing release ${deployment.tag}`;
+                  status = deployment.status === 'release-in-progress' ? 'pending' : 'success';
+                  break;
+                case 'rollback':
+                  message = `Rollback procedure initiated`;
+                  status = deployment.status === 'teardown-in-progress' ? 'pending' : 'success';
+                  break;
+                case 'error':
+                  message = `Warning: Minor issue detected during deployment`;
+                  status = 'failed';
+                  break;
+              }
+            }
+            
+            deploymentEvents.push({
+              id: `${deployment.id}-evt-${j}`,
+              deploymentId: deployment.id,
+              type: eventType,
+              message,
               timestamp: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
-              status: eventStatuses[Math.floor(Math.random() * eventStatuses.length)]
+              status
             });
           }
+          
+          return deploymentEvents;
+        };
+        
+        let deploymentIndex = 1;
+        
+        // First 25 deployments: 20 "released", 5 "not-released" (using 25 different apps)
+        for (let i = 0; i < 20; i++) {
+          const deployment = createDeployment(deploymentIndex++, 'released');
+          deployments.push(deployment);
+          events.push(...createEventsForDeployment(deployment));
+        }
+        
+        for (let i = 0; i < 5; i++) {
+          const deployment = createDeployment(deploymentIndex++, 'not-released');
+          deployments.push(deployment);
+          events.push(...createEventsForDeployment(deployment));
+        }
+        
+        // Next 20 deployments: all "not-released" (can reuse apps)
+        for (let i = 0; i < 20; i++) {
+          const deployment = createDeployment(deploymentIndex++, 'not-released');
+          deployments.push(deployment);
+          events.push(...createEventsForDeployment(deployment));
+        }
+        
+        // Next 5 deployments: "failed"
+        for (let i = 0; i < 5; i++) {
+          const deployment = createDeployment(deploymentIndex++, 'failed');
+          deployments.push(deployment);
+          events.push(...createEventsForDeployment(deployment));
+        }
+        
+        // Next 5 deployments: "teardown-in-progress"
+        for (let i = 0; i < 5; i++) {
+          const deployment = createDeployment(deploymentIndex++, 'teardown-in-progress');
+          deployments.push(deployment);
+          events.push(...createEventsForDeployment(deployment));
+        }
+        
+        // Final 5 deployments: "release-in-progress"
+        for (let i = 0; i < 5; i++) {
+          const deployment = createDeployment(deploymentIndex++, 'release-in-progress');
+          deployments.push(deployment);
+          events.push(...createEventsForDeployment(deployment));
         }
         
         return { deployments, events };
