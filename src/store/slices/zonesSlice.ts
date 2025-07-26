@@ -4,6 +4,7 @@ export interface Zone {
   id: string;
   clientId: string;
   organizationalUnit: string;
+  orgId: string;
   awsAccountId: string;
   accountName: string;
   environment: string;

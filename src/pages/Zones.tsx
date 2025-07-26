@@ -40,6 +40,7 @@ const Zones = () => {
         id: '1',
         clientId: '1',
         organizationalUnit: 'Production',
+        orgId: 'o-1a2b3c4d5e',
         awsAccountId: '123456789012',
         accountName: 'prod-account',
         environment: 'production',
@@ -53,6 +54,7 @@ const Zones = () => {
         id: '2',
         clientId: '1',
         organizationalUnit: 'Development',
+        orgId: 'o-6f7g8h9i0j',
         awsAccountId: '123456789013',
         accountName: 'dev-account',
         environment: 'development',
@@ -60,6 +62,20 @@ const Zones = () => {
         vpcAliases: ['dev-vpc'],
         subnetAliases: ['dev-subnet'],
         tags: { Environment: 'dev', Team: 'development' },
+      },
+      {
+        id: '3',
+        clientId: '1',
+        organizationalUnit: 'Staging',
+        orgId: 'o-k1l2m3n4o5',
+        awsAccountId: '123456789014',
+        accountName: 'staging-account',
+        environment: 'staging',
+        namespace: 'staging-ns',
+        kmsKeys: ['staging-key-1'],
+        vpcAliases: ['staging-vpc'],
+        subnetAliases: ['staging-subnet'],
+        tags: { Environment: 'staging', Team: 'qa' },
       }
     ]);
   }, []);
@@ -218,7 +234,12 @@ const Zones = () => {
             <TableBody>
               {paginatedZones.map((zone) => (
                 <TableRow key={zone.id}>
-                  <TableCell className="font-medium">{zone.organizationalUnit}</TableCell>
+                  <TableCell className="font-medium">
+                    <div>
+                      <div className="font-medium">{zone.organizationalUnit}</div>
+                      <div className="text-xs text-muted-foreground">{zone.orgId}</div>
+                    </div>
+                  </TableCell>
                   <TableCell className="font-mono text-sm">{zone.awsAccountId}</TableCell>
                   <TableCell>{zone.accountName}</TableCell>
                   <TableCell>

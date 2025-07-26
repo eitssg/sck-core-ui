@@ -115,6 +115,7 @@ const ZoneDetails = () => {
             <div>
               <label className="text-sm font-medium text-muted-foreground">Organizational Unit</label>
               <p className="text-sm">{zone.organizationalUnit}</p>
+              <p className="text-xs text-muted-foreground">{zone.orgId}</p>
             </div>
             <div>
               <label className="text-sm font-medium text-muted-foreground">AWS Account ID</label>

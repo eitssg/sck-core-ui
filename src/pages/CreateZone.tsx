@@ -18,6 +18,7 @@ import type { Zone } from '@/store/slices/zonesSlice';
 const zoneSchema = z.object({
   clientId: z.string().min(1, 'Client is required'),
   organizationalUnit: z.string().min(1, 'Organizational unit is required'),
+  orgId: z.string().min(1, 'Organization ID is required'),
   awsAccountId: z.string().regex(/^\d{12}$/, 'AWS Account ID must be 12 digits'),
   accountName: z.string().min(1, 'Account name is required'),
   environment: z.string().min(1, 'Environment is required'),
@@ -49,6 +50,7 @@ const CreateZone = () => {
     defaultValues: {
       clientId: '',
       organizationalUnit: '',
+      orgId: '',
       awsAccountId: '',
       accountName: '',
       environment: '',
@@ -61,6 +63,7 @@ const CreateZone = () => {
       form.reset({
         clientId: existingZone.clientId,
         organizationalUnit: existingZone.organizationalUnit,
+        orgId: existingZone.orgId,
         awsAccountId: existingZone.awsAccountId,
         accountName: existingZone.accountName,
         environment: existingZone.environment,
@@ -125,6 +128,7 @@ const CreateZone = () => {
       id: isEditing ? id! : Math.random().toString(36).substr(2, 9),
       clientId: data.clientId,
       organizationalUnit: data.organizationalUnit,
+      orgId: data.orgId,
       awsAccountId: data.awsAccountId,
       accountName: data.accountName,
       environment: data.environment,
@@ -211,6 +215,20 @@ const CreateZone = () => {
                     <FormLabel>Organizational Unit</FormLabel>
                     <FormControl>
                       <Input placeholder="e.g., Production, Development" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="orgId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Organization ID</FormLabel>
+                    <FormControl>
+                      <Input placeholder="o-1a2b3c4d5e" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
