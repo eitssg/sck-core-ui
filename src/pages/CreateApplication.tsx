@@ -80,13 +80,22 @@ export default function CreateApplication() {
       // Create new application object
       const newApplication = {
         id: crypto.randomUUID(),
+        clientPortfolio: `${formData.portfolioId}`,
+        appRegex: `^${formData.slug.trim()}.*$`,
         name: formData.name.trim(),
+        environment: 'Development',
+        account: 'default-account',
+        zone: 'z1', // Should be selectable in form
+        imageAliases: {},
+        repository: `repo/${formData.slug.trim()}`,
+        region: 'us-east-1',
+        tags: { created: new Date().toISOString() },
+        enforceValidation: 'true',
+        metadata: {},
         slug: formData.slug.trim(),
         code: formData.code.trim(),
         description: formData.description.trim(),
         portfolioId: formData.portfolioId,
-        zoneId: 'z1', // Default zone - should be selectable in a real form
-        appSelector: `^${formData.slug.trim()}.*$`, // Generate default app selector from slug
         status: 'stopped' as const,
         version: '1.0.0',
         lastDeploy: new Date().toISOString(),

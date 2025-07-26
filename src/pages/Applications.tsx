@@ -226,7 +226,7 @@ export default function Applications() {
                   </TableCell>
                   <TableCell>
                     <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
-                      {app.appSelector}
+                      {app.appRegex}
                     </code>
                   </TableCell>
                   <TableCell>
@@ -236,10 +236,10 @@ export default function Applications() {
                       </div>
                       <div>
                         <div className="font-medium text-sm">
-                          {zones.find(z => z.id === app.zoneId)?.name || 'Unknown Zone'}
+                          {zones.find(z => z.id === app.zone)?.name || 'Unknown Zone'}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {zones.find(z => z.id === app.zoneId)?.environment || 'N/A'}
+                          {zones.find(z => z.id === app.zone)?.environment || 'N/A'}
                         </div>
                       </div>
                     </div>

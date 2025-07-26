@@ -2,13 +2,24 @@ import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 export interface Application {
   id: string;
-  name: string;
+  clientPortfolio: string; // Key string
+  appRegex: string; // UnicodeAttribute - App Selector regex
+  name: string; // UnicodeAttribute
+  environment: string; // UnicodeAttribute
+  account: string; // UnicodeAttribute
+  zone: string; // UnicodeAttribute - references Zone ID
+  imageAliases: Record<string, string>; // MapAttribute
+  repository: string; // UnicodeAttribute
+  region: string; // UnicodeAttribute
+  tags: Record<string, string>; // MapAttribute
+  enforceValidation: string; // UnicodeAttribute
+  metadata: Record<string, any>; // MapAttribute
+  
+  // Additional fields for UI
   slug: string;
   code: string;
   description: string;
   portfolioId: string;
-  zoneId: string;
-  appSelector: string; // Regular expression to match app slug name
   status: 'running' | 'stopped' | 'error' | 'deploying';
   version: string;
   lastDeploy: string;
