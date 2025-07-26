@@ -175,7 +175,7 @@ export default function Deployments() {
     console.log('Deployments page loaded. Total deployments in store:', deployments.length);
   }, [deployments.length]);
 
-  // Simulate API call to refresh deployment data
+  // Simulate API call to refresh deployment data for the selected client
   const refreshDeployments = async () => {
     if (!selectedClient) return;
     
@@ -185,69 +185,74 @@ export default function Deployments() {
       // Simulate API delay
       await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // In a real app, this would be an API call:
-      // const response = await fetch(`/api/deployments?clientId=${selectedClient.id}`);
-      // const data = await response.json();
-      // dispatch(setDeployments(data.deployments));
-      // dispatch(setEvents(data.events));
+      console.log(`Simulating API call: GET /api/deployments?clientId=${selectedClient.id}`);
       
-      // For now, regenerate all deployment data to simulate fresh server data
-      // Clear existing deployments and regenerate
-      dispatch(setDeployments([]));
-      dispatch(setEvents([]));
+      // Simulate server response with deployments filtered by clientId
+      // For Acme Corp (clientId=1): return 48 deployments
+      // For TechStart Inc (clientId=2): return 6 deployments  
+      // For Global Systems (clientId=3): return 6 deployments
       
-      // Force regeneration by calling the generation logic
-      // We'll create a simplified version here that ensures most go to current client
-      const mockDeployments = [];
-      const mockEvents = [];
+      const getDeploymentCountForClient = (clientId: string) => {
+        switch(clientId) {
+          case '1': return 48; // Acme Corp gets most deployments
+          case '2': return 6;  // TechStart Inc gets fewer
+          case '3': return 6;  // Global Systems gets fewer
+          default: return 0;
+        }
+      };
       
-      for (let i = 1; i <= 60; i++) {
-        const isForCurrentClient = i <= 48; // First 48 go to current client, last 12 to others
-        const clientId = isForCurrentClient ? selectedClient.id : (Math.random() > 0.5 ? '2' : '3');
-        
+      const deploymentCount = getDeploymentCountForClient(selectedClient.id);
+      const clientDeployments = [];
+      const clientEvents = [];
+      
+      // Generate deployments that would come from the server for this specific client
+      for (let i = 1; i <= deploymentCount; i++) {
         const deployment = {
-          id: `dep-${i.toString().padStart(3, '0')}`,
-          prn: `prn:enterprise:app-${i}:production:build-${i}`,
-          clientId,
-          portfolioId: clientId === '1' ? 'p1' : clientId === '2' ? 'p4' : 'p6',
+          id: `dep-${selectedClient.id}-${i.toString().padStart(3, '0')}`,
+          prn: `prn:enterprise:app-${i}:${selectedClient.id}:build-${i}`,
+          clientId: selectedClient.id,
+          portfolioId: selectedClient.id === '1' ? `p${(i % 3) + 1}` : selectedClient.id === '2' ? `p${(i % 2) + 4}` : 'p6',
           applicationId: `a${i % 30 + 1}`,
-          description: `Refreshed deployment ${i}`,
+          description: `Deployment ${i} for ${selectedClient.name}`,
           branch: Math.random() > 0.7 ? 'develop' : 'main',
           build: `build-${i}`,
           environment: ['production', 'staging', 'development'][Math.floor(Math.random() * 3)],
           tag: `v${Math.floor(Math.random() * 3) + 1}.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 10)}`,
           region: 'us-east-1',
-          status: i <= 20 ? 'released' : 
-                 i <= 45 ? 'not-released' : 
-                 i <= 50 ? 'failed' :
-                 i <= 55 ? 'teardown-in-progress' : 'release-in-progress',
+          status: i <= Math.floor(deploymentCount * 0.33) ? 'released' : 
+                 i <= Math.floor(deploymentCount * 0.75) ? 'not-released' : 
+                 i <= Math.floor(deploymentCount * 0.83) ? 'failed' :
+                 i <= Math.floor(deploymentCount * 0.92) ? 'teardown-in-progress' : 'release-in-progress',
           deployedAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
-          deployedBy: `user${Math.floor(Math.random() * 10) + 1}@company.com`,
+          deployedBy: `user${Math.floor(Math.random() * 10) + 1}@${selectedClient.id === '1' ? 'acme' : selectedClient.id === '2' ? 'techstart' : 'globalsystems'}.com`,
           lastActivity: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString()
         };
         
-        mockDeployments.push(deployment);
+        clientDeployments.push(deployment);
         
-        // Add 3 events per deployment
-        for (let j = 1; j <= 3; j++) {
-          mockEvents.push({
+        // Add 3-5 events per deployment
+        for (let j = 1; j <= Math.floor(Math.random() * 3) + 3; j++) {
+          clientEvents.push({
             id: `${deployment.id}-evt-${j}`,
             deploymentId: deployment.id,
-            type: ['deploy', 'test', 'release'][j-1],
-            message: `Event ${j} for deployment ${i}`,
+            type: ['deploy', 'test', 'release', 'rollback', 'error'][Math.floor(Math.random() * 5)],
+            message: `Event ${j} for deployment ${i} (${selectedClient.name})`,
             timestamp: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
-            status: 'success'
+            status: ['success', 'failed', 'pending'][Math.floor(Math.random() * 3)]
           });
         }
       }
       
-      dispatch(setDeployments(mockDeployments));
-      dispatch(setEvents(mockEvents));
+      // Server responds with ONLY the deployments for the requested client
+      dispatch(setDeployments(clientDeployments));
+      dispatch(setEvents(clientEvents));
       setLastRefresh(new Date());
+      
+      console.log(`Server responded with ${deploymentCount} deployments for ${selectedClient.name}`);
       
       toast({
         title: "Deployments refreshed",
-        description: `Loaded 60 deployments (48 for ${selectedClient.name}) from server.`,
+        description: `Server returned ${deploymentCount} deployments for ${selectedClient.name}.`,
       });
       
     } catch (error) {
