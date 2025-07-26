@@ -285,12 +285,12 @@ export default function DashboardLayout() {
           return deployment;
         };
         
-        // Helper to create realistic events for a deployment
+        // Helper to create realistic events for a deployment (exactly 3 events as agreed)
         const createEventsForDeployment = (deployment) => {
-          const eventCount = Math.floor(Math.random() * 3) + 3; // 3-5 events per deployment
           const deploymentEvents = [];
           
-          for (let j = 1; j <= eventCount; j++) {
+          // Create exactly 3 events per deployment
+          for (let j = 1; j <= 3; j++) {
             const eventTypes = ['deploy', 'test', 'release', 'rollback', 'error'];
             let eventType = eventTypes[Math.floor(Math.random() * eventTypes.length)];
             let status = 'success';
@@ -305,11 +305,11 @@ export default function DashboardLayout() {
               eventType = 'test';
               message = `Running automated tests for build ${deployment.build}`;
               status = deployment.status === 'failed' && Math.random() > 0.5 ? 'failed' : 'success';
-            } else if (j === eventCount && deployment.status === 'released') {
+            } else if (j === 3 && deployment.status === 'released') {
               eventType = 'release';
               message = `Successfully released ${deployment.tag} to ${deployment.environment}`;
               status = 'success';
-            } else if (deployment.status === 'failed' && j === eventCount) {
+            } else if (deployment.status === 'failed' && j === 3) {
               eventType = 'error';
               message = `Deployment failed: Build validation error in ${deployment.environment}`;
               status = 'failed';

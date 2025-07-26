@@ -230,8 +230,8 @@ export default function Deployments() {
         
         clientDeployments.push(deployment);
         
-        // Add 3-5 events per deployment
-        for (let j = 1; j <= Math.floor(Math.random() * 3) + 3; j++) {
+        // Add exactly 3 events per deployment (as agreed)
+        for (let j = 1; j <= 3; j++) {
           clientEvents.push({
             id: `${deployment.id}-evt-${j}`,
             deploymentId: deployment.id,
