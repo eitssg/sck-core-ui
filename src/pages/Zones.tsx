@@ -127,53 +127,64 @@ const Zones = () => {
     }
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Selected Client Header - Prominent Display */}
-      {selectedClient && (
-        <Card className="border-l-4 border-l-primary bg-primary/5">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-                  <Building2 className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-muted-foreground">ACTIVE CLIENT</span>
-                    <Badge variant="secondary" className="bg-primary/10 text-primary">Tenant</Badge>
-                  </div>
-                  <h2 className="text-2xl font-bold text-foreground">{selectedClient.name}</h2>
-                  <p className="text-sm text-muted-foreground">{selectedClient.description}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" asChild>
-                  <Link to={`/clients/${selectedClient.id}`}>
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    View Client Details
-                  </Link>
-                </Button>
-              </div>
+  if (!selectedClient) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <Building2 className="mx-auto h-12 w-12 text-muted-foreground" />
+              <h3 className="mt-2 text-sm font-medium text-foreground">No Client Selected</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Please select a client from the header to view zones.
+              </p>
             </div>
           </CardContent>
         </Card>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Selected Client Header - Prominent Display */}
+      <Card className="border-l-4 border-l-primary bg-primary/5">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
+                <Building2 className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">ACTIVE CLIENT</span>
+                  <Badge variant="secondary" className="bg-primary/10 text-primary">Tenant</Badge>
+                </div>
+                <h2 className="text-2xl font-bold text-foreground">{selectedClient.name}</h2>
+                <p className="text-sm text-muted-foreground">{selectedClient.description}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <a href={selectedClient.homepage} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-4 w-4 mr-1" />
+                  Website
+                </a>
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
       
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">
-            {selectedClient ? `Zones Management` : 'All Zones'}
-          </h1>
+          <h1 className="text-3xl font-bold">Zones Management</h1>
           <p className="text-muted-foreground">
-            {selectedClient 
-              ? `Manage AWS zones and environments for ${selectedClient.name}`
-              : 'Manage your AWS zones and environments across all clients'
-            }
+            Manage AWS zones and environments for {selectedClient.name}
           </p>
         </div>
-        <Button asChild disabled={!selectedClient}>
-          <Link to={selectedClient ? `/clients/${selectedClient.id}/zones/create` : "/zones/create"}>
+        <Button asChild>
+          <Link to={`/clients/${selectedClient.id}/zones/create`}>
             <Plus className="mr-2 h-4 w-4" />
             Add Zone
           </Link>
@@ -199,7 +210,7 @@ const Zones = () => {
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <span>
-              {selectedClient ? `${selectedClient.name} Zones` : 'All Zones'}
+              {selectedClient.name} Zones
             </span>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
