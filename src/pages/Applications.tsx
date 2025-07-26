@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, FolderOpen, Edit, Trash2, ExternalLink, Search } from "lucide-react";
+import { Plus, FolderOpen, Edit, Trash2, ExternalLink, X, Building2, Users, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useReduxData } from '@/hooks/useReduxData';
 
 // Mock data
 const mockApplications = [
@@ -56,14 +57,20 @@ const mockApplications = [
 
 export default function Applications() {
   const navigate = useNavigate();
+  const { selectedClient } = useReduxData();
   const [applications] = useState(mockApplications);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerms, setSearchTerms] = useState<string[]>([]);
+  const [newTerm, setNewTerm] = useState("");
 
-  const filteredApplications = applications.filter(app =>
-    app.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    app.portfolio.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    app.description.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredApplications = applications.filter(app => {
+    if (searchTerms.length === 0) return true;
+    
+    return searchTerms.every(term =>
+      app.name.toLowerCase().includes(term.toLowerCase()) ||
+      app.portfolio.toLowerCase().includes(term.toLowerCase()) ||
+      app.description.toLowerCase().includes(term.toLowerCase())
+    );
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -78,13 +85,77 @@ export default function Applications() {
     }
   };
 
+  const addSearchTerm = () => {
+    if (newTerm.trim() && !searchTerms.includes(newTerm.trim())) {
+      setSearchTerms([...searchTerms, newTerm.trim()]);
+      setNewTerm("");
+    }
+  };
+
+  const removeSearchTerm = (termToRemove: string) => {
+    setSearchTerms(searchTerms.filter(term => term !== termToRemove));
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      addSearchTerm();
+    }
+  };
+
+  if (!selectedClient) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <Card>
+          <CardContent className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <Building2 className="mx-auto h-12 w-12 text-muted-foreground" />
+              <h3 className="mt-2 text-sm font-medium text-foreground">No Client Selected</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Please select a client from the header to view applications.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Selected Client Header - Prominent Display */}
+      <Card className="border-l-4 border-l-primary bg-primary/5">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
+                <Building2 className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">ACTIVE CLIENT</span>
+                  <Badge variant="secondary" className="bg-primary/10 text-primary">Tenant</Badge>
+                </div>
+                <h2 className="text-2xl font-bold text-foreground">{selectedClient.name}</h2>
+                <p className="text-sm text-muted-foreground">{selectedClient.description}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <a href={selectedClient.homepage} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-4 w-4 mr-1" />
+                  Website
+                </a>
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Applications</h1>
-          <p className="text-muted-foreground">Manage applications across all portfolios</p>
+          <p className="text-muted-foreground">Manage applications for {selectedClient.name}</p>
         </div>
         <Button variant="gradient" className="gap-2">
           <Plus className="h-4 w-4" />
@@ -92,17 +163,47 @@ export default function Applications() {
         </Button>
       </div>
 
-      {/* Search and Filters */}
+      {/* Search Terms Filter */}
       <Card className="shadow-soft">
         <CardContent className="p-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search applications, portfolios, or descriptions..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Add search term..."
+                value={newTerm}
+                onChange={(e) => setNewTerm(e.target.value)}
+                onKeyPress={handleKeyPress}
+                className="flex-1"
+              />
+              <Button onClick={addSearchTerm} disabled={!newTerm.trim()}>
+                Add
+              </Button>
+            </div>
+            {searchTerms.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {searchTerms.map((term) => (
+                  <Badge key={term} variant="secondary" className="flex items-center gap-1 px-3 py-1">
+                    {term}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-4 w-4 p-0 hover:bg-transparent"
+                      onClick={() => removeSearchTerm(term)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </Badge>
+                ))}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSearchTerms([])}
+                  className="text-muted-foreground"
+                >
+                  Clear all
+                </Button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
