@@ -54,7 +54,7 @@ const Zones = () => {
         tags: { Environment: 'dev', Team: 'development' },
       }
     ]);
-  }, [initializeZones, initializeClients]);
+  }, []); // Empty dependency array to run only once
 
   // Filter zones by client if clientId is provided
   const filteredZones = useMemo(() => {
