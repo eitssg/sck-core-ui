@@ -117,6 +117,14 @@ export default function ApplicationDetails() {
     navigate(`/deployments/${latestDeployment.id}`);
   };
 
+  const handleViewPortfolio = () => {
+    // Find the portfolio that matches this application's portfolio
+    const portfolio = mockPortfolios.find(p => p.name === mockApplication.portfolio);
+    if (portfolio) {
+      navigate(`/portfolios/${portfolio.id}`);
+    }
+  };
+
   const handleDelete = () => {
     // TODO: Implement actual delete logic
     navigate("/applications");
@@ -349,7 +357,12 @@ export default function ApplicationDetails() {
                 <GitBranch className="h-4 w-4 mr-2" />
                 View Deployments
               </Button>
-              <Button variant="outline" size="sm" className="w-full justify-start">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full justify-start"
+                onClick={handleViewPortfolio}
+              >
                 <Building2 className="h-4 w-4 mr-2" />
                 View Portfolio
               </Button>
