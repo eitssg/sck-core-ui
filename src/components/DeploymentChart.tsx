@@ -41,6 +41,10 @@ const chartConfig = {
     label: "Failed",
     color: "hsl(var(--destructive))",
   },
+  zones: {
+    label: "Zones",
+    color: "hsl(var(--primary))",
+  },
 };
 
 export default function DeploymentChart({ clientId }: DeploymentChartProps) {
@@ -106,11 +110,11 @@ export default function DeploymentChart({ clientId }: DeploymentChartProps) {
         </CardHeader>
         <CardContent>
           <ChartContainer config={chartConfig} className="h-64">
-            <BarChart data={zoneEnvironments} layout="horizontal">
-              <XAxis type="number" />
-              <YAxis dataKey="environment" type="category" width={80} />
+            <BarChart data={zoneEnvironments}>
+              <XAxis dataKey="environment" />
+              <YAxis />
               <ChartTooltip content={<ChartTooltipContent />} />
-              <Bar dataKey="zones" fill="hsl(var(--primary))" />
+              <Bar dataKey="zones" fill="var(--color-zones)" />
             </BarChart>
           </ChartContainer>
         </CardContent>
