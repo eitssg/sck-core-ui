@@ -1,6 +1,7 @@
+
 import { useEffect, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Plus, ArrowLeft } from 'lucide-react';
+import { Plus, ArrowLeft, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -54,7 +55,7 @@ const Zones = () => {
         tags: { Environment: 'dev', Team: 'development' },
       }
     ]);
-  }, []); // Empty dependency array to run only once
+  }, []);
 
   // Filter zones by client if clientId is provided
   const filteredZones = useMemo(() => {
@@ -63,33 +64,48 @@ const Zones = () => {
 
   const selectedClient = clientId ? clients.find(c => c.id === clientId) : null;
 
-  const getClientName = (clientId: string) => {
-    const client = clients.find(c => c.id === clientId);
-    return client?.name || 'Unknown Client';
-  };
-
   return (
     <div className="space-y-6">
-      {clientId && (
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to={`/clients/${clientId}`}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Client
-            </Link>
-          </Button>
-        </div>
+      {/* Selected Client Header - Prominent Display */}
+      {selectedClient && (
+        <Card className="border-l-4 border-l-primary bg-primary/5">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
+                  <Building2 className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-muted-foreground">ACTIVE CLIENT</span>
+                    <Badge variant="secondary" className="bg-primary/10 text-primary">Tenant</Badge>
+                  </div>
+                  <h2 className="text-2xl font-bold text-foreground">{selectedClient.name}</h2>
+                  <p className="text-sm text-muted-foreground">{selectedClient.description}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" asChild>
+                  <Link to={`/clients/${clientId}`}>
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back to Client
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
       
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">
-            {selectedClient ? `${selectedClient.name} - Zones` : 'Zones'}
+            {selectedClient ? `Zones Management` : 'All Zones'}
           </h1>
           <p className="text-muted-foreground">
             {selectedClient 
-              ? `Manage zones for ${selectedClient.name}`
-              : 'Manage your AWS zones and environments'
+              ? `Manage AWS zones and environments for ${selectedClient.name}`
+              : 'Manage your AWS zones and environments across all clients'
             }
           </p>
         </div>
@@ -103,15 +119,17 @@ const Zones = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>
-            {selectedClient ? `${selectedClient.name} Zones` : 'All Zones'}
+          <CardTitle className="flex items-center justify-between">
+            <span>
+              {selectedClient ? `${selectedClient.name} Zones` : 'All Zones'}
+            </span>
+            <Badge variant="outline">{filteredZones.length} zones</Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                {!clientId && <TableHead>Client</TableHead>}
                 <TableHead>Organizational Unit</TableHead>
                 <TableHead>AWS Account ID</TableHead>
                 <TableHead>Account Name</TableHead>
@@ -122,11 +140,8 @@ const Zones = () => {
             <TableBody>
               {filteredZones.map((zone) => (
                 <TableRow key={zone.id}>
-                  {!clientId && (
-                    <TableCell className="font-medium">{getClientName(zone.clientId)}</TableCell>
-                  )}
-                  <TableCell>{zone.organizationalUnit}</TableCell>
-                  <TableCell>{zone.awsAccountId}</TableCell>
+                  <TableCell className="font-medium">{zone.organizationalUnit}</TableCell>
+                  <TableCell className="font-mono text-sm">{zone.awsAccountId}</TableCell>
                   <TableCell>{zone.accountName}</TableCell>
                   <TableCell>
                     <Badge variant={zone.environment === 'production' ? 'destructive' : 'secondary'}>
@@ -140,6 +155,16 @@ const Zones = () => {
                   </TableCell>
                 </TableRow>
               ))}
+              {filteredZones.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    {selectedClient 
+                      ? `No zones found for ${selectedClient.name}`
+                      : 'No zones found'
+                    }
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
