@@ -169,10 +169,10 @@ export default function Dashboard() {
       )}
 
       {/* Charts Section */}
-      <DeploymentChart clientId={selectedClient.id} />
+      <DeploymentChart clientId={selectedClient.id} filters={filters} />
 
       {/* Latest Deployments */}
-      <LatestDeployments clientId={selectedClient.id} />
+      <LatestDeployments clientId={selectedClient.id} filters={filters} />
 
       {/* Quick Actions */}
       <Card className="shadow-soft">

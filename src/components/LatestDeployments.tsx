@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Activity, GitBranch, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { FilterState } from "./DashboardFilters";
 
 interface DeploymentEvent {
   id: string;
@@ -24,6 +25,7 @@ interface Deployment {
 
 interface LatestDeploymentsProps {
   clientId: string;
+  filters?: FilterState;
 }
 
 const mockDeployments: Deployment[] = [
@@ -142,7 +144,45 @@ const formatTimestamp = (timestamp: string) => {
   return new Date(timestamp).toLocaleString();
 };
 
-export default function LatestDeployments({ clientId }: LatestDeploymentsProps) {
+export default function LatestDeployments({ clientId, filters }: LatestDeploymentsProps) {
+  // Filter deployments based on applied filters
+  const filteredDeployments = mockDeployments.filter(deployment => {
+    // Keyword filter
+    if (filters?.keywords) {
+      const keyword = filters.keywords.toLowerCase();
+      const matchesKeyword = 
+        deployment.appName.toLowerCase().includes(keyword) ||
+        deployment.environment.toLowerCase().includes(keyword) ||
+        deployment.status.toLowerCase().includes(keyword) ||
+        deployment.deployedBy.toLowerCase().includes(keyword);
+      
+      if (!matchesKeyword) return false;
+    }
+
+    // Environment filter
+    if (filters?.environment && deployment.environment !== filters.environment) {
+      return false;
+    }
+
+    // Deployment status filter
+    if (filters?.deploymentStatus && deployment.status !== filters.deploymentStatus) {
+      return false;
+    }
+
+    // Application filter
+    if (filters?.applications.length > 0 && !filters.applications.includes(deployment.appName)) {
+      return false;
+    }
+
+    // Date range filter
+    if (filters?.dateRange.from || filters?.dateRange.to) {
+      const deploymentDate = new Date(deployment.deployedAt);
+      if (filters.dateRange.from && deploymentDate < filters.dateRange.from) return false;
+      if (filters.dateRange.to && deploymentDate > filters.dateRange.to) return false;
+    }
+
+    return true;
+  });
   return (
     <Card>
       <CardHeader>
@@ -153,7 +193,12 @@ export default function LatestDeployments({ clientId }: LatestDeploymentsProps) 
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
-          {mockDeployments.map((deployment) => (
+          {filteredDeployments.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No deployments found matching your filter criteria
+            </div>
+          ) : (
+            filteredDeployments.map((deployment) => (
             <div key={deployment.id} className="border rounded-lg p-4 space-y-4">
               {/* Deployment Header */}
               <div className="flex items-center justify-between">
@@ -200,7 +245,8 @@ export default function LatestDeployments({ clientId }: LatestDeploymentsProps) 
                 )}
               </div>
             </div>
-          ))}
+            ))
+          )}
         </div>
         
         <div className="mt-6 text-center">

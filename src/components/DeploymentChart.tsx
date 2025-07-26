@@ -2,9 +2,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, ResponsiveContainer } from "recharts";
 import { Calendar, TrendingUp, AlertTriangle } from "lucide-react";
+import { FilterState } from "./DashboardFilters";
 
 interface DeploymentChartProps {
   clientId: string;
+  filters?: FilterState;
 }
 
 const dailyDeployments = [
@@ -47,7 +49,64 @@ const chartConfig = {
   },
 };
 
-export default function DeploymentChart({ clientId }: DeploymentChartProps) {
+export default function DeploymentChart({ clientId, filters }: DeploymentChartProps) {
+  // Filter zone environments based on keywords and environment filter
+  const filteredZoneEnvironments = zoneEnvironments.filter(zone => {
+    // Check keyword filter
+    if (filters?.keywords) {
+      const keyword = filters.keywords.toLowerCase();
+      if (!zone.environment.toLowerCase().includes(keyword)) {
+        return false;
+      }
+    }
+    
+    // Check environment filter
+    if (filters?.environment && filters.environment !== zone.environment) {
+      return false;
+    }
+    
+    return true;
+  });
+
+  // For keyword filtering, if keyword matches an environment, show only that environment with actual data
+  // and set others to 0
+  const processedZoneEnvironments = filters?.keywords ? 
+    zoneEnvironments.map(zone => {
+      const keyword = filters.keywords.toLowerCase();
+      const matchesKeyword = zone.environment.toLowerCase().includes(keyword);
+      return {
+        ...zone,
+        zones: matchesKeyword ? zone.zones : 0
+      };
+    }) : filteredZoneEnvironments;
+
+  // Filter deployment data based on environment and keywords
+  const filterDeploymentData = (data: any[]) => {
+    if (!filters?.keywords && !filters?.environment) return data;
+    
+    // If filtering by environment-related keywords, simulate filtering deployments
+    if (filters?.keywords) {
+      const keyword = filters.keywords.toLowerCase();
+      if (keyword.includes('production') || keyword.includes('prod')) {
+        // Reduce numbers to simulate production-only data
+        return data.map(item => ({
+          ...item,
+          successful: Math.floor(item.successful * 0.6), // Simulate production being ~60% of total
+          failed: Math.floor(item.failed * 0.4)
+        }));
+      }
+    }
+    
+    return data;
+  };
+
+  const filteredDailyDeployments = filterDeploymentData(dailyDeployments);
+  const filteredMonthlyDeployments = filterDeploymentData([
+    { month: "Oct", successful: 105, failed: 15 },
+    { month: "Nov", successful: 128, failed: 17 },
+    { month: "Dec", successful: 162, failed: 18 },
+    { month: "Jan", successful: 145, failed: 20 },
+  ]);
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Daily Deployments */}
@@ -60,7 +119,7 @@ export default function DeploymentChart({ clientId }: DeploymentChartProps) {
         </CardHeader>
         <CardContent>
           <ChartContainer config={chartConfig} className="h-64">
-            <BarChart data={dailyDeployments}>
+            <BarChart data={filteredDailyDeployments}>
               <XAxis dataKey="date" />
               <YAxis />
               <ChartTooltip content={<ChartTooltipContent />} />
@@ -110,7 +169,7 @@ export default function DeploymentChart({ clientId }: DeploymentChartProps) {
         </CardHeader>
         <CardContent>
           <ChartContainer config={chartConfig} className="h-64">
-            <BarChart data={zoneEnvironments}>
+            <BarChart data={processedZoneEnvironments}>
               <XAxis dataKey="environment" />
               <YAxis />
               <ChartTooltip content={<ChartTooltipContent />} />
@@ -130,12 +189,7 @@ export default function DeploymentChart({ clientId }: DeploymentChartProps) {
         </CardHeader>
         <CardContent>
           <ChartContainer config={chartConfig} className="h-64">
-            <LineChart data={[
-              { month: "Oct", successful: 105, failed: 15 },
-              { month: "Nov", successful: 128, failed: 17 },
-              { month: "Dec", successful: 162, failed: 18 },
-              { month: "Jan", successful: 145, failed: 20 },
-            ]}>
+            <LineChart data={filteredMonthlyDeployments}>
               <XAxis dataKey="month" />
               <YAxis />
               <ChartTooltip content={<ChartTooltipContent />} />
