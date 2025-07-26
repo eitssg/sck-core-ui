@@ -1,12 +1,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, ArrowLeft, Building2, ExternalLink, Edit, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, ArrowLeft, Building2, ExternalLink, Edit, Trash2, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useReduxData } from '@/hooks/useReduxData';
 import { useToast } from '@/hooks/use-toast';
@@ -16,6 +17,7 @@ const Zones = () => {
   const { toast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     // Initialize with mock data - replace with API calls
@@ -62,10 +64,22 @@ const Zones = () => {
     ]);
   }, []);
 
-  // Filter zones by selected client
+  // Filter zones by selected client and search term
   const filteredZones = useMemo(() => {
-    return selectedClient ? zones.filter(zone => zone.clientId === selectedClient.id) : zones;
-  }, [zones, selectedClient]);
+    let filtered = selectedClient ? zones.filter(zone => zone.clientId === selectedClient.id) : zones;
+    
+    if (searchTerm) {
+      filtered = filtered.filter(zone =>
+        zone.organizationalUnit.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        zone.awsAccountId.includes(searchTerm) ||
+        zone.accountName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        zone.environment.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (zone.namespace && zone.namespace.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
+    }
+    
+    return filtered;
+  }, [zones, selectedClient, searchTerm]);
 
   // Pagination calculations
   const totalItems = filteredZones.length;
@@ -74,10 +88,10 @@ const Zones = () => {
   const endIndex = startIndex + itemsPerPage;
   const paginatedZones = filteredZones.slice(startIndex, endIndex);
 
-  // Reset to first page when client changes
+  // Reset to first page when client or search changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedClient]);
+  }, [selectedClient, searchTerm]);
 
   const handleDeleteZone = (zone: any) => {
     removeZone(zone.id);
@@ -145,6 +159,21 @@ const Zones = () => {
             Add Zone
           </Link>
         </Button>
+      </div>
+
+      {/* Search and Filters */}
+      <div className="flex gap-4 items-center">
+        <div className="flex-1 max-w-sm">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              placeholder="Search zones..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        </div>
       </div>
 
       <Card>
