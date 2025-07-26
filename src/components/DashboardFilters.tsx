@@ -84,12 +84,17 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
     deploymentStatus: undefined,
   });
 
+  const [keywordInput, setKeywordInput] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
 
   const updateFilters = (newFilters: Partial<FilterState>) => {
     const updatedFilters = { ...filters, ...newFilters };
     setFilters(updatedFilters);
     onFiltersChange(updatedFilters);
+  };
+
+  const applyKeywords = () => {
+    updateFilters({ keywords: keywordInput });
   };
 
   const clearAllFilters = () => {
@@ -103,6 +108,7 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
       deploymentStatus: undefined,
     };
     setFilters(clearedFilters);
+    setKeywordInput("");
     onFiltersChange(clearedFilters);
   };
 
@@ -128,6 +134,7 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
         break;
       case 'keywords':
         updateFilters({ keywords: "" });
+        setKeywordInput("");
         break;
     }
   };
@@ -177,14 +184,29 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Always visible: Keywords search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search across portfolios, apps, zones..."
-            value={filters.keywords}
-            onChange={(e) => updateFilters({ keywords: e.target.value })}
-            className="pl-10"
-          />
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search across portfolios, apps, zones..."
+              value={keywordInput}
+              onChange={(e) => setKeywordInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  applyKeywords();
+                }
+              }}
+              className="pl-10"
+            />
+          </div>
+          <Button 
+            onClick={applyKeywords}
+            disabled={keywordInput === filters.keywords}
+            className="shrink-0"
+          >
+            Apply
+          </Button>
         </div>
 
         {/* Active Filters Display */}
