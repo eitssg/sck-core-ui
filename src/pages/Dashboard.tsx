@@ -48,16 +48,24 @@ const getClientStats = (clientId: string, filters: FilterState, clients: any[], 
 
   // Base counts from actual data
   let portfolioCount = selectedClient.portfolioCount || 0;
-  let zoneCount = zones.filter(z => z.clientId === clientId).length || Math.floor(Math.random() * 20) + 10; // Mock if no zones
-  let appCount = applications.filter(a => a.clientId === clientId).length || Math.floor(Math.random() * 30) + 15; // Mock if no apps
   
   // Calculate deployment stats (mock realistic numbers based on client size)
   const clientSize = selectedClient.memberCount || 1;
   const sizeMultiplier = Math.max(1, Math.floor(clientSize / 25)); // Scale with team size
   
+  // Get zones for this client and calculate environments
+  const clientZones = zones.filter(z => z.clientId === clientId);
+  let zoneCount = clientZones.length || Math.floor(Math.random() * 20) + 10; // Mock if no zones
+  
+  // Calculate unique environments from actual zones data
+  const uniqueEnvironments = [...new Set(clientZones.map(z => z.environment))];
+  let environmentCount = uniqueEnvironments.length || Math.min(4, Math.floor(clientSize / 10) + 1); // Fallback if no zones
+  const environmentsList = uniqueEnvironments.length > 0 ? uniqueEnvironments.join(', ') : 'Prod, Staging, Dev, Test';
+  
+  let appCount = applications.filter(a => a.clientId === clientId).length || Math.floor(Math.random() * 30) + 15; // Mock if no apps
+  
   let dailyDeployments = Math.floor(Math.random() * 5 * sizeMultiplier) + 1;
   let monthlyDeployments = dailyDeployments * 7 + Math.floor(Math.random() * 20);
-  let environmentCount = Math.min(4, Math.floor(clientSize / 10) + 1); // More envs for larger teams
   let releasedApps = Math.floor(appCount * 0.85); // 85% success rate
   let brokenCount = Math.floor(appCount * 0.05) + (Math.random() > 0.7 ? 1 : 0); // ~5% broken rate
 
@@ -65,7 +73,10 @@ const getClientStats = (clientId: string, filters: FilterState, clients: any[], 
   if (filters.keywords) {
     const keywordLower = filters.keywords.toLowerCase();
     if (keywordLower.includes('prod')) {
-      environmentCount = Math.min(environmentCount, 1);
+      // Filter to only production zones if keyword contains 'prod'
+      const prodZones = clientZones.filter(z => z.environment.toLowerCase().includes('prod'));
+      zoneCount = prodZones.length;
+      environmentCount = 1;
       dailyDeployments = Math.floor(dailyDeployments * 0.7); // Less frequent prod deployments
     }
     if (keywordLower.includes('fail') || keywordLower.includes('error')) {
@@ -76,6 +87,10 @@ const getClientStats = (clientId: string, filters: FilterState, clients: any[], 
 
   // Apply environment filter
   if (filters.environment) {
+    const envZones = clientZones.filter(z => z.environment === filters.environment);
+    zoneCount = envZones.length;
+    environmentCount = 1; // Only one environment when filtered
+    
     if (filters.environment === 'Production') {
       dailyDeployments = Math.floor(dailyDeployments * 0.6); // Fewer prod deployments
       brokenCount = Math.max(1, Math.floor(brokenCount * 0.5)); // Fewer broken in prod
@@ -141,7 +156,7 @@ const getClientStats = (clientId: string, filters: FilterState, clients: any[], 
       label: "Zone Environments", 
       value: environmentCount.toString(), 
       icon: Database, 
-      change: "Prod, Staging, Dev, Test", 
+      change: environmentsList, 
       subtext: "Active environments" 
     },
     { 
