@@ -39,6 +39,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useReduxData } from "@/hooks/useReduxData";
+import { useAppDispatch } from '@/store';
+import { setDeployments, setEvents } from '@/store/slices/deploymentsSlice';
 
 // Mock data - will be replaced with real data later
 const mockPortfolios = [
@@ -52,6 +54,7 @@ export default function DashboardLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const dispatch = useAppDispatch();
   const { clients, selectedClient, defaultClient, initializeClients, selectClient, initializePortfolios, initializeApplications, initializeZones } = useReduxData();
 
   // Initialize all store data with realistic aligned mock data
@@ -184,6 +187,71 @@ export default function DashboardLayout() {
       ];
       
       initializeZones(mockZones);
+      
+      // Initialize 75 deployments with aligned data
+      const generateDeployments = () => {
+        const deployments = [];
+        const events = [];
+        const statuses = ['released', 'not-released', 'release-in-progress', 'teardown-in-progress', 'failed'];
+        const environments = ['Production', 'Staging', 'Development'];
+        const portfolios = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10'];
+        const applications = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9', 'a10', 'a11', 'a12', 'a13', 'a14', 'a15', 'a16', 'a17', 'a18', 'a19', 'a20', 'a21', 'a22', 'a23', 'a24', 'a25', 'a26', 'a27', 'a28', 'a29', 'a30'];
+        
+        for (let i = 1; i <= 75; i++) {
+          const deploymentId = `dep-${i.toString().padStart(3, '0')}`;
+          const status = statuses[Math.floor(Math.random() * statuses.length)];
+          const environment = environments[Math.floor(Math.random() * environments.length)];
+          const portfolioId = portfolios[Math.floor(Math.random() * portfolios.length)];
+          const applicationId = applications[Math.floor(Math.random() * applications.length)];
+          
+          // Get client ID based on portfolio
+          let clientId = '1'; // Default to Acme Corp
+          if (['p4', 'p5'].includes(portfolioId)) clientId = '2'; // TechStart Inc
+          if (['p6', 'p7', 'p8', 'p9', 'p10'].includes(portfolioId)) clientId = '3'; // Global Systems
+          
+          const deployment = {
+            id: deploymentId,
+            prn: `prn:enterprise:${applicationId}:${environment.toLowerCase()}:build-${i}`,
+            clientId,
+            portfolioId,
+            applicationId,
+            description: `Deployment ${i} for application ${applicationId}`,
+            branch: Math.random() > 0.7 ? 'develop' : 'main',
+            build: `build-${i}`,
+            environment: environment.toLowerCase(),
+            tag: `v${Math.floor(Math.random() * 3) + 1}.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 10)}`,
+            region: 'us-east-1',
+            status,
+            deployedAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
+            deployedBy: `user${Math.floor(Math.random() * 10) + 1}@${clientId === '1' ? 'acme' : clientId === '2' ? 'techstart' : 'globalsystems'}.com`,
+            lastActivity: `${Math.floor(Math.random() * 24)} hours ago`
+          };
+          
+          deployments.push(deployment);
+          
+          // Generate 2-4 events per deployment
+          const eventCount = Math.floor(Math.random() * 3) + 2;
+          for (let j = 1; j <= eventCount; j++) {
+            const eventTypes = ['deploy', 'test', 'release', 'rollback', 'error'];
+            const eventStatuses = ['success', 'failed', 'pending'];
+            
+            events.push({
+              id: `${deploymentId}-evt-${j}`,
+              deploymentId,
+              type: eventTypes[Math.floor(Math.random() * eventTypes.length)],
+              message: `Event ${j} for deployment ${i}`,
+              timestamp: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
+              status: eventStatuses[Math.floor(Math.random() * eventStatuses.length)]
+            });
+          }
+        }
+        
+        return { deployments, events };
+      };
+
+      const { deployments, events } = generateDeployments();
+      dispatch(setDeployments(deployments));
+      dispatch(setEvents(events));
       
       // Auto-select first client as default if none exists
       if (!defaultClient) {

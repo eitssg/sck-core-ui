@@ -3,6 +3,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLe
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, ResponsiveContainer } from "recharts";
 import { Calendar, TrendingUp, AlertTriangle } from "lucide-react";
 import { FilterState } from "./DashboardFilters";
+import { useAppSelector } from '@/store';
 
 interface DeploymentChartProps {
   clientId: string;
@@ -50,6 +51,9 @@ const chartConfig = {
 };
 
 export default function DeploymentChart({ clientId, filters }: DeploymentChartProps) {
+  const deployments = useAppSelector(state => state.deployments.deployments);
+  const zones = useAppSelector(state => state.zones.zones);
+
   // Smart keyword taxonomy - determines what type of keyword we're dealing with
   const categorizeKeyword = (keyword: string) => {
     const lowerKeyword = keyword.toLowerCase();
@@ -70,26 +74,21 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
     return { type: 'general', value: lowerKeyword };
   };
 
-  // Mock deployment data for filtering (simulates actual deployment records)
-  const mockDeploymentRecords = [
-    // Production deployments
-    { environment: 'Production', status: 'released', app: 'User API', portfolio: 'Enterprise' },
-    { environment: 'Production', status: 'released', app: 'Payment Gateway', portfolio: 'Enterprise' },
-    { environment: 'Production', status: 'failed', app: 'Analytics', portfolio: 'Analytics Platform' },
-    { environment: 'Production', status: 'not-released', app: 'Mobile App', portfolio: 'Mobile Apps' },
-    // Staging deployments  
-    { environment: 'Staging', status: 'released', app: 'User API', portfolio: 'Enterprise' },
-    { environment: 'Staging', status: 'release-in-progress', app: 'Analytics', portfolio: 'Analytics Platform' },
-    { environment: 'Staging', status: 'failed', app: 'Mobile App', portfolio: 'Mobile Apps' },
-    // Development deployments
-    { environment: 'Development', status: 'released', app: 'Test App', portfolio: 'Enterprise' },
-    { environment: 'Development', status: 'teardown-in-progress', app: 'Debug Tool', portfolio: 'Infrastructure' },
-    { environment: 'Development', status: 'failed', app: 'Prototype', portfolio: 'Mobile Apps' },
-  ];
+  // Get client deployments and zones from Redux
+  const clientDeployments = deployments.filter(dep => dep.clientId === clientId);
+  const clientZones = zones.filter(zone => zone.clientId === clientId);
+
+  // Create deployment records from actual Redux data
+  const deploymentRecords = clientDeployments.map(dep => ({
+    environment: dep.environment,
+    status: dep.status,
+    app: dep.applicationId,
+    portfolio: dep.portfolioId
+  }));
 
   // Filter deployment records based on all criteria
   const filterDeploymentRecords = () => {
-    let filtered = [...mockDeploymentRecords];
+    let filtered = [...deploymentRecords];
 
     // Apply keyword filter with smart categorization
     if (filters?.keywords) {
@@ -145,7 +144,7 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
   const filteredRecords = filterDeploymentRecords();
 
   // Calculate deployment status distribution from filtered records
-  const calculateStatusDistribution = (records: typeof mockDeploymentRecords) => {
+  const calculateStatusDistribution = (records: typeof deploymentRecords) => {
     const statusCounts = records.reduce((acc, record) => {
       acc[record.status] = (acc[record.status] || 0) + 1;
       return acc;
@@ -162,8 +161,19 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
 
   const filteredDeploymentStatus = calculateStatusDistribution(filteredRecords);
 
+  // Calculate zone environments from actual Redux data
+  const zoneEnvironmentCounts = clientZones.reduce((acc, zone) => {
+    acc[zone.environment] = (acc[zone.environment] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const actualZoneEnvironments = Object.entries(zoneEnvironmentCounts).map(([environment, zones]) => ({
+    environment,
+    zones
+  }));
+
   // Filter zone environments based on keywords and environment filter
-  const filteredZoneEnvironments = zoneEnvironments.filter(zone => {
+  const filteredZoneEnvironments = actualZoneEnvironments.filter(zone => {
     // Check keyword filter
     if (filters?.keywords) {
       const keywordInfo = categorizeKeyword(filters.keywords);
@@ -183,7 +193,7 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
   // For keyword filtering, if keyword matches an environment, show only that environment with actual data
   // and set others to 0
   const processedZoneEnvironments = filters?.keywords ? 
-    zoneEnvironments.map(zone => {
+    actualZoneEnvironments.map(zone => {
       const keywordInfo = categorizeKeyword(filters.keywords);
       if (keywordInfo.type === 'environment') {
         const matchesKeyword = zone.environment.toLowerCase().includes(keywordInfo.value);
@@ -215,13 +225,54 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
     return data;
   };
 
-  const filteredDailyDeployments = filterDeploymentData(dailyDeployments);
-  const filteredMonthlyDeployments = filterDeploymentData([
-    { month: "Oct", successful: 105, failed: 15 },
-    { month: "Nov", successful: 128, failed: 17 },
-    { month: "Dec", successful: 162, failed: 18 },
-    { month: "Jan", successful: 145, failed: 20 },
-  ]);
+  // Generate actual daily/monthly data from Redux deployments
+  const generateActualDeploymentData = () => {
+    const today = new Date();
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dailyData = [];
+    
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dayName = days[date.getDay()];
+      
+      const dayDeployments = clientDeployments.filter(dep => {
+        const depDate = new Date(dep.deployedAt);
+        return depDate.toDateString() === date.toDateString();
+      });
+      
+      const successful = dayDeployments.filter(dep => dep.status === 'released').length;
+      const failed = dayDeployments.filter(dep => dep.status === 'failed').length;
+      
+      dailyData.push({
+        date: dayName,
+        successful,
+        failed,
+        total: successful + failed
+      });
+    }
+    
+    const monthlyData = [];
+    const months = ['Oct', 'Nov', 'Dec', 'Jan'];
+    
+    for (const month of months) {
+      const monthDeployments = clientDeployments.filter(dep => {
+        const depDate = new Date(dep.deployedAt);
+        return depDate.getMonth() === (months.indexOf(month) + 9) % 12; // Oct=9, Nov=10, Dec=11, Jan=0
+      });
+      
+      const successful = monthDeployments.filter(dep => dep.status === 'released').length;
+      const failed = monthDeployments.filter(dep => dep.status === 'failed').length;
+      
+      monthlyData.push({ month, successful, failed });
+    }
+    
+    return { dailyData, monthlyData };
+  };
+
+  const { dailyData, monthlyData } = generateActualDeploymentData();
+  const filteredDailyDeployments = filterDeploymentData(dailyData);
+  const filteredMonthlyDeployments = filterDeploymentData(monthlyData);
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Daily Deployments */}

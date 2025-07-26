@@ -5,6 +5,7 @@ import clientsSlice from './slices/clientsSlice';
 import portfoliosSlice from './slices/portfoliosSlice';
 import applicationsSlice from './slices/applicationsSlice';
 import zonesSlice from './slices/zonesSlice';
+import deploymentsSlice from './slices/deploymentsSlice';
 
 export const store = configureStore({
   reducer: {
@@ -12,6 +13,7 @@ export const store = configureStore({
     portfolios: portfoliosSlice,
     applications: applicationsSlice,
     zones: zonesSlice,
+    deployments: deploymentsSlice,
   },
 });
 

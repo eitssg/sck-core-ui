@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Activity, GitBranch, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { FilterState } from "./DashboardFilters";
+import { useAppSelector } from '@/store';
 
 interface DeploymentEvent {
   id: string;
@@ -145,8 +146,35 @@ const formatTimestamp = (timestamp: string) => {
 };
 
 export default function LatestDeployments({ clientId, filters }: LatestDeploymentsProps) {
+  const deployments = useAppSelector(state => state.deployments.deployments);
+  const events = useAppSelector(state => state.deployments.events);
+
+  // Get deployments for this client  
+  const clientDeployments = deployments.filter(dep => dep.clientId === clientId);
+
+  // Convert Redux deployment format to match component interface
+  const deploymentData = clientDeployments.map(dep => {
+    const deploymentEvents = events.filter(event => event.deploymentId === dep.id);
+    return {
+      id: dep.id,
+      appName: dep.applicationId, // Will show as application ID for now
+      version: dep.tag,
+      environment: dep.environment,
+      status: dep.status,
+      deployedAt: dep.deployedAt,
+      deployedBy: dep.deployedBy,
+      events: deploymentEvents.map(event => ({
+        id: event.id,
+        type: event.type,
+        message: event.message,
+        timestamp: event.timestamp,
+        status: event.status
+      }))
+    };
+  });
+
   // Filter deployments based on applied filters
-  const filteredDeployments = mockDeployments.filter(deployment => {
+  const filteredDeployments = deploymentData.filter(deployment => {
     // Keyword filter
     if (filters?.keywords) {
       const keyword = filters.keywords.toLowerCase();

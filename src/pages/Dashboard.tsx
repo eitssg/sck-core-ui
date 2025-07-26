@@ -6,6 +6,7 @@ import DeploymentChart from "@/components/DeploymentChart";
 import LatestDeployments from "@/components/LatestDeployments";
 import DashboardFilters, { FilterState } from "@/components/DashboardFilters";
 import { useReduxData } from "@/hooks/useReduxData";
+import { useAppSelector } from '@/store';
 
 // Mock clients - Add more clients to support different selections
 const mockClients = [
@@ -30,7 +31,7 @@ const mockApplications = [
 ];
 
 // Calculate real client statistics from Redux data
-const getClientStats = (clientId: string, filters: FilterState, clients: any[], portfolios: any[], applications: any[], zones: any[]) => {
+const getClientStats = (clientId: string, filters: FilterState, clients: any[], portfolios: any[], applications: any[], zones: any[], deployments: any[], events: any[]) => {
   const selectedClient = clients.find(c => c.id === clientId);
   if (!selectedClient) {
     // Fallback to mock data if client not found
@@ -65,11 +66,24 @@ const getClientStats = (clientId: string, filters: FilterState, clients: any[], 
   const clientApplications = applications.filter(a => a.portfolioId && portfolios.some(p => p.id === a.portfolioId && p.clientId === clientId));
   let appCount = clientApplications.length;
   
-  // Calculate realistic deployment numbers based on actual data
-  let dailyDeployments = Math.max(1, Math.floor(appCount * 0.1)); // 10% of apps deployed daily
-  let monthlyDeployments = dailyDeployments * 12; // Scale monthly from daily
-  let releasedApps = clientApplications.filter(a => a.status === 'running').length;
-  let brokenCount = clientApplications.filter(a => a.status === 'error').length;
+  // Get deployments for this client
+  const clientDeployments = deployments.filter(d => d.clientId === clientId);
+  
+  // Calculate deployments from last day
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  let dailyDeployments = clientDeployments.filter(dep => 
+    new Date(dep.deployedAt) >= oneDayAgo
+  ).length;
+
+  // Calculate deployments from last month  
+  const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  let monthlyDeployments = clientDeployments.filter(dep => 
+    new Date(dep.deployedAt) >= oneMonthAgo
+  ).length;
+
+  // Count released and broken deployments
+  let releasedApps = clientDeployments.filter(dep => dep.status === 'released').length;
+  let brokenCount = clientDeployments.filter(dep => dep.status === 'failed').length;
 
   // Apply keyword filters
   if (filters.keywords) {
@@ -189,6 +203,8 @@ const brokenDeployments = [
 export default function Dashboard() {
   // Get the selected client from Redux store instead of local state
   const { selectedClient, clients, portfolios, applications, zones } = useReduxData();
+  const deployments = useAppSelector(state => state.deployments.deployments);
+  const events = useAppSelector(state => state.deployments.events);
   
   // Use a fallback client if none is selected or if selectedClient is not in our mock data
   const currentClient = selectedClient || mockClients[0];
@@ -201,7 +217,7 @@ export default function Dashboard() {
     dateRange: { from: undefined, to: undefined },
   });
   
-  const clientStats = getClientStats(currentClient.id, filters, clients, portfolios || [], applications || [], zones || []);
+  const clientStats = getClientStats(currentClient.id, filters, clients, portfolios || [], applications || [], zones || [], deployments || [], events || []);
 
   const handleFiltersChange = (newFilters: FilterState) => {
     setFilters(newFilters);

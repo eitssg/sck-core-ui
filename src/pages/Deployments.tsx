@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useReduxData } from '@/hooks/useReduxData';
 import { useToast } from '@/hooks/use-toast';
+import { useAppSelector } from '@/store';
 
 // Mock data
 const mockClients = [
@@ -153,6 +154,7 @@ export default function Deployments() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { selectedClient } = useReduxData();
+  const deployments = useAppSelector(state => state.deployments.deployments);
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterTerms, setFilterTerms] = useState<string[]>([]);
@@ -168,9 +170,23 @@ export default function Deployments() {
     }
   }, [searchParams]);
 
-  // Filter deployments by selected client
+  // Filter deployments by selected client and convert format
   const clientDeployments = selectedClient 
-    ? mockDeployments.filter(deployment => deployment.clientId === parseInt(selectedClient.id))
+    ? deployments.filter(deployment => deployment.clientId === selectedClient.id).map(dep => ({
+        id: parseInt(dep.id.replace('dep-', '')),
+        prn: dep.prn,
+        clientId: parseInt(dep.clientId),
+        portfolio: dep.portfolioId,
+        application: dep.applicationId,
+        description: dep.description,
+        branch: dep.branch,
+        build: dep.build,
+        environment: dep.environment,
+        tag: dep.tag,
+        region: dep.region,
+        status: dep.status,
+        lastActivity: dep.lastActivity
+      }))
     : [];
 
   // Apply search and filter terms
@@ -253,19 +269,17 @@ export default function Deployments() {
         return "Cannot teardown a deployment when release is in progress";
       case "teardown-in-progress":
         return "The deployment is already in process of teardown. Is something wrong? Shall we try again?";
-      case "torndown":
-        return "This deployment has already been torn down";
       default:
         return "Are you sure you want to delete this deployment?";
     }
   };
 
   const canDelete = (status: string) => {
-    return status !== "release-in-progress" && status !== "torndown";
+    return status !== "release-in-progress";
   };
 
   const handleDeleteDeployment = (deployment: any) => {
-    if (deployment.status === "release-in-progress" || deployment.status === "torndown") {
+    if (deployment.status === "release-in-progress") {
       toast({
         title: "Cannot delete deployment",
         description: getDeletePromptMessage(deployment.status),
@@ -297,7 +311,7 @@ export default function Deployments() {
         return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
       case "teardown-in-progress":
         return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300";
-      case "torndown":
+      case "failed":
         return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
       default:
         return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300";
@@ -505,11 +519,11 @@ export default function Deployments() {
                     <div className="flex items-center gap-2">
                       {getStatusIcon(deployment.status)}
                       <Badge className={getStatusColor(deployment.status)} variant="secondary">
-                        {deployment.status === "released" ? "Released" : 
+                         {deployment.status === "released" ? "Released" : 
                          deployment.status === "not-released" ? "Not Released" :
                          deployment.status === "release-in-progress" ? "Release in Progress" :
                          deployment.status === "teardown-in-progress" ? "Teardown in Progress" :
-                         deployment.status === "torndown" ? "Torn Down" :
+                         deployment.status === "failed" ? "Failed" :
                          deployment.status}
                       </Badge>
                     </div>
