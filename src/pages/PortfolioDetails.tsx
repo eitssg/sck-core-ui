@@ -110,10 +110,6 @@ export default function PortfolioDetails() {
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Portfolios
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Portfolio Details</h1>
-            <p className="text-muted-foreground">View and manage portfolio information</p>
-          </div>
         </div>
         
         <div className="flex gap-2">
