@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Play, Square, Eye, Trash2, Search, GitBranch, Building2, Users, MapPin, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
+import { Play, Square, Eye, Trash2, Search, GitBranch, Building2, Users, MapPin, ExternalLink, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -96,8 +96,8 @@ export default function Deployments() {
   const navigate = useNavigate();
   const { selectedClient } = useReduxData();
   const [searchTerm, setSearchTerm] = useState("");
-  const [portfolioFilter, setPortfolioFilter] = useState("all");
-  const [applicationFilter, setApplicationFilter] = useState("all");
+  const [filterTerms, setFilterTerms] = useState<string[]>([]);
+  const [newFilterTerm, setNewFilterTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
 
@@ -106,22 +106,24 @@ export default function Deployments() {
     ? mockDeployments.filter(deployment => deployment.clientId === parseInt(selectedClient.id))
     : [];
 
-  // Get unique portfolios and applications for filters
-  const portfolios = ["all", ...new Set(clientDeployments.map(d => d.portfolio))];
-  const applications = ["all", ...new Set(clientDeployments.map(d => d.application))];
-
-  // Apply filters
+  // Apply search and filter terms
   const filteredDeployments = clientDeployments.filter(deployment => {
-    const matchesSearch = 
+    const matchesSearch = searchTerm === "" || 
       deployment.prn.toLowerCase().includes(searchTerm.toLowerCase()) ||
       deployment.application.toLowerCase().includes(searchTerm.toLowerCase()) ||
       deployment.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      deployment.environment.toLowerCase().includes(searchTerm.toLowerCase());
+      deployment.environment.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      deployment.portfolio.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesPortfolio = portfolioFilter === "all" || deployment.portfolio === portfolioFilter;
-    const matchesApplication = applicationFilter === "all" || deployment.application === applicationFilter;
+    const matchesFilters = filterTerms.length === 0 || filterTerms.every(term =>
+      deployment.portfolio.toLowerCase().includes(term.toLowerCase()) ||
+      deployment.application.toLowerCase().includes(term.toLowerCase()) ||
+      deployment.environment.toLowerCase().includes(term.toLowerCase()) ||
+      deployment.prn.toLowerCase().includes(term.toLowerCase()) ||
+      deployment.description.toLowerCase().includes(term.toLowerCase())
+    );
     
-    return matchesSearch && matchesPortfolio && matchesApplication;
+    return matchesSearch && matchesFilters;
   });
 
   // Pagination calculations
@@ -134,7 +136,45 @@ export default function Deployments() {
   // Reset to first page when client or filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedClient, searchTerm, portfolioFilter, applicationFilter]);
+  }, [selectedClient, searchTerm, filterTerms]);
+
+  // TODO: Replace with actual API call when filter terms change
+  useEffect(() => {
+    if (selectedClient && (searchTerm || filterTerms.length > 0)) {
+      // Future API call structure:
+      // fetchDeployments({
+      //   clientId: selectedClient.id,
+      //   searchTerm,
+      //   filterTerms,
+      //   page: currentPage,
+      //   limit: itemsPerPage
+      // });
+      console.log('API call would be made with:', {
+        clientId: selectedClient.id,
+        searchTerm,
+        filterTerms,
+        page: currentPage,
+        limit: itemsPerPage
+      });
+    }
+  }, [selectedClient, searchTerm, filterTerms, currentPage, itemsPerPage]);
+
+  const addFilterTerm = () => {
+    if (newFilterTerm.trim() && !filterTerms.includes(newFilterTerm.trim())) {
+      setFilterTerms([...filterTerms, newFilterTerm.trim()]);
+      setNewFilterTerm("");
+    }
+  };
+
+  const removeFilterTerm = (termToRemove: string) => {
+    setFilterTerms(filterTerms.filter(term => term !== termToRemove));
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      addFilterTerm();
+    }
+  };
 
   const getStatusIcon = (status: string) => {
     return status === "released" ? 
@@ -218,45 +258,61 @@ export default function Deployments() {
         </div>
       </div>
 
-      {/* Search and Filters */}
+      {/* Search and Filter Terms */}
       <Card className="shadow-soft">
         <CardContent className="p-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="relative md:col-span-2">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search deployments, applications, or PRNs..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search deployments, applications, or PRNs..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Add filter term (portfolio, app, environment)..."
+                  value={newFilterTerm}
+                  onChange={(e) => setNewFilterTerm(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  className="flex-1"
+                />
+                <Button onClick={addFilterTerm} disabled={!newFilterTerm.trim()}>
+                  Add Filter
+                </Button>
+              </div>
             </div>
             
-            <Select value={portfolioFilter} onValueChange={setPortfolioFilter}>
-              <SelectTrigger className="bg-background">
-                <SelectValue placeholder="Filter by Portfolio" />
-              </SelectTrigger>
-              <SelectContent className="bg-background border shadow-lg z-50">
-                {portfolios.map((portfolio) => (
-                  <SelectItem key={portfolio} value={portfolio}>
-                    {portfolio === "all" ? "All Portfolios" : portfolio}
-                  </SelectItem>
+            {filterTerms.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                <span className="text-sm text-muted-foreground self-center">Active Filters:</span>
+                {filterTerms.map((term) => (
+                  <Badge key={term} variant="secondary" className="flex items-center gap-1 px-3 py-1">
+                    {term}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-4 w-4 p-0 hover:bg-transparent"
+                      onClick={() => removeFilterTerm(term)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </Badge>
                 ))}
-              </SelectContent>
-            </Select>
-            
-            <Select value={applicationFilter} onValueChange={setApplicationFilter}>
-              <SelectTrigger className="bg-background">
-                <SelectValue placeholder="Filter by Application" />
-              </SelectTrigger>
-              <SelectContent className="bg-background border shadow-lg z-50">
-                {applications.map((application) => (
-                  <SelectItem key={application} value={application}>
-                    {application === "all" ? "All Applications" : application}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setFilterTerms([])}
+                  className="text-muted-foreground"
+                >
+                  Clear all filters
+                </Button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
