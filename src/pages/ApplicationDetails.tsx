@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Edit, Trash2, Save, X, ArrowLeft, FolderOpen, Building2, Code, Activity } from "lucide-react";
+import { Edit, Trash2, Save, X, ArrowLeft, FolderOpen, Building2, Code, Activity, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -285,6 +285,15 @@ export default function ApplicationDetails() {
               <Button variant="outline" size="sm" className="w-full justify-start">
                 <Code className="h-4 w-4 mr-2" />
                 Deploy
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full justify-start"
+                onClick={() => navigate(`/deployments?application=${encodeURIComponent(mockApplication.name)}`)}
+              >
+                <GitBranch className="h-4 w-4 mr-2" />
+                View Deployments
               </Button>
               <Button variant="outline" size="sm" className="w-full justify-start">
                 <Building2 className="h-4 w-4 mr-2" />

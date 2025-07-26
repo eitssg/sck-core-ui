@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Play, Square, Eye, Trash2, Search, GitBranch, Building2, Users, MapPin, ExternalLink, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -151,6 +151,7 @@ const mockDeployments = [
 
 export default function Deployments() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { selectedClient } = useReduxData();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
@@ -158,6 +159,14 @@ export default function Deployments() {
   const [newFilterTerm, setNewFilterTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
+
+  // Initialize filters from URL parameters
+  useEffect(() => {
+    const applicationFilter = searchParams.get('application');
+    if (applicationFilter) {
+      setFilterTerms([applicationFilter]);
+    }
+  }, [searchParams]);
 
   // Filter deployments by selected client
   const clientDeployments = selectedClient 
