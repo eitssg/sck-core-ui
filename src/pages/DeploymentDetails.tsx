@@ -391,7 +391,7 @@ export default function DeploymentDetails() {
         </CardHeader>
         <CardContent className="p-0">
           <ScrollArea 
-            className="h-96 w-full"
+            className="h-[28rem] w-full"
             onScrollCapture={handleScroll}
           >
             <div className="p-6 space-y-3">
