@@ -21,9 +21,43 @@ interface ClientsState {
 }
 
 const initialState: ClientsState = {
-  clients: [],
+  clients: [
+    {
+      id: 'client-1',
+      name: 'Acme Corporation',
+      description: 'Leading technology company specializing in cloud solutions and digital transformation.',
+      homepage: 'https://acme.com',
+      contactName: 'John Smith',
+      contactEmail: 'john.smith@acme.com',
+      primaryAwsRegion: 'us-east-1',
+      memberCount: 45,
+      portfolioCount: 8,
+    },
+    {
+      id: 'client-2',
+      name: 'Global Tech Solutions',
+      description: 'Enterprise software development and consulting services.',
+      homepage: 'https://globaltech.com',
+      contactName: 'Sarah Johnson',
+      contactEmail: 'sarah.johnson@globaltech.com',
+      primaryAwsRegion: 'us-west-2',
+      memberCount: 32,
+      portfolioCount: 5,
+    },
+    {
+      id: 'client-3',
+      name: 'Innovation Labs',
+      description: 'R&D focused company building next-generation platforms.',
+      homepage: 'https://innovationlabs.com',
+      contactName: 'Mike Chen',
+      contactEmail: 'mike.chen@innovationlabs.com',
+      primaryAwsRegion: 'eu-west-1',
+      memberCount: 28,
+      portfolioCount: 12,
+    },
+  ],
   selectedClientId: null,
-  defaultClientId: null,
+  defaultClientId: 'client-1',
   loading: false,
   error: null,
 };
