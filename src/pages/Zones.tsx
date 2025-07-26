@@ -1,5 +1,5 @@
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, ArrowLeft, Building2, ExternalLink, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -7,10 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useReduxData } from '@/hooks/useReduxData';
+import { useToast } from '@/hooks/use-toast';
 
 const Zones = () => {
-  const { zones, clients, selectedClient, initializeZones, initializeClients, selectClient } = useReduxData();
+  const { zones, clients, selectedClient, initializeZones, initializeClients, selectClient, removeZone } = useReduxData();
+  const { toast } = useToast();
 
   useEffect(() => {
     // Initialize with mock data - replace with API calls
@@ -61,6 +64,14 @@ const Zones = () => {
   const filteredZones = useMemo(() => {
     return selectedClient ? zones.filter(zone => zone.clientId === selectedClient.id) : zones;
   }, [zones, selectedClient]);
+
+  const handleDeleteZone = (zone: any) => {
+    removeZone(zone.id);
+    toast({
+      title: "Zone deleted",
+      description: `Zone ${zone.accountName} has been deleted successfully.`,
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -168,18 +179,35 @@ const Zones = () => {
                           <Edit className="h-4 w-4" />
                         </Link>
                       </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        title="Delete Zone"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => {
-                          // TODO: Add delete confirmation dialog
-                          console.log(`Delete zone ${zone.id}`);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            title="Delete Zone"
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Zone</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to delete the zone "{zone.accountName}"? This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction 
+                              onClick={() => handleDeleteZone(zone)}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </TableCell>
                 </TableRow>
