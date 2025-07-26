@@ -62,9 +62,9 @@ export default function Profile() {
         </Button>
       </div>
 
-      <div className="space-y-6">
-        {/* Client Access Management */}
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Client Access Management - Left Side */}
+        <div className="xl:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold text-foreground">Client Access</h2>
@@ -90,7 +90,7 @@ export default function Profile() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {clients.map((client) => (
                 <Card
                   key={client.id}
@@ -158,8 +158,9 @@ export default function Profile() {
           )}
         </div>
 
-        {/* User Information */}
-        <Card className="shadow-medium max-w-2xl">
+        {/* User Information - Right Side */}
+        <div className="xl:col-span-1">
+          <Card className="shadow-medium sticky top-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <User className="h-5 w-5 text-primary" />
@@ -244,8 +245,9 @@ export default function Profile() {
                 </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
