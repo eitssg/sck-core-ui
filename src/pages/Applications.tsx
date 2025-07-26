@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, FolderOpen, Edit, Trash2, ExternalLink, X, Building2, Users, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,9 +65,18 @@ const mockApplications = [
 
 export default function Applications() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { selectedClient, applications, portfolios, initializeApplications, initializePortfolios } = useReduxData();
   const [searchTerms, setSearchTerms] = useState<string[]>([]);
   const [newTerm, setNewTerm] = useState("");
+
+  // Initialize search terms from URL parameters
+  useEffect(() => {
+    const portfolioFilter = searchParams.get('portfolio');
+    if (portfolioFilter) {
+      setSearchTerms([portfolioFilter]);
+    }
+  }, [searchParams]);
 
   // Initialize data
   useEffect(() => {

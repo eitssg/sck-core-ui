@@ -308,7 +308,7 @@ export default function PortfolioDetails() {
                 variant="outline" 
                 size="sm" 
                 className="w-full mt-4"
-                onClick={() => navigate("/applications")}
+                onClick={() => navigate(`/applications?portfolio=${encodeURIComponent(mockPortfolio.name)}`)}
               >
                 View All Applications
               </Button>
