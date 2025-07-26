@@ -107,6 +107,45 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
     { month: "Dec", successful: 162, failed: 18 },
     { month: "Jan", successful: 145, failed: 20 },
   ]);
+
+  // Filter deployment status data based on filters
+  const filteredDeploymentStatus = deploymentStatus.filter(status => {
+    // Check keyword filter
+    if (filters?.keywords) {
+      const keyword = filters.keywords.toLowerCase();
+      if (!status.name.toLowerCase().includes(keyword)) {
+        return false;
+      }
+    }
+    
+    // Check deployment status filter
+    if (filters?.deploymentStatus) {
+      const statusMap: { [key: string]: string } = {
+        'released': 'Released',
+        'not-released': 'Not Released', 
+        'failed': 'Failed',
+        'teardown-in-progress': 'Teardown in Progress',
+        'release-in-progress': 'Release in Progress'
+      };
+      
+      if (statusMap[filters.deploymentStatus] !== status.name) {
+        return false;
+      }
+    }
+    
+    return true;
+  });
+
+  // For keyword filtering, adjust values to simulate filtered data
+  const processedDeploymentStatus = filters?.keywords ? 
+    deploymentStatus.map(status => {
+      const keyword = filters.keywords.toLowerCase();
+      const matchesKeyword = status.name.toLowerCase().includes(keyword);
+      return {
+        ...status,
+        value: matchesKeyword ? status.value : 0
+      };
+    }) : filteredDeploymentStatus;
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Daily Deployments */}
@@ -142,14 +181,14 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
           <ChartContainer config={chartConfig} className="h-64">
             <PieChart>
               <Pie
-                data={deploymentStatus}
+                data={processedDeploymentStatus}
                 cx="50%"
                 cy="50%"
                 outerRadius={80}
                 dataKey="value"
-                label={({ name, value }) => `${name}: ${value}`}
+                label={({ name, value }) => value > 0 ? `${name}: ${value}` : null}
               >
-                {deploymentStatus.map((entry, index) => (
+                {processedDeploymentStatus.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
