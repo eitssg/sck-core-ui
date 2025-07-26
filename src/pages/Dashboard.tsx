@@ -1,14 +1,7 @@
 import { useState } from "react";
-import { Plus, Briefcase, FolderOpen, Users, TrendingUp, Activity, Search, Filter, Building2 } from "lucide-react";
+import { Plus, Briefcase, FolderOpen, Server, TrendingUp, Activity, Database, AlertTriangle, Building2, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -16,6 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import DeploymentChart from "@/components/DeploymentChart";
+import LatestDeployments from "@/components/LatestDeployments";
 
 // Mock data - will be replaced with real data later
 const mockClients = [
@@ -37,61 +32,90 @@ const mockApplications = [
   { id: 5, name: "Data Warehouse", description: "Central data storage system", portfolio: "Analytics Platform", status: "maintenance" },
 ];
 
-const mockStats = [
-  { label: "Clients", value: "2", icon: Building2, change: "Organizations you belong to" },
-  { label: "Total Portfolios", value: "3", icon: Briefcase, change: "+2" },
-  { label: "Active Applications", value: "24", icon: FolderOpen, change: "+5" },
-  { label: "Deployments", value: "156", icon: Activity, change: "+12" },
+// Client-specific stats that update based on selected client
+const getClientStats = (clientId: string) => [
+  { label: "Portfolios", value: "12", icon: Briefcase, change: "+2 this month", subtext: "Active portfolios" },
+  { label: "Total Zones", value: "179", icon: Server, change: "+8 this month", subtext: "Across all environments" },
+  { label: "Applications", value: "67", icon: FolderOpen, change: "+5 this month", subtext: "Deployed applications" },
+  { label: "Daily Deployments", value: "18", icon: Activity, change: "+12 today", subtext: "Last 24 hours" },
+  { label: "Monthly Deployments", value: "165", icon: GitBranch, change: "+23 this month", subtext: "New deployments" },
+  { label: "Zone Environments", value: "4", icon: Database, change: "Prod, Staging, Dev, Test", subtext: "Active environments" },
+  { label: "Released Apps", value: "145", icon: TrendingUp, change: "87% success rate", subtext: "Successfully deployed" },
+  { label: "Broken Deployments", value: "8", icon: AlertTriangle, change: "3 teardown, 5 release", subtext: "Needs attention", isAlert: true },
+];
+
+// Mock deployment issues with dates
+const brokenDeployments = [
+  { id: "1", app: "Analytics API", type: "teardown-in-progress", date: "2024-01-26", environment: "staging" },
+  { id: "2", app: "User Portal", type: "release-in-progress", date: "2024-01-25", environment: "production" },
+  { id: "3", app: "Data Pipeline", type: "teardown-in-progress", date: "2024-01-25", environment: "development" },
 ];
 
 export default function Dashboard() {
   const [selectedClient, setSelectedClient] = useState(mockClients[0]);
-  const [selectedPortfolio, setSelectedPortfolio] = useState(mockPortfolios[0]);
-  const [selectedApp, setSelectedApp] = useState(mockApplications[0]);
-  const [appFilter, setAppFilter] = useState("all");
-  const [searchTerm, setSearchTerm] = useState("");
-
-  // Filter applications based on selected portfolio and search
-  const filteredApplications = mockApplications.filter(app => {
-    const matchesPortfolio = app.portfolio === selectedPortfolio.name;
-    const matchesFilter = appFilter === "all" || app.status === appFilter;
-    const matchesSearch = app.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                         app.description.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesPortfolio && matchesFilter && matchesSearch;
-  });
+  
+  const clientStats = getClientStats(selectedClient.id);
 
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground">Welcome back! Here's what's happening.</p>
+          <h1 className="text-3xl font-bold text-foreground">Dashboard - {selectedClient.name}</h1>
+          <p className="text-muted-foreground">Overview of {selectedClient.name}'s infrastructure and deployments</p>
         </div>
-        <Button variant="gradient" className="gap-2">
-          <Plus className="h-4 w-4" />
-          Create New
-        </Button>
+        <div className="flex gap-2">
+          <Select value={selectedClient.id} onValueChange={(value) => {
+            const client = mockClients.find(c => c.id === value);
+            if (client) setSelectedClient(client);
+          }}>
+            <SelectTrigger className="w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {mockClients.map((client) => (
+                <SelectItem key={client.id} value={client.id}>
+                  {client.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="gradient" className="gap-2">
+            <Plus className="h-4 w-4" />
+            Create New
+          </Button>
+        </div>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {mockStats.map((stat) => {
+        {clientStats.map((stat) => {
           const Icon = stat.icon;
           return (
-            <Card key={stat.label} className="shadow-soft hover:shadow-medium transition-shadow">
+            <Card 
+              key={stat.label} 
+              className={`shadow-soft hover:shadow-medium transition-shadow ${
+                stat.isAlert ? 'border-destructive/20 bg-destructive/5' : ''
+              }`}
+            >
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">{stat.label}</p>
-                    <p className="text-2xl font-bold text-foreground">{stat.value}</p>
-                    <p className="text-xs text-green-600">
-                      <TrendingUp className="inline h-3 w-3 mr-1" />
-                      {stat.change} this month
+                    <p className={`text-2xl font-bold ${stat.isAlert ? 'text-destructive' : 'text-foreground'}`}>
+                      {stat.value}
                     </p>
+                    <p className={`text-xs ${stat.isAlert ? 'text-destructive' : 'text-green-600'}`}>
+                      {!stat.isAlert && <TrendingUp className="inline h-3 w-3 mr-1" />}
+                      {stat.isAlert && <AlertTriangle className="inline h-3 w-3 mr-1" />}
+                      {stat.change}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{stat.subtext}</p>
                   </div>
-                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-                    <Icon className="h-6 w-6 text-primary" />
+                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                    stat.isAlert ? 'bg-destructive/10' : 'bg-primary/10'
+                  }`}>
+                    <Icon className={`h-6 w-6 ${stat.isAlert ? 'text-destructive' : 'text-primary'}`} />
                   </div>
                 </div>
               </CardContent>
@@ -100,218 +124,38 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Client Selection */}
-      <Card className="shadow-soft mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-primary" />
-            Current Client
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4">
-            <Select value={selectedClient.id} onValueChange={(value) => {
-              const client = mockClients.find(c => c.id === value);
-              if (client) setSelectedClient(client);
-            }}>
-              <SelectTrigger className="w-64">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {mockClients.map((client) => (
-                  <SelectItem key={client.id} value={client.id}>
-                    {client.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex-1">
-              <p className="text-sm text-muted-foreground">{selectedClient.description}</p>
-              <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
-                <span>{selectedClient.memberCount} members</span>
-                <span>{selectedClient.portfolioCount} portfolios</span>
-              </div>
-            </div>
-            <Button variant="outline" size="sm">View Details</Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Portfolio Selection */}
-      <Card className="shadow-soft mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Briefcase className="h-5 w-5 text-primary" />
-            Portfolio Selection
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Select value={selectedPortfolio.name} onValueChange={(value) => {
-            const portfolio = mockPortfolios.find(p => p.name === value);
-            if (portfolio) setSelectedPortfolio(portfolio);
-          }}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {mockPortfolios.map((portfolio) => (
-                <SelectItem key={portfolio.id} value={portfolio.name}>
-                  {portfolio.name} ({portfolio.code}) - {portfolio.applicationCount} apps
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Client Overview */}
-        <Card className="shadow-medium">
+      {/* Broken Deployments Alert */}
+      {brokenDeployments.length > 0 && (
+        <Card className="border-destructive/20 bg-destructive/5">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-primary" />
-              Client Overview
+            <CardTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Attention Required: Broken Deployments
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {mockClients.map((client) => (
-              <div key={client.id} className="flex items-center justify-between p-3 border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                    <Building2 className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-foreground">{client.name}</h3>
-                    <p className="text-xs text-muted-foreground">{client.portfolioCount} portfolios</p>
-                  </div>
-                </div>
-                <Button variant="outline" size="sm">View</Button>
-              </div>
-            ))}
-            <Button variant="outline" className="w-full mt-4">View All Clients</Button>
-          </CardContent>
-        </Card>
-
-        {/* Current Portfolio Details */}
-        <Card className="shadow-medium">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Briefcase className="h-5 w-5 text-primary" />
-              Current Portfolio
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <h3 className="text-xl font-semibold text-foreground">{selectedPortfolio.name}</h3>
-              <p className="text-sm text-muted-foreground">Code: {selectedPortfolio.code}</p>
-              <p className="text-sm text-foreground">{selectedPortfolio.description}</p>
-            </div>
-            
-            <div className="flex items-center justify-between pt-4 border-t border-border">
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Applications</p>
-                <p className="text-lg font-semibold text-foreground">{selectedPortfolio.applicationCount}</p>
-              </div>
-              <div className="space-y-1 text-right">
-                <p className="text-sm text-muted-foreground">Status</p>
-                <span className={`px-2 py-1 text-xs rounded-full ${
-                  selectedPortfolio.status === 'active' ? 'bg-green-100 text-green-800' : 
-                  selectedPortfolio.status === 'development' ? 'bg-blue-100 text-blue-800' : 
-                  'bg-orange-100 text-orange-800'
-                }`}>
-                  {selectedPortfolio.status}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <Button variant="outline" size="sm">View Details</Button>
-              <Button variant="admin" size="sm">Edit Portfolio</Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Application Management */}
-        <Card className="shadow-medium">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FolderOpen className="h-5 w-5 text-primary" />
-              Application Management
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Search and Filter */}
+          <CardContent>
             <div className="space-y-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search applications..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <div className="flex gap-2">
-                <Select value={appFilter} onValueChange={setAppFilter}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="development">Development</SelectItem>
-                    <SelectItem value="maintenance">Maintenance</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Application List */}
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {filteredApplications.map((app) => (
-                <div 
-                  key={app.id} 
-                  className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                    selectedApp.id === app.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
-                  }`}
-                  onClick={() => setSelectedApp(app)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium text-foreground">{app.name}</h4>
-                      <p className="text-xs text-muted-foreground truncate">{app.description}</p>
-                    </div>
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      app.status === 'active' ? 'bg-green-100 text-green-800' :
-                      app.status === 'development' ? 'bg-blue-100 text-blue-800' :
-                      'bg-orange-100 text-orange-800'
-                    }`}>
-                      {app.status}
-                    </span>
+              {brokenDeployments.map((deployment) => (
+                <div key={deployment.id} className="flex items-center justify-between p-3 bg-background border border-destructive/20 rounded-lg">
+                  <div>
+                    <p className="font-medium text-foreground">{deployment.app}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {deployment.type} in {deployment.environment} - {deployment.date}
+                    </p>
                   </div>
+                  <Button variant="destructive" size="sm">Fix Now</Button>
                 </div>
               ))}
-              {filteredApplications.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  No applications found matching your criteria
-                </div>
-              )}
             </div>
-
-            {/* Selected App Details */}
-            {selectedApp && (
-              <div className="pt-4 border-t border-border">
-                <h4 className="font-semibold text-foreground mb-2">Selected: {selectedApp.name}</h4>
-                <p className="text-sm text-foreground mb-3">{selectedApp.description}</p>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm">View Details</Button>
-                  <Button variant="admin" size="sm">Manage App</Button>
-                </div>
-              </div>
-            )}
           </CardContent>
         </Card>
-      </div>
+      )}
+
+      {/* Charts Section */}
+      <DeploymentChart clientId={selectedClient.id} />
+
+      {/* Latest Deployments */}
+      <LatestDeployments clientId={selectedClient.id} />
 
       {/* Quick Actions */}
       <Card className="shadow-soft">
@@ -319,7 +163,7 @@ export default function Dashboard() {
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Button variant="outline" className="h-20 flex-col gap-2">
               <Briefcase className="h-6 w-6" />
               Create Portfolio
@@ -329,8 +173,12 @@ export default function Dashboard() {
               Add Application
             </Button>
             <Button variant="outline" className="h-20 flex-col gap-2">
-              <Users className="h-6 w-6" />
-              Manage Users
+              <Server className="h-6 w-6" />
+              Create Zone
+            </Button>
+            <Button variant="outline" className="h-20 flex-col gap-2">
+              <GitBranch className="h-6 w-6" />
+              Deploy Application
             </Button>
           </div>
         </CardContent>
