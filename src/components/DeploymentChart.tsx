@@ -50,12 +50,124 @@ const chartConfig = {
 };
 
 export default function DeploymentChart({ clientId, filters }: DeploymentChartProps) {
+  // Smart keyword taxonomy - determines what type of keyword we're dealing with
+  const categorizeKeyword = (keyword: string) => {
+    const lowerKeyword = keyword.toLowerCase();
+    
+    // Environment keywords
+    const environments = ['production', 'prod', 'staging', 'stage', 'development', 'dev', 'test', 'testing'];
+    if (environments.some(env => lowerKeyword.includes(env))) {
+      return { type: 'environment', value: lowerKeyword };
+    }
+    
+    // Status keywords
+    const statuses = ['failed', 'success', 'released', 'pending', 'progress', 'teardown'];
+    if (statuses.some(status => lowerKeyword.includes(status))) {
+      return { type: 'status', value: lowerKeyword };
+    }
+    
+    // App/Portfolio keywords (can be anything else)
+    return { type: 'general', value: lowerKeyword };
+  };
+
+  // Mock deployment data for filtering (simulates actual deployment records)
+  const mockDeploymentRecords = [
+    // Production deployments
+    { environment: 'Production', status: 'released', app: 'User API', portfolio: 'Enterprise' },
+    { environment: 'Production', status: 'released', app: 'Payment Gateway', portfolio: 'Enterprise' },
+    { environment: 'Production', status: 'failed', app: 'Analytics', portfolio: 'Analytics Platform' },
+    { environment: 'Production', status: 'not-released', app: 'Mobile App', portfolio: 'Mobile Apps' },
+    // Staging deployments  
+    { environment: 'Staging', status: 'released', app: 'User API', portfolio: 'Enterprise' },
+    { environment: 'Staging', status: 'release-in-progress', app: 'Analytics', portfolio: 'Analytics Platform' },
+    { environment: 'Staging', status: 'failed', app: 'Mobile App', portfolio: 'Mobile Apps' },
+    // Development deployments
+    { environment: 'Development', status: 'released', app: 'Test App', portfolio: 'Enterprise' },
+    { environment: 'Development', status: 'teardown-in-progress', app: 'Debug Tool', portfolio: 'Infrastructure' },
+    { environment: 'Development', status: 'failed', app: 'Prototype', portfolio: 'Mobile Apps' },
+  ];
+
+  // Filter deployment records based on all criteria
+  const filterDeploymentRecords = () => {
+    let filtered = [...mockDeploymentRecords];
+
+    // Apply keyword filter with smart categorization
+    if (filters?.keywords) {
+      const keywordInfo = categorizeKeyword(filters.keywords);
+      
+      filtered = filtered.filter(record => {
+        switch (keywordInfo.type) {
+          case 'environment':
+            return record.environment.toLowerCase().includes(keywordInfo.value);
+          case 'status':
+            return record.status.toLowerCase().includes(keywordInfo.value);
+          case 'general':
+            // Search across app, portfolio, and other fields
+            return (
+              record.app.toLowerCase().includes(keywordInfo.value) ||
+              record.portfolio.toLowerCase().includes(keywordInfo.value) ||
+              record.environment.toLowerCase().includes(keywordInfo.value) ||
+              record.status.toLowerCase().includes(keywordInfo.value)
+            );
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Apply explicit environment filter
+    if (filters?.environment) {
+      filtered = filtered.filter(record => record.environment === filters.environment);
+    }
+
+    // Apply explicit status filter
+    if (filters?.deploymentStatus) {
+      filtered = filtered.filter(record => record.status === filters.deploymentStatus);
+    }
+
+    // Apply portfolio filter
+    if (filters?.portfolios.length > 0) {
+      filtered = filtered.filter(record => 
+        filters.portfolios.some(portfolio => record.portfolio.includes(portfolio))
+      );
+    }
+
+    // Apply application filter
+    if (filters?.applications.length > 0) {
+      filtered = filtered.filter(record => 
+        filters.applications.some(app => record.app.includes(app))
+      );
+    }
+
+    return filtered;
+  };
+
+  const filteredRecords = filterDeploymentRecords();
+
+  // Calculate deployment status distribution from filtered records
+  const calculateStatusDistribution = (records: typeof mockDeploymentRecords) => {
+    const statusCounts = records.reduce((acc, record) => {
+      acc[record.status] = (acc[record.status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return deploymentStatus.map(status => {
+      const statusKey = status.name.toLowerCase().replace(' ', '-').replace(' in progress', '-in-progress');
+      return {
+        ...status,
+        value: statusCounts[statusKey] || 0
+      };
+    });
+  };
+
+  const filteredDeploymentStatus = calculateStatusDistribution(filteredRecords);
+
   // Filter zone environments based on keywords and environment filter
   const filteredZoneEnvironments = zoneEnvironments.filter(zone => {
     // Check keyword filter
     if (filters?.keywords) {
-      const keyword = filters.keywords.toLowerCase();
-      if (!zone.environment.toLowerCase().includes(keyword)) {
+      const keywordInfo = categorizeKeyword(filters.keywords);
+      if (keywordInfo.type === 'environment' && !zone.environment.toLowerCase().includes(keywordInfo.value)) {
         return false;
       }
     }
@@ -72,12 +184,15 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
   // and set others to 0
   const processedZoneEnvironments = filters?.keywords ? 
     zoneEnvironments.map(zone => {
-      const keyword = filters.keywords.toLowerCase();
-      const matchesKeyword = zone.environment.toLowerCase().includes(keyword);
-      return {
-        ...zone,
-        zones: matchesKeyword ? zone.zones : 0
-      };
+      const keywordInfo = categorizeKeyword(filters.keywords);
+      if (keywordInfo.type === 'environment') {
+        const matchesKeyword = zone.environment.toLowerCase().includes(keywordInfo.value);
+        return {
+          ...zone,
+          zones: matchesKeyword ? zone.zones : 0
+        };
+      }
+      return zone;
     }) : filteredZoneEnvironments;
 
   // Filter deployment data based on environment and keywords
@@ -86,8 +201,8 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
     
     // If filtering by environment-related keywords, simulate filtering deployments
     if (filters?.keywords) {
-      const keyword = filters.keywords.toLowerCase();
-      if (keyword.includes('production') || keyword.includes('prod')) {
+      const keywordInfo = categorizeKeyword(filters.keywords);
+      if (keywordInfo.type === 'environment' && keywordInfo.value.includes('prod')) {
         // Reduce numbers to simulate production-only data
         return data.map(item => ({
           ...item,
@@ -107,45 +222,6 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
     { month: "Dec", successful: 162, failed: 18 },
     { month: "Jan", successful: 145, failed: 20 },
   ]);
-
-  // Filter deployment status data based on filters
-  const filteredDeploymentStatus = deploymentStatus.filter(status => {
-    // Check keyword filter
-    if (filters?.keywords) {
-      const keyword = filters.keywords.toLowerCase();
-      if (!status.name.toLowerCase().includes(keyword)) {
-        return false;
-      }
-    }
-    
-    // Check deployment status filter
-    if (filters?.deploymentStatus) {
-      const statusMap: { [key: string]: string } = {
-        'released': 'Released',
-        'not-released': 'Not Released', 
-        'failed': 'Failed',
-        'teardown-in-progress': 'Teardown in Progress',
-        'release-in-progress': 'Release in Progress'
-      };
-      
-      if (statusMap[filters.deploymentStatus] !== status.name) {
-        return false;
-      }
-    }
-    
-    return true;
-  });
-
-  // For keyword filtering, adjust values to simulate filtered data
-  const processedDeploymentStatus = filters?.keywords ? 
-    deploymentStatus.map(status => {
-      const keyword = filters.keywords.toLowerCase();
-      const matchesKeyword = status.name.toLowerCase().includes(keyword);
-      return {
-        ...status,
-        value: matchesKeyword ? status.value : 0
-      };
-    }) : filteredDeploymentStatus;
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Daily Deployments */}
@@ -181,14 +257,14 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
           <ChartContainer config={chartConfig} className="h-64">
             <PieChart>
               <Pie
-                data={processedDeploymentStatus}
+                data={filteredDeploymentStatus}
                 cx="50%"
                 cy="50%"
                 outerRadius={80}
                 dataKey="value"
                 label={({ name, value }) => value > 0 ? `${name}: ${value}` : null}
               >
-                {processedDeploymentStatus.map((entry, index) => (
+                {filteredDeploymentStatus.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
