@@ -40,7 +40,7 @@ export default function ClientDetails() {
         </Button>
         <div className="flex-1">
           <h1 className="text-3xl font-bold text-foreground">{client.name}</h1>
-          <p className="text-muted-foreground">{client.slug}</p>
+          <p className="text-muted-foreground">{client.description}</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" asChild>
@@ -80,8 +80,8 @@ export default function ClientDetails() {
                   <div className="flex items-center gap-2">
                     <Building2 className="h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="text-sm font-medium">Client Key</p>
-                      <p className="text-sm text-muted-foreground font-mono">{client.slug}</p>
+                      <p className="text-sm font-medium">Client ID</p>
+                      <p className="text-sm text-muted-foreground font-mono">{client.id}</p>
                     </div>
                   </div>
                   
@@ -89,10 +89,12 @@ export default function ClientDetails() {
                     <Globe className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium">Homepage</p>
-                      <a href={client.homepage} target="_blank" rel="noopener noreferrer" 
-                         className="text-sm text-blue-600 hover:underline">
-                        {client.homepage}
-                      </a>
+                      <Button variant="outline" size="sm" asChild>
+                        <a href={client.homepage} target="_blank" rel="noopener noreferrer" 
+                           className="text-sm text-blue-600 hover:underline">
+                          Visit Website
+                        </a>
+                      </Button>
                     </div>
                   </div>
                   
@@ -207,11 +209,11 @@ export default function ClientDetails() {
             <CardContent className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Created</span>
-                <span>{client.createdAt}</span>
+                <span className="text-muted-foreground">N/A</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Last Updated</span>
-                <span>{client.lastUpdated}</span>
+                <span className="text-muted-foreground">N/A</span>
               </div>
             </CardContent>
           </Card>

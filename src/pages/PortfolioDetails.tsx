@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { Edit, Trash2, Save, X, ArrowLeft, Briefcase, ExternalLink, FolderOpen, Calendar } from "lucide-react";
+import { useParams, useNavigate } from "react-router-dom";
+import { ArrowLeft, Edit, Save, X, FolderOpen, Building2, ExternalLink, Plus, Users, Clock, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +19,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useReduxData } from "@/hooks/useReduxData";
 
 export default function PortfolioDetails() {
   const { id } = useParams();
@@ -29,6 +31,7 @@ export default function PortfolioDetails() {
   const portfolioApplications = applications.filter(app => app.portfolioId === id);
   
   const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: portfolio?.name || '',
     code: portfolio?.code || '',
@@ -60,249 +63,279 @@ export default function PortfolioDetails() {
     }, 1000);
   };
 
-  const handleDelete = () => {
-    // TODO: Implement actual delete logic
-    navigate("/portfolios");
+  const getFilteredApplications = () => {
+    return portfolioApplications.map(app => ({
+      ...app,
+      lastActivity: 'Recent activity'
+    }));
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "active":
-        return "bg-green-100 text-green-800";
-      case "development":
-        return "bg-blue-100 text-blue-800";
-      case "maintenance":
-        return "bg-orange-100 text-orange-800";
+      case "running":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
+      case "deploying":
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
+      case "stopped":
+        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
+      case "error":
+        return "bg-destructive/10 text-destructive dark:bg-destructive/20 dark:text-destructive";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300";
     }
-  };
-
-  // Get the 3 most recently updated applications
-  const getLatestApplications = () => {
-    return [...mockPortfolio.applications]
-      .sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime())
-      .slice(0, 3);
-  };
-
-  const formatRelativeTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
-    
-    if (diffInHours < 1) return "Just now";
-    if (diffInHours < 24) return `${diffInHours}h ago`;
-    const diffInDays = Math.floor(diffInHours / 24);
-    return `${diffInDays}d ago`;
   };
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Page Header */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/portfolios")}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Portfolios
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/portfolios")}
+          >
+            <ArrowLeft className="h-4 w-4" />
           </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Portfolio Details</h1>
+            <p className="text-muted-foreground">View and manage portfolio information</p>
+          </div>
         </div>
-        
         <div className="flex gap-2">
-          {!isEditing ? (
-            <>
-              <Button variant="outline" onClick={() => setIsEditing(true)}>
-                <Edit className="h-4 w-4 mr-2" />
-                Edit
-              </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Portfolio</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will permanently delete the portfolio and all its applications. This action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                      Delete Portfolio
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </>
-          ) : (
+          {isEditing ? (
             <>
               <Button variant="outline" onClick={() => setIsEditing(false)}>
-                <X className="h-4 w-4 mr-2" />
+                <X className="mr-2 h-4 w-4" />
                 Cancel
               </Button>
-              <Button variant="gradient" onClick={handleSave} disabled={isLoading}>
-                <Save className="h-4 w-4 mr-2" />
+              <Button onClick={handleSave} disabled={isLoading}>
+                <Save className="mr-2 h-4 w-4" />
                 {isLoading ? "Saving..." : "Save Changes"}
               </Button>
             </>
+          ) : (
+            <Button onClick={() => setIsEditing(true)}>
+              <Edit className="mr-2 h-4 w-4" />
+              Edit Portfolio
+            </Button>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Portfolio Information */}
-        <div className="lg:col-span-2">
-          <Card className="shadow-medium">
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-6">
+          {/* Portfolio Information */}
+          <Card className="shadow-soft">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Briefcase className="h-5 w-5 text-primary" />
+                <FolderOpen className="h-5 w-5 text-primary" />
                 Portfolio Information
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {isEditing ? (
+            <CardContent className="space-y-4">
+              {!isEditing ? (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Portfolio Name</Label>
-                      <Input
-                        id="name"
-                        value={formData.name}
-                        onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                      />
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h2 className="text-2xl font-bold text-foreground">{portfolio.name}</h2>
+                      <p className="text-sm text-muted-foreground">{portfolio.code}</p>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="code">Portfolio Code</Label>
-                      <Input
-                        id="code"
-                        value={formData.code}
-                        onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                        className="font-mono"
-                      />
-                    </div>
+                    <Badge variant="secondary" className="bg-green-100 text-green-800">
+                      {portfolio.status}
+                    </Badge>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea
-                      id="description"
-                      value={formData.description}
-                      onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                      className="min-h-[80px]"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="homePageUrl">Home Page URL</Label>
-                    <Input
-                      id="homePageUrl"
-                      type="url"
-                      value={formData.homePageUrl}
-                      onChange={(e) => setFormData(prev => ({ ...prev, homePageUrl: e.target.value }))}
-                    />
-                  </div>
+                  <p className="text-foreground">{portfolio.description}</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div>
-                    <h2 className="text-2xl font-bold text-foreground">{mockPortfolio.name}</h2>
-                    <p className="text-sm text-muted-foreground">prn:{mockPortfolio.client.slug}:{mockPortfolio.slug}</p>
-                    <p className="text-sm text-muted-foreground">Code: {mockPortfolio.code}</p>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-name">Portfolio Name</Label>
+                    <Input
+                      id="edit-name"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    />
                   </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Client</p>
-                    <p className="font-medium text-foreground">{mockPortfolio.client.name}</p>
-                    <p className="text-xs text-muted-foreground">Client Key: {mockPortfolio.client.slug}</p>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-code">Code</Label>
+                    <Input
+                      id="edit-code"
+                      value={formData.code}
+                      onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                    />
                   </div>
-                  <p className="text-foreground">{mockPortfolio.description}</p>
-                  {mockPortfolio.homePageUrl && (
-                    <div className="flex items-center gap-2">
-                      <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                      <a 
-                        href={mockPortfolio.homePageUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        {mockPortfolio.homePageUrl}
-                      </a>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-description">Description</Label>
+                    <Textarea
+                      id="edit-description"
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-homepage">Homepage URL</Label>
+                    <Input
+                      id="edit-homepage"
+                      value={formData.homePageUrl}
+                      onChange={(e) => setFormData({ ...formData, homePageUrl: e.target.value })}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-foreground">{portfolioApplications.length}</div>
+                  <div className="text-sm text-muted-foreground">Applications</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-foreground">N/A</div>
+                  <div className="text-sm text-muted-foreground">Deployments</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-foreground">N/A</div>
+                  <div className="text-sm text-muted-foreground">Uptime</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-foreground">N/A</div>
+                  <div className="text-sm text-muted-foreground">Last Deploy</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Applications */}
+          <Card className="shadow-soft">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-primary" />
+                  Applications ({portfolioApplications.length})
+                </CardTitle>
+                <Button variant="outline" size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Application
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {getFilteredApplications().map((app) => (
+                  <div
+                    key={app.id}
+                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
+                    onClick={() => navigate(`/applications/${app.id}`)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                        <Building2 className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-foreground">{app.name}</h4>
+                        <p className="text-sm text-muted-foreground">{app.description}</p>
+                      </div>
                     </div>
-                  )}
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <Badge className={getStatusColor(app.status)} variant="secondary">
+                          {app.status}
+                        </Badge>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {app.lastActivity}
+                        </p>
+                      </div>
+                      <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {portfolioApplications.length === 0 && (
+                <div className="text-center py-8">
+                  <Building2 className="mx-auto h-12 w-12 text-muted-foreground" />
+                  <h3 className="mt-2 text-sm font-medium text-foreground">No applications</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Get started by creating your first application.
+                  </p>
+                  <div className="mt-6">
+                    <Button variant="outline">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Application
+                    </Button>
+                  </div>
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Portfolio Stats */}
+        {/* Sidebar */}
         <div className="space-y-6">
           <Card className="shadow-soft">
             <CardHeader>
-              <CardTitle className="text-lg">Portfolio Status</CardTitle>
+              <CardTitle>Quick Actions</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Status</span>
-                <Badge className={getStatusColor(mockPortfolio.status)} variant="secondary">
-                  {mockPortfolio.status}
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Applications</span>
-                <span className="font-medium">{mockPortfolio.applicationCount}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Last Updated</span>
-                <span className="font-medium">{mockPortfolio.lastUpdated}</span>
+            <CardContent className="space-y-2">
+              <Button variant="outline" className="w-full justify-start" asChild>
+                <a href={portfolio.homePageUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Visit Homepage
+                </a>
+              </Button>
+              <Button variant="outline" className="w-full justify-start">
+                <Users className="mr-2 h-4 w-4" />
+                Manage Members
+              </Button>
+              <Button variant="outline" className="w-full justify-start">
+                <Activity className="mr-2 h-4 w-4" />
+                View Analytics
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-soft">
+            <CardHeader>
+              <CardTitle>Recent Activity</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="text-center py-4">
+                  <Clock className="mx-auto h-8 w-8 text-muted-foreground" />
+                  <p className="mt-2 text-sm text-muted-foreground">No recent activity</p>
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Recent Applications */}
           <Card className="shadow-soft">
             <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <FolderOpen className="h-4 w-4" />
-                Latest Applications
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">3 most recently updated</p>
+              <CardTitle>Portfolio Settings</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {getLatestApplications().map((app) => (
-                  <div 
-                    key={app.id} 
-                    className="flex items-center justify-between p-3 bg-muted/30 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors group"
-                    onClick={() => navigate(`/applications/${app.id}`)}
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{app.name}</span>
-                        <Badge className={getStatusColor(app.status)} variant="secondary">
-                          {app.status}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">{app.lastActivity}</p>
-                      <div className="flex items-center gap-1 mt-1">
-                        <Calendar className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">
-                          {formatRelativeTime(app.lastUpdated)}
-                        </span>
-                      </div>
-                    </div>
-                    <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors" />
-                  </div>
-                ))}
-              </div>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="w-full mt-4"
-                onClick={() => navigate(`/applications?portfolio=${encodeURIComponent(mockPortfolio.name)}`)}
-              >
-                View All Applications
-              </Button>
+            <CardContent className="space-y-4">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" className="w-full">
+                    Delete Portfolio
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This action cannot be undone. This will permanently delete the
+                      portfolio and all associated applications and deployments.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                      Delete Portfolio
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </CardContent>
           </Card>
         </div>
