@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/command";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { useReduxData } from "@/hooks/useReduxData";
 
 interface DashboardFiltersProps {
   onFiltersChange: (filters: FilterState) => void;
@@ -47,33 +48,20 @@ export interface FilterState {
   deploymentStatus?: string;
 }
 
-// Mock data for filter options
-const mockPortfolios = [
-  { id: "1", name: "Enterprise Suite", code: "ENT" },
-  { id: "2", name: "Mobile Apps", code: "MOB" },
-  { id: "3", name: "Analytics Platform", code: "ANL" },
-  { id: "4", name: "Infrastructure Tools", code: "INF" },
-];
-
-const mockApplications = [
-  { id: "1", name: "User Management API", portfolio: "Enterprise Suite" },
-  { id: "2", name: "Analytics Dashboard", portfolio: "Analytics Platform" },
-  { id: "3", name: "Mobile Customer App", portfolio: "Mobile Apps" },
-  { id: "4", name: "Payment Gateway", portfolio: "Enterprise Suite" },
-  { id: "5", name: "Inventory Tracker", portfolio: "Enterprise Suite" },
-];
-
-const mockZones = [
-  { id: "1", name: "prod-us-east-1", environment: "Production" },
-  { id: "2", name: "staging-us-west-2", environment: "Staging" },
-  { id: "3", name: "dev-eu-central-1", environment: "Development" },
-  { id: "4", name: "test-ap-southeast-1", environment: "Testing" },
-];
-
-const environments = ["Production", "Staging", "Development", "Testing"];
-const deploymentStatuses = ["released", "not-released", "failed", "release-in-progress", "teardown-in-progress"];
-
 export default function DashboardFilters({ onFiltersChange, clientId }: DashboardFiltersProps) {
+  const { portfolios, applications, zones } = useReduxData();
+  
+  // Filter data for the selected client
+  const clientPortfolios = portfolios.filter(p => p.clientId === clientId);
+  const clientApplications = applications.filter(a => {
+    const portfolio = portfolios.find(p => p.id === a.portfolioId);
+    return portfolio?.clientId === clientId;
+  });
+  const clientZones = zones.filter(z => z.clientId === clientId);
+
+  const environments = ["Production", "Staging", "Development", "Testing"];
+  const deploymentStatuses = ["released", "not-released", "failed", "release-in-progress", "teardown-in-progress"];
+
   const [filters, setFilters] = useState<FilterState>({
     keywords: "",
     portfolios: [],
@@ -278,7 +266,7 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
                     <CommandList>
                       <CommandEmpty>No portfolios found.</CommandEmpty>
                       <CommandGroup>
-                        {mockPortfolios.map((portfolio) => (
+                        {clientPortfolios.map((portfolio) => (
                           <CommandItem key={portfolio.id}>
                             <Checkbox
                               checked={filters.portfolios.includes(portfolio.name)}
@@ -318,7 +306,7 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
                     <CommandList>
                       <CommandEmpty>No applications found.</CommandEmpty>
                       <CommandGroup>
-                        {mockApplications.map((app) => (
+                        {clientApplications.map((app) => (
                           <CommandItem key={app.id}>
                             <Checkbox
                               checked={filters.applications.includes(app.name)}
@@ -358,7 +346,7 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
                     <CommandList>
                       <CommandEmpty>No zones found.</CommandEmpty>
                       <CommandGroup>
-                        {mockZones.map((zone) => (
+                        {clientZones.map((zone) => (
                           <CommandItem key={zone.id}>
                             <Checkbox
                               checked={filters.zones.includes(zone.name)}

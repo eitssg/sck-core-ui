@@ -8,33 +8,12 @@ import DashboardFilters, { FilterState } from "@/components/DashboardFilters";
 import { useReduxData } from "@/hooks/useReduxData";
 import { useAppSelector } from '@/store';
 
-// Mock clients - Add more clients to support different selections
-const mockClients = [
-  { id: "1", name: "TechCorp Solutions", slug: "techcorp-solutions", description: "Leading technology solutions provider", memberCount: 45, portfolioCount: 12 },
-  { id: "2", name: "Digital Innovations Inc", slug: "digital-innovations", description: "Cutting-edge digital transformation consultancy", memberCount: 23, portfolioCount: 8 },
-  { id: "3", name: "Acme Corp", slug: "acme-corp", description: "Global enterprise solutions and services", memberCount: 156, portfolioCount: 25 },
-  { id: "4", name: "GlobalTech Industries", slug: "globaltech-industries", description: "International technology conglomerate", memberCount: 342, portfolioCount: 45 }
-];
-
-const mockPortfolios = [
-  { id: 1, name: "Enterprise Suite", code: "ENT", description: "Comprehensive enterprise applications for business management", applicationCount: 12, status: "active" },
-  { id: 2, name: "Mobile Apps", code: "MOB", description: "Cross-platform mobile applications", applicationCount: 8, status: "active" },
-  { id: 3, name: "Analytics Platform", code: "ANL", description: "Business intelligence solutions", applicationCount: 5, status: "development" }
-];
-
-const mockApplications = [
-  { id: 1, name: "User Management", description: "Centralized user administration system", portfolio: "Enterprise Suite", status: "active" },
-  { id: 2, name: "Analytics Dashboard", description: "Real-time business intelligence platform", portfolio: "Enterprise Suite", status: "active" },
-  { id: 3, name: "Inventory Tracker", description: "Advanced inventory management solution", portfolio: "Enterprise Suite", status: "development" },
-  { id: 4, name: "Customer Portal", description: "Mobile customer service application", portfolio: "Mobile Apps", status: "active" },
-  { id: 5, name: "Data Warehouse", description: "Central data storage system", portfolio: "Analytics Platform", status: "maintenance" },
-];
+// All data now comes from Redux store - no mock data
 
 // Calculate real client statistics from Redux data
 const getClientStats = (clientId: string, filters: FilterState, clients: any[], portfolios: any[], applications: any[], zones: any[], deployments: any[], events: any[]) => {
   const selectedClient = clients.find(c => c.id === clientId);
   if (!selectedClient) {
-    // Fallback to mock data if client not found
     return [
       { label: "Portfolios", value: "0", icon: Briefcase, change: "No data", subtext: "Active portfolios" },
       { label: "Total Zones", value: "0", icon: Server, change: "No data", subtext: "Across all environments" },
@@ -211,8 +190,8 @@ export default function Dashboard() {
   const deployments = useAppSelector(state => state.deployments.deployments);
   const events = useAppSelector(state => state.deployments.events);
   
-  // Use a fallback client if none is selected or if selectedClient is not in our mock data
-  const currentClient = selectedClient || mockClients[0];
+  // Use the selected client from Redux, fallback to first client if none selected
+  const currentClient = selectedClient || clients[0];
   
   const [filters, setFilters] = useState<FilterState>({
     keywords: "",

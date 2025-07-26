@@ -15,58 +15,10 @@ import {
 } from "@/components/ui/table";
 import { useReduxData } from '@/hooks/useReduxData';
 
-// Mock data
-const mockApplications = [
-  {
-    id: 1,
-    portfolio: "Enterprise Suite",
-    portfolioCode: "ENT-001",
-    name: "User Management",
-    applicationCode: "ENT-USR-001",
-    description: "Centralized user administration system",
-    status: "active",
-    version: "v2.1.3",
-    lastDeploy: "2 days ago"
-  },
-  {
-    id: 2,
-    portfolio: "Enterprise Suite",
-    portfolioCode: "ENT-001",
-    name: "Analytics Dashboard",
-    applicationCode: "ENT-ANL-002",
-    description: "Real-time business intelligence platform",
-    status: "active",
-    version: "v1.8.2",
-    lastDeploy: "1 week ago"
-  },
-  {
-    id: 3,
-    portfolio: "Mobile Apps",
-    portfolioCode: "MOB-002",
-    name: "Customer Portal",
-    applicationCode: "MOB-CUS-003",
-    description: "Mobile customer service application",
-    status: "development",
-    version: "v0.9.1",
-    lastDeploy: "3 days ago"
-  },
-  {
-    id: 4,
-    portfolio: "Analytics Platform",
-    portfolioCode: "ANL-003",
-    name: "Data Warehouse",
-    applicationCode: "ANL-DWH-004",
-    description: "Central data storage and processing system",
-    status: "maintenance",
-    version: "v3.2.1",
-    lastDeploy: "5 days ago"
-  }
-];
-
 export default function Applications() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { selectedClient, applications, portfolios, initializeApplications, initializePortfolios } = useReduxData();
+  const { selectedClient, applications, portfolios } = useReduxData();
   const [searchTerms, setSearchTerms] = useState<string[]>([]);
   const [newTerm, setNewTerm] = useState("");
 
@@ -77,110 +29,6 @@ export default function Applications() {
       setSearchTerms([portfolioFilter]);
     }
   }, [searchParams]);
-
-  // Initialize data
-  useEffect(() => {
-    if (portfolios.length === 0) {
-      initializePortfolios([
-        {
-          id: '1',
-          clientId: '1',
-          name: 'Enterprise Suite',
-          slug: 'enterprise-suite',
-          code: 'ENT-SYS-001',
-          description: 'Comprehensive enterprise applications for business management',
-          homePageUrl: 'https://enterprise.company.com',
-          applicationCount: 12,
-          lastUpdated: '2024-01-15',
-          status: 'active',
-        },
-        {
-          id: '2',
-          clientId: '1',
-          name: 'Mobile Apps',
-          slug: 'mobile-apps',
-          code: 'MOB-APP-002',
-          description: 'Cross-platform mobile applications for customer engagement',
-          homePageUrl: 'https://mobile.company.com',
-          applicationCount: 8,
-          lastUpdated: '2024-01-10',
-          status: 'active',
-        },
-        {
-          id: '3',
-          clientId: '1',
-          name: 'Analytics Platform',
-          slug: 'analytics-platform',
-          code: 'ANL-PLT-003',
-          description: 'Data analytics and business intelligence solutions',
-          homePageUrl: 'https://analytics.company.com',
-          applicationCount: 6,
-          lastUpdated: '2024-01-12',
-          status: 'active',
-        }
-      ]);
-    }
-
-    if (applications.length === 0) {
-      initializeApplications([
-        {
-          id: '1',
-          name: 'User Management',
-          slug: 'user-management',
-          code: 'ENT-USR-001',
-          description: 'Centralized user administration system',
-          portfolioId: '1',
-          status: 'running',
-          version: 'v2.1.3',
-          lastDeploy: '2 days ago'
-        },
-        {
-          id: '2',
-          name: 'Analytics Dashboard',
-          slug: 'analytics-dashboard',
-          code: 'ENT-ANL-002',
-          description: 'Real-time business intelligence platform',
-          portfolioId: '1',
-          status: 'running',
-          version: 'v1.8.2',
-          lastDeploy: '1 week ago'
-        },
-        {
-          id: '3',
-          name: 'Customer Portal',
-          slug: 'customer-portal',
-          code: 'MOB-CUS-003',
-          description: 'Mobile customer service application',
-          portfolioId: '2',
-          status: 'deploying',
-          version: 'v0.9.1',
-          lastDeploy: '3 days ago'
-        },
-        {
-          id: '4',
-          name: 'Data Warehouse',
-          slug: 'data-warehouse',
-          code: 'ANL-DWH-004',
-          description: 'Central data storage and processing system',
-          portfolioId: '3',
-          status: 'stopped',
-          version: 'v3.2.1',
-          lastDeploy: '5 days ago'
-        },
-        {
-          id: '5',
-          name: 'Payment Gateway',
-          slug: 'payment-gateway',
-          code: 'ENT-PAY-005',
-          description: 'Secure payment processing service',
-          portfolioId: '1',
-          status: 'running',
-          version: 'v1.5.7',
-          lastDeploy: '1 day ago'
-        }
-      ]);
-    }
-  }, [applications.length, portfolios.length, initializeApplications, initializePortfolios]);
 
   const filteredApplications = applications.filter(app => {
     // Get the portfolio for this application
