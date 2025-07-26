@@ -35,8 +35,8 @@ const Zones = () => {
   }, [searchParams]);
 
   useEffect(() => {
-    // Zone data comes from DashboardLayout initialization - do not override
-    // The DashboardLayout.tsx already initializes the complete zone data
+    // Trigger data fetching when component mounts
+    // This should call Redux actions that simulate API calls
   }, []);
 
   // TODO: Replace with actual API call when filter terms change
