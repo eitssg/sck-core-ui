@@ -3,6 +3,7 @@ import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 export interface Zone {
   id: string;
   clientId: string;
+  name: string;
   organizationalUnit: string;
   orgId: string;
   awsAccountId: string;

@@ -17,6 +17,7 @@ import type { Zone } from '@/store/slices/zonesSlice';
 
 const zoneSchema = z.object({
   clientId: z.string().min(1, 'Client is required'),
+  name: z.string().min(1, 'Zone name is required'),
   organizationalUnit: z.string().min(1, 'Organizational unit is required'),
   orgId: z.string().min(1, 'Organization ID is required'),
   awsAccountId: z.string().regex(/^\d{12}$/, 'AWS Account ID must be 12 digits'),
@@ -49,6 +50,7 @@ const CreateZone = () => {
     resolver: zodResolver(zoneSchema),
     defaultValues: {
       clientId: '',
+      name: '',
       organizationalUnit: '',
       orgId: '',
       awsAccountId: '',
@@ -62,6 +64,7 @@ const CreateZone = () => {
     if (isEditing && existingZone) {
       form.reset({
         clientId: existingZone.clientId,
+        name: existingZone.name,
         organizationalUnit: existingZone.organizationalUnit,
         orgId: existingZone.orgId,
         awsAccountId: existingZone.awsAccountId,
@@ -127,6 +130,7 @@ const CreateZone = () => {
     const zoneData: Zone = {
       id: isEditing ? id! : Math.random().toString(36).substr(2, 9),
       clientId: data.clientId,
+      name: data.name,
       organizationalUnit: data.organizationalUnit,
       orgId: data.orgId,
       awsAccountId: data.awsAccountId,
@@ -202,6 +206,20 @@ const CreateZone = () => {
                         ))}
                       </SelectContent>
                     </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Zone Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Production Zone" {...field} />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}

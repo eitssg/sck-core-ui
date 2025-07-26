@@ -39,6 +39,7 @@ const Zones = () => {
       {
         id: '1',
         clientId: '1',
+        name: 'Production Zone',
         organizationalUnit: 'Production',
         orgId: 'o-1a2b3c4d5e',
         awsAccountId: '123456789012',
@@ -53,6 +54,7 @@ const Zones = () => {
       {
         id: '2',
         clientId: '1',
+        name: 'Development Zone',
         organizationalUnit: 'Development',
         orgId: 'o-6f7g8h9i0j',
         awsAccountId: '123456789013',
@@ -66,6 +68,7 @@ const Zones = () => {
       {
         id: '3',
         clientId: '1',
+        name: 'Staging Zone',
         organizationalUnit: 'Staging',
         orgId: 'o-k1l2m3n4o5',
         awsAccountId: '123456789014',
@@ -225,9 +228,11 @@ const Zones = () => {
             <TableHeader>
               <TableRow>
                 <TableHead>Organizational Unit</TableHead>
+                <TableHead>Zone Name</TableHead>
                 <TableHead>AWS Account ID</TableHead>
                 <TableHead>Account Name</TableHead>
                 <TableHead>Environment</TableHead>
+                <TableHead>Namespace</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -240,6 +245,7 @@ const Zones = () => {
                       <div className="text-xs text-muted-foreground">{zone.orgId}</div>
                     </div>
                   </TableCell>
+                  <TableCell className="font-medium">{zone.name}</TableCell>
                   <TableCell className="font-mono text-sm">{zone.awsAccountId}</TableCell>
                   <TableCell>{zone.accountName}</TableCell>
                   <TableCell>
@@ -247,6 +253,7 @@ const Zones = () => {
                       {zone.environment}
                     </Badge>
                   </TableCell>
+                  <TableCell>{zone.namespace || '-'}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <Button 
@@ -304,7 +311,7 @@ const Zones = () => {
               ))}
               {paginatedZones.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     {selectedClient 
                       ? `No zones found for ${selectedClient.name}`
                       : 'No zones found'
