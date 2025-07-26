@@ -10,30 +10,7 @@ interface DeploymentChartProps {
   filters?: FilterState;
 }
 
-const dailyDeployments = [
-  { date: "Mon", successful: 9, failed: 3, total: 12 },
-  { date: "Tue", successful: 12, failed: 3, total: 15 },
-  { date: "Wed", successful: 6, failed: 2, total: 8 },
-  { date: "Thu", successful: 16, failed: 4, total: 20 },
-  { date: "Fri", successful: 15, failed: 3, total: 18 },
-  { date: "Sat", successful: 4, failed: 1, total: 5 },
-  { date: "Sun", successful: 2, failed: 1, total: 3 },
-];
-
-const deploymentStatus = [
-  { name: "Released", value: 145, color: "hsl(142 71% 45%)" }, // Green
-  { name: "Not Released", value: 32, color: "hsl(48 96% 53%)" }, // Yellow  
-  { name: "Failed", value: 15, color: "hsl(0 84% 60%)" }, // Red
-  { name: "Teardown in Progress", value: 8, color: "hsl(0 72% 50%)" }, // Dark red
-  { name: "Release in Progress", value: 12, color: "hsl(221 83% 53%)" }, // Blue
-];
-
-const zoneEnvironments = [
-  { environment: "Production", zones: 45 },
-  { environment: "Staging", zones: 32 },
-  { environment: "Development", zones: 78 },
-  { environment: "Testing", zones: 24 },
-];
+// All data comes from Redux store - no mock data
 
 const chartConfig = {
   successful: {
@@ -150,13 +127,20 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
       return acc;
     }, {} as Record<string, number>);
 
-    return deploymentStatus.map(status => {
-      const statusKey = status.name.toLowerCase().replace(' ', '-').replace(' in progress', '-in-progress');
-      return {
-        ...status,
-        value: statusCounts[statusKey] || 0
-      };
-    });
+    // Define status types with colors, using only data from Redux
+    const statusTypes = [
+      { name: "Released", key: "released", color: "hsl(142 71% 45%)" },
+      { name: "Not Released", key: "not-released", color: "hsl(48 96% 53%)" },
+      { name: "Failed", key: "failed", color: "hsl(0 84% 60%)" },
+      { name: "Teardown in Progress", key: "teardown-in-progress", color: "hsl(0 72% 50%)" },
+      { name: "Release in Progress", key: "release-in-progress", color: "hsl(221 83% 53%)" }
+    ];
+
+    return statusTypes.map(status => ({
+      name: status.name,
+      value: statusCounts[status.key] || 0,
+      color: status.color
+    })).filter(status => status.value > 0); // Only show statuses that have data
   };
 
   const filteredDeploymentStatus = calculateStatusDistribution(filteredRecords);
@@ -225,21 +209,8 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
     return data;
   };
 
-  // Generate actual daily/monthly data from Redux deployments or use mock data if no deployments
+  // Generate daily/monthly data from Redux deployments only
   const generateActualDeploymentData = () => {
-    if (clientDeployments.length === 0) {
-      // Use mock data when no deployments available
-      return {
-        dailyData: dailyDeployments,
-        monthlyData: [
-          { month: "Oct", successful: 45, failed: 8 },
-          { month: "Nov", successful: 52, failed: 12 },
-          { month: "Dec", successful: 38, failed: 6 },
-          { month: "Jan", successful: 48, failed: 9 }
-        ]
-      };
-    }
-
     const today = new Date();
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dailyData = [];
@@ -249,28 +220,20 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
       date.setDate(date.getDate() - i);
       const dayName = days[date.getDay()];
       
-      // Use more flexible date matching - check if deployment is within the last 30 days
-      // and distribute them across the week based on deployment ID
+      // Distribute deployments across the week based on deployment ID hash
       const dayDeployments = clientDeployments.filter(dep => {
-        const depDate = new Date(dep.deployedAt);
-        const daysSinceDeployment = Math.floor((today.getTime() - depDate.getTime()) / (1000 * 60 * 60 * 24));
-        // Distribute deployments across the week based on deployment ID hash
         const deploymentDay = parseInt(dep.id.slice(-1), 16) % 7;
-        return daysSinceDeployment >= 0 && daysSinceDeployment <= 30 && deploymentDay === (6 - i);
+        return deploymentDay === (6 - i);
       });
       
       const successful = dayDeployments.filter(dep => dep.status === 'released').length;
       const failed = dayDeployments.filter(dep => dep.status === 'failed').length;
       
-      // Add some baseline data if we have deployments but none for this day
-      const baseSuccessful = clientDeployments.length > 0 ? Math.max(successful, Math.floor(Math.random() * 5) + 1) : successful;
-      const baseFailed = clientDeployments.length > 0 ? Math.max(failed, Math.floor(Math.random() * 2)) : failed;
-      
       dailyData.push({
         date: dayName,
-        successful: baseSuccessful,
-        failed: baseFailed,
-        total: baseSuccessful + baseFailed
+        successful,
+        failed,
+        total: successful + failed
       });
     }
     
@@ -278,21 +241,17 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
     const months = ['Oct', 'Nov', 'Dec', 'Jan'];
     
     for (const month of months) {
-      // Distribute monthly data based on total deployments
+      // Distribute monthly data based on deployment index
       const monthIndex = months.indexOf(month);
       const monthDeployments = clientDeployments.filter((dep, index) => index % 4 === monthIndex);
       
       const successful = monthDeployments.filter(dep => dep.status === 'released').length;
       const failed = monthDeployments.filter(dep => dep.status === 'failed').length;
       
-      // Add baseline data to make charts visible
-      const baseSuccessful = clientDeployments.length > 0 ? Math.max(successful, Math.floor(clientDeployments.length / 4) + Math.floor(Math.random() * 10) + 5) : 0;
-      const baseFailed = clientDeployments.length > 0 ? Math.max(failed, Math.floor(Math.random() * 5) + 1) : 0;
-      
       monthlyData.push({ 
         month, 
-        successful: baseSuccessful, 
-        failed: baseFailed 
+        successful, 
+        failed 
       });
     }
     
