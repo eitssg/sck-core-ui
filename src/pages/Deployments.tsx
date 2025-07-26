@@ -20,7 +20,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useReduxData } from '@/hooks/useReduxData';
+import { useToast } from '@/hooks/use-toast';
 
 // Mock data
 const mockClients = [
@@ -72,7 +84,7 @@ const mockDeployments = [
     environment: "development",
     tag: "v0.9.2-alpha",
     region: "eu-west-1",
-    status: "released",
+    status: "release-in-progress",
     lastActivity: "3 hours ago"
   },
   {
@@ -89,12 +101,43 @@ const mockDeployments = [
     region: "us-east-1",
     status: "released",
     lastActivity: "30 minutes ago"
+  },
+  {
+    id: 5,
+    prn: "prn:enterprise-suite:payment-gateway:main:build-555",
+    clientId: 1,
+    portfolio: "Enterprise Suite",
+    application: "Payment Gateway",
+    description: "Secure payment processing service for e-commerce transactions",
+    branch: "main",
+    build: "build-555",
+    environment: "production",
+    tag: "v1.5.1",
+    region: "us-east-1",
+    status: "torndown",
+    lastActivity: "2 days ago"
+  },
+  {
+    id: 6,
+    prn: "prn:mobile-apps:notification-service:develop:build-333",
+    clientId: 2,
+    portfolio: "Mobile Apps",
+    application: "Notification Service",
+    description: "Push notification system for mobile applications",
+    branch: "develop",
+    build: "build-333",
+    environment: "staging",
+    tag: "v2.0.0-beta",
+    region: "us-west-2",
+    status: "not-released",
+    lastActivity: "4 hours ago"
   }
 ];
 
 export default function Deployments() {
   const navigate = useNavigate();
   const { selectedClient } = useReduxData();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterTerms, setFilterTerms] = useState<string[]>([]);
   const [newFilterTerm, setNewFilterTerm] = useState("");
@@ -176,6 +219,42 @@ export default function Deployments() {
     }
   };
 
+  const getDeletePromptMessage = (status: string) => {
+    switch (status) {
+      case "released":
+        return "Tearing down a released deployment will mean the application is no longer available to consumers. Is this what you really wish to do?";
+      case "not-released":
+        return "Are you sure?";
+      case "release-in-progress":
+        return "Cannot teardown a deployment when release is in progress";
+      case "torndown":
+        return "This deployment has already been torn down";
+      default:
+        return "Are you sure you want to delete this deployment?";
+    }
+  };
+
+  const canDelete = (status: string) => {
+    return status !== "release-in-progress" && status !== "torndown";
+  };
+
+  const handleDeleteDeployment = (deployment: any) => {
+    if (deployment.status === "release-in-progress" || deployment.status === "torndown") {
+      toast({
+        title: "Cannot delete deployment",
+        description: getDeletePromptMessage(deployment.status),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // For deletable deployments, this would be handled by the AlertDialog
+    toast({
+      title: "Deployment deleted",
+      description: `${deployment.application} deployment has been torn down successfully.`,
+    });
+  };
+
   const getStatusIcon = (status: string) => {
     return status === "released" ? 
       <Play className="h-4 w-4 text-green-600" /> : 
@@ -183,9 +262,18 @@ export default function Deployments() {
   };
 
   const getStatusColor = (status: string) => {
-    return status === "released" ? 
-      "bg-green-100 text-green-800" : 
-      "bg-gray-100 text-gray-800";
+    switch (status) {
+      case "released":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
+      case "not-released":
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300";
+      case "release-in-progress":
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
+      case "torndown":
+        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
+      default:
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300";
+    }
   };
 
   const getEnvironmentColor = (environment: string) => {
@@ -389,7 +477,11 @@ export default function Deployments() {
                     <div className="flex items-center gap-2">
                       {getStatusIcon(deployment.status)}
                       <Badge className={getStatusColor(deployment.status)} variant="secondary">
-                        {deployment.status === "released" ? "Released" : "Not Released"}
+                        {deployment.status === "released" ? "Released" : 
+                         deployment.status === "not-released" ? "Not Released" :
+                         deployment.status === "release-in-progress" ? "Release in Progress" :
+                         deployment.status === "torndown" ? "Torn Down" :
+                         deployment.status}
                       </Badge>
                     </div>
                   </TableCell>
@@ -425,14 +517,50 @@ export default function Deployments() {
                           <Square className="h-3 w-3" />
                         </Button>
                       )}
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="text-destructive hover:text-destructive"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                      
+                      {canDelete(deployment.status) ? (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-destructive hover:text-destructive"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Deployment</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                {getDeletePromptMessage(deployment.status)}
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction 
+                                onClick={() => handleDeleteDeployment(deployment)}
+                                className="bg-destructive hover:bg-destructive/90"
+                              >
+                                {deployment.status === "released" ? "Tear Down" : "Delete"}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      ) : (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-gray-400 cursor-not-allowed"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteDeployment(deployment);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
