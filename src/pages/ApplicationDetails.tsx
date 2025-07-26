@@ -46,6 +46,28 @@ const mockPortfolios = [
   { id: 3, name: "Analytics Platform", code: "ANL" }
 ];
 
+// Mock deployments data (same as in Deployments.tsx)
+const mockDeployments = [
+  {
+    id: 1,
+    application: "User Management",
+    lastActivity: "2 hours ago",
+    status: "released"
+  },
+  {
+    id: 2,
+    application: "Analytics Dashboard", 
+    lastActivity: "1 day ago",
+    status: "not-released"
+  },
+  {
+    id: 3,
+    application: "User Management",
+    lastActivity: "3 days ago", 
+    status: "released"
+  }
+];
+
 export default function ApplicationDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -66,6 +88,33 @@ export default function ApplicationDetails() {
       setIsLoading(false);
       setIsEditing(false);
     }, 1000);
+  };
+
+  const handleViewLogs = () => {
+    // Find the latest deployment for this application
+    const applicationDeployments = mockDeployments.filter(
+      deployment => deployment.application === mockApplication.name
+    );
+    
+    if (applicationDeployments.length === 0) {
+      // No deployments found for this application
+      navigate("/deployments");
+      return;
+    }
+    
+    // Sort by most recent activity (this is a simplified sort - in real app would use proper date comparison)
+    const latestDeployment = applicationDeployments.reduce((latest, current) => {
+      // Simple comparison based on the mock "time ago" format
+      const getHours = (timeStr: string) => {
+        if (timeStr.includes("hour")) return parseInt(timeStr);
+        if (timeStr.includes("day")) return parseInt(timeStr) * 24;
+        return 999; // fallback for other formats
+      };
+      
+      return getHours(current.lastActivity) < getHours(latest.lastActivity) ? current : latest;
+    });
+    
+    navigate(`/deployments/${latestDeployment.id}`);
   };
 
   const handleDelete = () => {
@@ -278,7 +327,12 @@ export default function ApplicationDetails() {
               <CardTitle className="text-lg">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button variant="outline" size="sm" className="w-full justify-start">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full justify-start"
+                onClick={handleViewLogs}
+              >
                 <Activity className="h-4 w-4 mr-2" />
                 View Logs
               </Button>
