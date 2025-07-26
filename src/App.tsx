@@ -18,6 +18,9 @@ import ApplicationDetails from "./pages/ApplicationDetails";
 import Clients from "./pages/Clients";
 import ClientDetails from "./pages/ClientDetails";
 import CreateClient from "./pages/CreateClient";
+import Zones from "./pages/Zones";
+import ZoneDetails from "./pages/ZoneDetails";
+import CreateZone from "./pages/CreateZone";
 import Deployments from "./pages/Deployments";
 import DeploymentDetails from "./pages/DeploymentDetails";
 import Docs from "./pages/Docs";
@@ -75,6 +78,18 @@ const App = () => (
           </Route>
           <Route path="/clients/:id/edit" element={<DashboardLayout />}>
             <Route index element={<CreateClient />} />
+          </Route>
+          <Route path="/zones" element={<DashboardLayout />}>
+            <Route index element={<Zones />} />
+          </Route>
+          <Route path="/zones/create" element={<DashboardLayout />}>
+            <Route index element={<CreateZone />} />
+          </Route>
+          <Route path="/zones/:id" element={<DashboardLayout />}>
+            <Route index element={<ZoneDetails />} />
+          </Route>
+          <Route path="/zones/:id/edit" element={<DashboardLayout />}>
+            <Route index element={<CreateZone />} />
           </Route>
           <Route path="/deployments" element={<DashboardLayout />}>
             <Route index element={<Deployments />} />

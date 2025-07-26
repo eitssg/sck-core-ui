@@ -2,9 +2,11 @@ import { useAppSelector, useAppDispatch } from '@/store';
 import { setClients, setSelectedClient } from '@/store/slices/clientsSlice';
 import { setPortfolios, setSelectedPortfolio } from '@/store/slices/portfoliosSlice';
 import { setApplications, setSelectedApplication } from '@/store/slices/applicationsSlice';
+import { setZones, setSelectedZone, addZone, updateZone, removeZone } from '@/store/slices/zonesSlice';
 import type { Client } from '@/store/slices/clientsSlice';
 import type { Portfolio } from '@/store/slices/portfoliosSlice';
 import type { Application } from '@/store/slices/applicationsSlice';
+import type { Zone } from '@/store/slices/zonesSlice';
 
 // Custom hook for easier data management
 export const useReduxData = () => {
@@ -27,6 +29,12 @@ export const useReduxData = () => {
   const selectedApplicationId = useAppSelector(state => state.applications.selectedApplicationId);
   const selectedApplication = useAppSelector(state => 
     state.applications.applications.find(app => app.id === state.applications.selectedApplicationId)
+  );
+  
+  const zones = useAppSelector(state => state.zones.zones);
+  const selectedZoneId = useAppSelector(state => state.zones.selectedZoneId);
+  const selectedZone = useAppSelector(state => 
+    state.zones.zones.find(zone => zone.id === state.zones.selectedZoneId)
   );
   
   // Actions
@@ -54,6 +62,26 @@ export const useReduxData = () => {
     dispatch(setSelectedApplication(applicationId));
   };
   
+  const initializeZones = (zonesData: Zone[]) => {
+    dispatch(setZones(zonesData));
+  };
+  
+  const selectZone = (zoneId: string | null) => {
+    dispatch(setSelectedZone(zoneId));
+  };
+  
+  const createZone = (zoneData: Zone) => {
+    dispatch(addZone(zoneData));
+  };
+  
+  const editZone = (zoneData: Zone) => {
+    dispatch(updateZone(zoneData));
+  };
+  
+  const deleteZone = (zoneId: string) => {
+    dispatch(removeZone(zoneId));
+  };
+  
   return {
     // Data
     clients,
@@ -65,6 +93,9 @@ export const useReduxData = () => {
     applications,
     selectedApplicationId,
     selectedApplication,
+    zones,
+    selectedZoneId,
+    selectedZone,
     
     // Actions
     initializeClients,
@@ -73,5 +104,10 @@ export const useReduxData = () => {
     selectPortfolio,
     initializeApplications,
     selectApplication,
+    initializeZones,
+    selectZone,
+    addZone: createZone,
+    updateZone: editZone,
+    removeZone: deleteZone,
   };
 };

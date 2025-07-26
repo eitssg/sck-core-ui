@@ -4,12 +4,14 @@ import type { TypedUseSelectorHook } from 'react-redux';
 import clientsSlice from './slices/clientsSlice';
 import portfoliosSlice from './slices/portfoliosSlice';
 import applicationsSlice from './slices/applicationsSlice';
+import zonesSlice from './slices/zonesSlice';
 
 export const store = configureStore({
   reducer: {
     clients: clientsSlice,
     portfolios: portfoliosSlice,
     applications: applicationsSlice,
+    zones: zonesSlice,
   },
 });
 
