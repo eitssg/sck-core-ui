@@ -35,67 +35,8 @@ const Zones = () => {
   }, [searchParams]);
 
   useEffect(() => {
-    // All zone data comes from Redux store
-    initializeClients([
-      {
-        id: '1',
-        name: 'Acme Corp',
-        description: 'Main client',
-        homepage: 'https://acme.com',
-        contactName: 'John Doe',
-        contactEmail: 'john@acme.com',
-        primaryAwsRegion: 'us-east-1',
-        memberCount: 50,
-        portfolioCount: 3,
-      }
-    ]);
-
-    initializeZones([
-      {
-        id: '1',
-        clientId: '1',
-        name: 'Production Zone',
-        organizationalUnit: 'Production',
-        orgId: 'o-1a2b3c4d5e',
-        awsAccountId: '123456789012',
-        accountName: 'prod-account',
-        environment: 'production',
-        namespace: 'prod-ns',
-        kmsKeys: ['key-1', 'key-2'],
-        vpcAliases: ['main-vpc', 'backup-vpc'],
-        subnetAliases: ['web-subnet', 'db-subnet'],
-        tags: { Environment: 'prod', Team: 'platform' },
-      },
-      {
-        id: '2',
-        clientId: '1',
-        name: 'Development Zone',
-        organizationalUnit: 'Development',
-        orgId: 'o-6f7g8h9i0j',
-        awsAccountId: '123456789013',
-        accountName: 'dev-account',
-        environment: 'development',
-        kmsKeys: ['dev-key-1'],
-        vpcAliases: ['dev-vpc'],
-        subnetAliases: ['dev-subnet'],
-        tags: { Environment: 'dev', Team: 'development' },
-      },
-      {
-        id: '3',
-        clientId: '1',
-        name: 'Staging Zone',
-        organizationalUnit: 'Staging',
-        orgId: 'o-k1l2m3n4o5',
-        awsAccountId: '123456789014',
-        accountName: 'staging-account',
-        environment: 'staging',
-        namespace: 'staging-ns',
-        kmsKeys: ['staging-key-1'],
-        vpcAliases: ['staging-vpc'],
-        subnetAliases: ['staging-subnet'],
-        tags: { Environment: 'staging', Team: 'qa' },
-      }
-    ]);
+    // Zone data comes from DashboardLayout initialization - do not override
+    // The DashboardLayout.tsx already initializes the complete zone data
   }, []);
 
   // TODO: Replace with actual API call when filter terms change
