@@ -71,6 +71,47 @@ export default function Applications() {
 
   // Initialize data
   useEffect(() => {
+    if (portfolios.length === 0) {
+      initializePortfolios([
+        {
+          id: '1',
+          clientId: '1',
+          name: 'Enterprise Suite',
+          slug: 'enterprise-suite',
+          code: 'ENT-SYS-001',
+          description: 'Comprehensive enterprise applications for business management',
+          homePageUrl: 'https://enterprise.company.com',
+          applicationCount: 12,
+          lastUpdated: '2024-01-15',
+          status: 'active',
+        },
+        {
+          id: '2',
+          clientId: '1',
+          name: 'Mobile Apps',
+          slug: 'mobile-apps',
+          code: 'MOB-APP-002',
+          description: 'Cross-platform mobile applications for customer engagement',
+          homePageUrl: 'https://mobile.company.com',
+          applicationCount: 8,
+          lastUpdated: '2024-01-10',
+          status: 'active',
+        },
+        {
+          id: '3',
+          clientId: '1',
+          name: 'Analytics Platform',
+          slug: 'analytics-platform',
+          code: 'ANL-PLT-003',
+          description: 'Data analytics and business intelligence solutions',
+          homePageUrl: 'https://analytics.company.com',
+          applicationCount: 6,
+          lastUpdated: '2024-01-12',
+          status: 'active',
+        }
+      ]);
+    }
+
     if (applications.length === 0) {
       initializeApplications([
         {
@@ -130,7 +171,7 @@ export default function Applications() {
         }
       ]);
     }
-  }, [applications.length, initializeApplications]);
+  }, [applications.length, portfolios.length, initializeApplications, initializePortfolios]);
 
   const filteredApplications = applications.filter(app => {
     // Get the portfolio for this application
@@ -317,7 +358,7 @@ export default function Applications() {
                       </div>
                       <div>
                         <div className="font-medium">{app.name}</div>
-                        <div className="text-xs text-muted-foreground">CMDB code: {app.code}</div>
+                        <div className="text-xs text-muted-foreground">{app.code}</div>
                       </div>
                     </div>
                   </TableCell>
@@ -327,7 +368,7 @@ export default function Applications() {
                         {portfolios.find(p => p.id === app.portfolioId)?.name || 'Unknown Portfolio'}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        CMDB code: {portfolios.find(p => p.id === app.portfolioId)?.code || 'N/A'}
+                        {portfolios.find(p => p.id === app.portfolioId)?.code || 'N/A'}
                       </div>
                     </div>
                   </TableCell>
