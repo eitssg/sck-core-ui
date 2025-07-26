@@ -94,6 +94,9 @@ export default function Applications() {
     );
   }
 
+  // Filter zones for the selected client
+  const clientZones = zones.filter(zone => zone.clientId === selectedClient?.id);
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Selected Client Header - Prominent Display */}
@@ -235,12 +238,12 @@ export default function Applications() {
                         <MapPin className="h-3 w-3 text-accent" />
                       </div>
                       <div>
-                        <div className="font-medium text-sm">
-                          {zones.find(z => z.id === app.zone)?.name || 'Unknown Zone'}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {zones.find(z => z.id === app.zone)?.environment || 'N/A'}
-                        </div>
+                         <div className="font-medium text-sm">
+                           {clientZones.find(z => z.id === app.zone)?.name || 'Unknown Zone'}
+                         </div>
+                         <div className="text-xs text-muted-foreground">
+                           {clientZones.find(z => z.id === app.zone)?.environment || 'N/A'}
+                         </div>
                       </div>
                     </div>
                   </TableCell>
