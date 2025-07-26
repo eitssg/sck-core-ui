@@ -181,15 +181,38 @@ export default function Deployments() {
         const applications = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9', 'a10', 'a11', 'a12', 'a13', 'a14', 'a15', 'a16', 'a17', 'a18', 'a19', 'a20', 'a21', 'a22', 'a23', 'a24', 'a25', 'a26', 'a27', 'a28', 'a29', 'a30'];
         const usedApps = new Set();
         
+        // Helper to generate realistic deployment dates over last 30 days
+        const generateDeploymentDate = (index: number, total: number) => {
+          const now = new Date();
+          const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          
+          // Create clustering around the 15th of the month
+          const dayOfMonth = now.getDate();
+          const fifteenthThisMonth = new Date(now.getFullYear(), now.getMonth(), 15);
+          const fifteenthLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 15);
+          
+          // 40% of deployments cluster around the 15th (±3 days)
+          if (index < total * 0.4) {
+            const clusterCenter = fifteenthThisMonth > now ? fifteenthLastMonth : fifteenthThisMonth;
+            const variance = (Math.random() - 0.5) * 6 * 24 * 60 * 60 * 1000; // ±3 days
+            return new Date(clusterCenter.getTime() + variance);
+          }
+          
+          // Remaining 60% spread across the 30 days
+          const timeRange = now.getTime() - thirtyDaysAgo.getTime();
+          const randomTime = thirtyDaysAgo.getTime() + (Math.random() * timeRange);
+          return new Date(randomTime);
+        };
+        
         // Helper to get client ID from application
-        const getClientId = (appId) => {
+        const getClientId = (appId: string) => {
           if (['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9', 'a10', 'a11', 'a12', 'a13', 'a14', 'a15', 'a16', 'a17', 'a18'].includes(appId)) return '1'; // Acme Corp
           if (['a19', 'a20', 'a21', 'a22', 'a23', 'a24', 'a25', 'a26'].includes(appId)) return '2'; // TechStart Inc  
           return '3'; // Global Systems
         };
         
         // Helper to get portfolio ID from application
-        const getPortfolioId = (appId) => {
+        const getPortfolioId = (appId: string) => {
           if (['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'].includes(appId)) return 'p1';
           if (['a9', 'a10', 'a11', 'a12', 'a13', 'a14'].includes(appId)) return 'p2';
           if (['a15', 'a16', 'a17', 'a18'].includes(appId)) return 'p3';
@@ -199,7 +222,7 @@ export default function Deployments() {
         };
         
         // Helper to create deployment
-        const createDeployment = (index, status, appId = null) => {
+        const createDeployment = (index: number, status: string, appId: string | null = null) => {
           let applicationId = appId;
           if (!applicationId) {
             const availableApps = index <= 25 
@@ -217,6 +240,7 @@ export default function Deployments() {
           const portfolioId = getPortfolioId(applicationId);
           const environment = environments[Math.floor(Math.random() * environments.length)];
           const deploymentId = `dep-${index.toString().padStart(3, '0')}`;
+          const deploymentDate = generateDeploymentDate(index, 60);
           
           return {
             id: deploymentId,
@@ -231,9 +255,9 @@ export default function Deployments() {
             tag: `v${Math.floor(Math.random() * 3) + 1}.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 10)}`,
             region: 'us-east-1',
             status,
-            deployedAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
+            deployedAt: deploymentDate.toISOString(),
             deployedBy: `user${Math.floor(Math.random() * 10) + 1}@${clientId === '1' ? 'acme' : clientId === '2' ? 'techstart' : 'globalsystems'}.com`,
-            lastActivity: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString()
+            lastActivity: new Date(deploymentDate.getTime() + Math.random() * 24 * 60 * 60 * 1000).toISOString()
           };
         };
         
