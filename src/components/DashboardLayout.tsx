@@ -48,6 +48,7 @@ const mockPortfolios = [
 
 export default function DashboardLayout() {
   const [currentPortfolio, setCurrentPortfolio] = useState(mockPortfolios[0]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { clients, selectedClient, initializeClients, selectClient } = useReduxData();
@@ -112,9 +113,14 @@ export default function DashboardLayout() {
   const isActive = (href: string) => location.pathname === href || location.pathname.startsWith(href + '/');
 
   return (
-    <SidebarProvider>
+    <SidebarProvider open={!sidebarCollapsed} onOpenChange={(open) => setSidebarCollapsed(!open)}>
       <div className="min-h-screen w-full flex">
-        <AppSidebar navigation={navigation} isActive={isActive} handleLogout={handleLogout} />
+        <AppSidebar 
+          navigation={navigation} 
+          isActive={isActive} 
+          handleLogout={handleLogout} 
+          collapsed={sidebarCollapsed}
+        />
         
         {/* Main content */}
         <div className="flex flex-col flex-1">
@@ -172,18 +178,22 @@ interface AppSidebarProps {
   }>;
   isActive: (href: string) => boolean;
   handleLogout: () => void;
+  collapsed: boolean;
 }
 
-function AppSidebar({ navigation, isActive, handleLogout }: AppSidebarProps) {
-  const { state } = useSidebar();
-  const collapsed = state === 'collapsed';
+function AppSidebar({ navigation, isActive, handleLogout, collapsed }: AppSidebarProps) {
 
   return (
-    <Sidebar className="border-r bg-dashboard-sidebar">
+    <Sidebar 
+      className={`border-r bg-dashboard-sidebar transition-all duration-200 ${
+        collapsed ? 'w-16' : 'w-64'
+      }`}
+      collapsible="none"
+    >
       <SidebarContent>
         {/* Logo/Brand */}
-        <div className="flex items-center gap-3 p-6 border-b border-border">
-          <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary-light rounded-lg flex items-center justify-center">
+        <div className={`flex items-center gap-3 p-6 border-b border-border ${collapsed ? 'justify-center' : ''}`}>
+          <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary-light rounded-lg flex items-center justify-center flex-shrink-0">
             <Briefcase className="h-5 w-5 text-white" />
           </div>
           {!collapsed && <h1 className="text-xl font-bold text-foreground">Admin Portal</h1>}
@@ -191,16 +201,21 @@ function AppSidebar({ navigation, isActive, handleLogout }: AppSidebarProps) {
 
         {/* Navigation */}
         <SidebarGroup>
-          <SidebarGroupLabel className={collapsed ? "sr-only" : ""}>Navigation</SidebarGroupLabel>
+          {!collapsed && <SidebarGroupLabel>Navigation</SidebarGroupLabel>}
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="space-y-1">
               {navigation.map((item) => {
                 const Icon = item.icon;
                 return (
                   <SidebarMenuItem key={item.name}>
-                    <SidebarMenuButton asChild isActive={isActive(item.href)}>
+                    <SidebarMenuButton 
+                      asChild 
+                      isActive={isActive(item.href)}
+                      className={collapsed ? 'justify-center' : ''}
+                      title={collapsed ? item.name : undefined}
+                    >
                       <Link to={item.href} className="flex items-center gap-3">
-                        <Icon className="h-5 w-5" />
+                        <Icon className="h-5 w-5 flex-shrink-0" />
                         {!collapsed && <span>{item.name}</span>}
                       </Link>
                     </SidebarMenuButton>
@@ -213,23 +228,25 @@ function AppSidebar({ navigation, isActive, handleLogout }: AppSidebarProps) {
 
         {/* Quick Actions & Logout */}
         <div className="mt-auto p-4 border-t border-border space-y-2">
-          {!collapsed && (
-            <Button variant="gradient" className="w-full gap-2">
-              <Plus className="h-4 w-4" />
-              Quick Create
-            </Button>
-          )}
-          {collapsed && (
-            <Button variant="gradient" size="icon" className="w-full">
-              <Plus className="h-4 w-4" />
-            </Button>
-          )}
+          <Button 
+            variant="gradient" 
+            className={`gap-2 ${collapsed ? 'px-2' : 'w-full'}`}
+            size={collapsed ? 'icon' : 'default'}
+            title={collapsed ? 'Quick Create' : undefined}
+          >
+            <Plus className="h-4 w-4" />
+            {!collapsed && 'Quick Create'}
+          </Button>
           
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild>
+              <SidebarMenuButton 
+                asChild 
+                className={collapsed ? 'justify-center' : ''}
+                title={collapsed ? 'Logout' : undefined}
+              >
                 <button onClick={handleLogout} className="flex items-center gap-3 w-full text-left">
-                  <LogOut className="h-5 w-5" />
+                  <LogOut className="h-5 w-5 flex-shrink-0" />
                   {!collapsed && <span>Logout</span>}
                 </button>
               </SidebarMenuButton>
