@@ -56,7 +56,7 @@ export default function DashboardLayout() {
   const location = useLocation();
   const dispatch = useAppDispatch();
   const deployments = useAppSelector(state => state.deployments.deployments);
-  const { clients, selectedClient, defaultClient, initializeClients, selectClient, initializePortfolios, initializeApplications, initializeZones } = useReduxData();
+  const { clients, selectedClient, defaultClient, selectClient } = useReduxData();
 
   // Initialize all store data with realistic aligned mock data
   useEffect(() => {

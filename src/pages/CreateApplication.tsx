@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 export default function CreateApplication() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { portfolios, selectedClient, initializeApplications } = useReduxData();
+  const { portfolios, selectedClient } = useReduxData();
   
   // Filter portfolios for the selected client
   const clientPortfolios = portfolios.filter(p => p.clientId === selectedClient?.id);
@@ -101,8 +101,8 @@ export default function CreateApplication() {
         lastDeploy: new Date().toISOString(),
       };
 
-      // Add to Redux store (simulate API call)
-      initializeApplications([newApplication]);
+      // TODO: Call proper Redux action to create application via API
+      // Should call: createApplication(newApplication) which simulates API call
 
       toast({
         title: "Success!",

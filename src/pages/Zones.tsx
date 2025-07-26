@@ -13,7 +13,7 @@ import { useReduxData } from '@/hooks/useReduxData';
 import { useToast } from '@/hooks/use-toast';
 
 const Zones = () => {
-  const { zones, clients, selectedClient, initializeZones, initializeClients, selectClient, removeZone } = useReduxData();
+  const { zones, clients, selectedClient, selectClient, removeZone } = useReduxData();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
   const [currentPage, setCurrentPage] = useState(1);
