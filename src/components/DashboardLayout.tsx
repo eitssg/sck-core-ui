@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Outlet, useNavigate, useLocation, Link } from "react-router-dom";
 import { 
   Home, 
@@ -17,12 +17,14 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useReduxData } from "@/hooks/useReduxData";
 
 // Mock data - will be replaced with real data later
 const mockPortfolios = [
@@ -36,6 +38,26 @@ export default function DashboardLayout() {
   const [currentPortfolio, setCurrentPortfolio] = useState(mockPortfolios[0]);
   const navigate = useNavigate();
   const location = useLocation();
+  const { clients, selectedClient, initializeClients, selectClient } = useReduxData();
+
+  // Initialize clients data
+  useEffect(() => {
+    if (clients.length === 0) {
+      initializeClients([
+        {
+          id: '1',
+          name: 'Acme Corp',
+          description: 'Main client',
+          homepage: 'https://acme.com',
+          contactName: 'John Doe',
+          contactEmail: 'john@acme.com',
+          primaryAwsRegion: 'us-east-1',
+          memberCount: 50,
+          portfolioCount: 3,
+        }
+      ]);
+    }
+  }, [clients.length, initializeClients]);
 
   const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: Home },
@@ -92,7 +114,26 @@ export default function DashboardLayout() {
               
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4">
+              {/* Client Selection Dropdown */}
+              {clients.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Client:</span>
+                  <Select value={selectedClient?.id || ""} onValueChange={(value) => selectClient(value || null)}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="Select client..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients.map((client) => (
+                        <SelectItem key={client.id} value={client.id}>
+                          {client.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              
               <Button variant="ghost" size="icon">
                 <Settings className="h-5 w-5" />
               </Button>

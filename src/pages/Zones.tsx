@@ -64,29 +64,6 @@ const Zones = () => {
 
   return (
     <div className="space-y-6">
-      {/* Client Selection */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground">Select Client Tenant</label>
-              <Select value={selectedClient?.id || ""} onValueChange={(value) => selectClient(value || null)}>
-                <SelectTrigger className="w-full max-w-md">
-                  <SelectValue placeholder="Choose a client to manage zones..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Selected Client Header - Prominent Display */}
       {selectedClient && (
         <Card className="border-l-4 border-l-primary bg-primary/5">
