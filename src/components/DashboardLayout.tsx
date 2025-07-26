@@ -13,7 +13,8 @@ import {
   FolderOpen,
   List,
   Building2,
-  GitBranch
+  GitBranch,
+  Cloud
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -121,7 +122,7 @@ export default function DashboardLayout() {
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary-light rounded-lg flex items-center justify-center">
-                  <Briefcase className="h-5 w-5 text-white" />
+                  <Cloud className="h-5 w-5 text-white" />
                 </div>
                 <h1 className="text-xl font-bold text-foreground">Admin Portal</h1>
               </div>
