@@ -83,14 +83,15 @@ export default function Profile() {
       
       toast({
         title: "Request Submitted Successfully",
-        description: `Your client access request has been submitted and will be reviewed by an administrator. For support inquiries, contact support@mynet.com and reference your request ID: ${requestId}`,
+        description: `Your client access request for "${requestedClientName}" has been submitted and will be reviewed by an administrator. For support inquiries, contact support@mynet.com and reference your request ID: ${requestId}`,
         duration: 15000,
         action: (
           <Button 
             size="sm" 
             variant="outline"
             onClick={() => {
-              navigator.clipboard.writeText(requestId);
+              const copyText = `Request ID ${requestId} for ${requestedClientName}`;
+              navigator.clipboard.writeText(copyText);
               toast({
                 title: "Copied!",
                 description: "Request ID copied to clipboard",
