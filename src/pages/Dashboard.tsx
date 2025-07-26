@@ -201,6 +201,24 @@ export default function Dashboard() {
     dateRange: { from: undefined, to: undefined },
   });
   
+  // If no client is available, show loading/empty state
+  if (!currentClient) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+            <p className="text-muted-foreground">No clients available. Please create a client first.</p>
+          </div>
+          <Button variant="gradient" className="gap-2">
+            <Plus className="h-4 w-4" />
+            Create Client
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  
   const clientStats = getClientStats(currentClient.id, filters, clients, portfolios || [], applications || [], zones || [], deployments || [], events || []);
   
   // Get broken deployments from Redux data
