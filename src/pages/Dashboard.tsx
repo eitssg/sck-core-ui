@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select";
 import DeploymentChart from "@/components/DeploymentChart";
 import LatestDeployments from "@/components/LatestDeployments";
+import DashboardFilters, { FilterState } from "@/components/DashboardFilters";
 
 // Mock data - will be replaced with real data later
 const mockClients = [
@@ -53,8 +54,21 @@ const brokenDeployments = [
 
 export default function Dashboard() {
   const [selectedClient, setSelectedClient] = useState(mockClients[0]);
+  const [filters, setFilters] = useState<FilterState>({
+    keywords: "",
+    portfolios: [],
+    applications: [],
+    zones: [],
+    dateRange: { from: undefined, to: undefined },
+  });
   
   const clientStats = getClientStats(selectedClient.id);
+
+  const handleFiltersChange = (newFilters: FilterState) => {
+    setFilters(newFilters);
+    // Here you would typically trigger API calls to fetch filtered data
+    console.log('Filters changed:', newFilters);
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -123,6 +137,9 @@ export default function Dashboard() {
           );
         })}
       </div>
+
+      {/* Dashboard Filters */}
+      <DashboardFilters clientId={selectedClient.id} onFiltersChange={handleFiltersChange} />
 
       {/* Broken Deployments Alert */}
       {brokenDeployments.length > 0 && (
