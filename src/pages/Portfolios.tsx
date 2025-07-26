@@ -187,11 +187,11 @@ export default function Portfolios() {
   }, [selectedClient, searchTerm]);
 
   const handleViewPortfolio = (portfolioId: string) => {
-    navigate(`/portfolio/${portfolioId}`);
+    navigate(`/portfolios/${portfolioId}`);
   };
 
   const handleEditPortfolio = (portfolioId: string) => {
-    navigate(`/portfolio/${portfolioId}?edit=true`);
+    navigate(`/portfolios/${portfolioId}?edit=true`);
   };
 
   const handleDeletePortfolio = (portfolioId: string) => {

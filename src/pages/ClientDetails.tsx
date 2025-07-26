@@ -146,7 +146,7 @@ export default function ClientDetails() {
                   <div 
                     key={portfolio.id} 
                     className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors group"
-                    onClick={() => navigate(`/portfolio/${portfolio.id}`)}
+                    onClick={() => navigate(`/portfolios/${portfolio.id}`)}
                   >
                     <div className="flex-1">
                       <h4 className="font-medium text-foreground">{portfolio.name}</h4>
