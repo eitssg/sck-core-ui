@@ -82,9 +82,25 @@ export default function Profile() {
       const requestId = generateRequestId();
       
       toast({
-        title: "Request Submitted",
-        description: `Your request has been delivered. An administrator will process your request shortly. Your request ID is ${requestId}. If you contact support at support@mynet.com, please reference your request id.`,
-        duration: 10000,
+        title: "Request Submitted Successfully",
+        description: `Your client access request has been submitted and will be reviewed by an administrator. For support inquiries, contact support@mynet.com and reference your request ID: ${requestId}`,
+        duration: 15000,
+        action: (
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={() => {
+              navigator.clipboard.writeText(requestId);
+              toast({
+                title: "Copied!",
+                description: "Request ID copied to clipboard",
+                duration: 2000,
+              });
+            }}
+          >
+            Copy ID
+          </Button>
+        ),
       });
 
       setIsRequestDialogOpen(false);
