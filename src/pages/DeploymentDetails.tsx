@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Play, Square, Trash2, GitBranch, Tag, MapPin, Server, Clock, AlertTriangle, Activity } from "lucide-react";
+import { ArrowLeft, Play, Square, Trash2, GitBranch, Tag, MapPin, Server, Clock, AlertTriangle, Activity, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -85,6 +86,7 @@ export default function DeploymentDetails() {
   const [events, setEvents] = useState(generateMockEvents(50));
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 
   const handleRelease = () => {
     setIsLoading(true);
@@ -286,85 +288,98 @@ export default function DeploymentDetails() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Deployment Information */}
+      {/* Collapsible Deployment Details */}
+      <Collapsible open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
         <Card className="shadow-medium">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Deployment Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 pt-0">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Portfolio</label>
-              <p className="text-sm text-foreground">{deployment.portfolio}</p>
-            </div>
-            <Separator />
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Application</label>
-              <p className="text-sm text-foreground">{deployment.application}</p>
-            </div>
-            <Separator />
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Branch</label>
-              <div className="flex items-center gap-2">
-                <GitBranch className="h-3 w-3 text-muted-foreground" />
-                <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{deployment.branch}</code>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="pb-3 cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Deployment Details</CardTitle>
+                {isDetailsOpen ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                )}
               </div>
-            </div>
-            <Separator />
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Tag/Version</label>
-              <div className="flex items-center gap-2">
-                <Tag className="h-3 w-3 text-muted-foreground" />
-                <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{deployment.tag}</code>
-              </div>
-            </div>
-            <Separator />
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Build ID</label>
-              <code className="text-xs bg-muted px-1.5 py-0.5 rounded block mt-1">{deployment.build}</code>
-            </div>
-          </CardContent>
-        </Card>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="pt-0">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Deployment Information */}
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-foreground mb-3">Information</h3>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Portfolio</label>
+                    <p className="text-sm text-foreground">{deployment.portfolio}</p>
+                  </div>
+                  <Separator />
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Application</label>
+                    <p className="text-sm text-foreground">{deployment.application}</p>
+                  </div>
+                  <Separator />
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Branch</label>
+                    <div className="flex items-center gap-2">
+                      <GitBranch className="h-3 w-3 text-muted-foreground" />
+                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{deployment.branch}</code>
+                    </div>
+                  </div>
+                  <Separator />
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Tag/Version</label>
+                    <div className="flex items-center gap-2">
+                      <Tag className="h-3 w-3 text-muted-foreground" />
+                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{deployment.tag}</code>
+                    </div>
+                  </div>
+                  <Separator />
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Build ID</label>
+                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded block mt-1">{deployment.build}</code>
+                  </div>
+                </div>
 
-        {/* Deployment Details */}
-        <Card className="shadow-medium">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Additional Details</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 pt-0">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Description</label>
-              <p className="text-sm text-foreground">{deployment.description}</p>
-            </div>
-            <Separator />
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Resources</label>
-              <p className="text-sm text-foreground">{deployment.resources}</p>
-            </div>
-            <Separator />
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Created</label>
-              <p className="text-sm text-foreground">{deployment.createdAt}</p>
-            </div>
-            <Separator />
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Release Date</label>
-              <p className="text-sm text-foreground">{deployment.releaseDate || "Not released"}</p>
-            </div>
-            <Separator />
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Tags</label>
-              <div className="flex flex-wrap gap-1 mt-1">
-                {deployment.tags.map((tag) => (
-                  <Badge key={tag} variant="outline" className="text-xs px-1.5 py-0.5">
-                    {tag}
-                  </Badge>
-                ))}
+                {/* Additional Details */}
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-foreground mb-3">Additional Details</h3>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Description</label>
+                    <p className="text-sm text-foreground">{deployment.description}</p>
+                  </div>
+                  <Separator />
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Resources</label>
+                    <p className="text-sm text-foreground">{deployment.resources}</p>
+                  </div>
+                  <Separator />
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Created</label>
+                    <p className="text-sm text-foreground">{deployment.createdAt}</p>
+                  </div>
+                  <Separator />
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Release Date</label>
+                    <p className="text-sm text-foreground">{deployment.releaseDate || "Not released"}</p>
+                  </div>
+                  <Separator />
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Tags</label>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {deployment.tags.map((tag) => (
+                        <Badge key={tag} variant="outline" className="text-xs px-1.5 py-0.5">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          </CardContent>
+            </CardContent>
+          </CollapsibleContent>
         </Card>
-      </div>
+      </Collapsible>
 
       {/* Events Log */}
       <Card className="shadow-medium">
