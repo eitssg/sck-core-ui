@@ -550,7 +550,7 @@ export default function Deployments() {
                               <Trash2 className="h-3 w-3" />
                             </Button>
                           </AlertDialogTrigger>
-                          <AlertDialogContent>
+                          <AlertDialogContent onClick={(e) => e.stopPropagation()}>
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete Deployment</AlertDialogTitle>
                               <AlertDialogDescription>
@@ -558,12 +558,18 @@ export default function Deployments() {
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogCancel onClick={(e) => e.stopPropagation()}>
+                                Cancel
+                              </AlertDialogCancel>
                               <AlertDialogAction 
-                                onClick={() => handleDeleteDeployment(deployment)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteDeployment(deployment);
+                                }}
                                 className="bg-destructive hover:bg-destructive/90"
                               >
-                                {deployment.status === "released" ? "Tear Down" : "Delete"}
+                                {deployment.status === "released" ? "Tear Down" : 
+                                 deployment.status === "teardown-in-progress" ? "Try Again" : "Delete"}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
