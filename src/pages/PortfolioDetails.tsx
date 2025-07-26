@@ -36,9 +36,11 @@ const mockPortfolio = {
     slug: "techcorp"
   },
   applications: [
-    { id: 1, name: "User Management", slug: "user-mgmt", status: "active" },
-    { id: 2, name: "Analytics Dashboard", slug: "analytics-dash", status: "active" },
-    { id: 3, name: "Inventory Tracker", slug: "inventory-track", status: "development" },
+    { id: 1, name: "User Management", slug: "user-mgmt", status: "active", lastUpdated: "2024-01-20T10:30:00Z", lastActivity: "Deployment status changed to released" },
+    { id: 2, name: "Analytics Dashboard", slug: "analytics-dash", status: "active", lastUpdated: "2024-01-19T15:45:00Z", lastActivity: "New deployment created" },
+    { id: 3, name: "Inventory Tracker", slug: "inventory-track", status: "development", lastUpdated: "2024-01-18T09:15:00Z", lastActivity: "Code update pushed" },
+    { id: 4, name: "Payment Gateway", slug: "payment-gateway", status: "active", lastUpdated: "2024-01-17T14:20:00Z", lastActivity: "Deployment rolled back" },
+    { id: 5, name: "Notification System", slug: "notification-system", status: "maintenance", lastUpdated: "2024-01-16T11:30:00Z", lastActivity: "System maintenance completed" },
   ]
 };
 
@@ -79,6 +81,24 @@ export default function PortfolioDetails() {
       default:
         return "bg-gray-100 text-gray-800";
     }
+  };
+
+  // Get the 3 most recently updated applications
+  const getLatestApplications = () => {
+    return [...mockPortfolio.applications]
+      .sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime())
+      .slice(0, 3);
+  };
+
+  const formatRelativeTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+    
+    if (diffInHours < 1) return "Just now";
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+    const diffInDays = Math.floor(diffInHours / 24);
+    return `${diffInDays}d ago`;
   };
 
   return (
@@ -253,31 +273,43 @@ export default function PortfolioDetails() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <FolderOpen className="h-4 w-4" />
-                Applications
+                Latest Applications
               </CardTitle>
+              <p className="text-sm text-muted-foreground">3 most recently updated</p>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {mockPortfolio.applications.map((app) => (
+                {getLatestApplications().map((app) => (
                   <div 
                     key={app.id} 
-                    className="flex items-center justify-between p-2 bg-muted/30 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors group"
-                    onClick={() => navigate(`/application/${app.id}`)}
+                    className="flex items-center justify-between p-3 bg-muted/30 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors group"
+                    onClick={() => navigate(`/applications/${app.id}`)}
                   >
-                    <div>
-                      <span className="font-medium">{app.name}</span>
-                      <p className="text-xs text-muted-foreground">prn:{mockPortfolio.slug}:{app.slug}</p>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{app.name}</span>
+                        <Badge className={getStatusColor(app.status)} variant="secondary">
+                          {app.status}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">{app.lastActivity}</p>
+                      <div className="flex items-center gap-1 mt-1">
+                        <Calendar className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">
+                          {formatRelativeTime(app.lastUpdated)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className={getStatusColor(app.status)} variant="secondary">
-                        {app.status}
-                      </Badge>
-                      <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors" />
-                    </div>
+                    <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-foreground transition-colors" />
                   </div>
                 ))}
               </div>
-              <Button variant="outline" size="sm" className="w-full mt-4">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full mt-4"
+                onClick={() => navigate("/applications")}
+              >
                 View All Applications
               </Button>
             </CardContent>
