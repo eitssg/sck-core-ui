@@ -2,21 +2,17 @@ import { useState } from "react";
 import { Plus, Briefcase, FolderOpen, Server, TrendingUp, Activity, Database, AlertTriangle, Building2, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import DeploymentChart from "@/components/DeploymentChart";
 import LatestDeployments from "@/components/LatestDeployments";
 import DashboardFilters, { FilterState } from "@/components/DashboardFilters";
+import { useReduxData } from "@/hooks/useReduxData";
 
-// Mock data - will be replaced with real data later
+// Mock clients - Add more clients to support different selections
 const mockClients = [
   { id: "1", name: "TechCorp Solutions", slug: "techcorp-solutions", description: "Leading technology solutions provider", memberCount: 45, portfolioCount: 12 },
-  { id: "2", name: "Digital Innovations Inc", slug: "digital-innovations", description: "Cutting-edge digital transformation consultancy", memberCount: 23, portfolioCount: 8 }
+  { id: "2", name: "Digital Innovations Inc", slug: "digital-innovations", description: "Cutting-edge digital transformation consultancy", memberCount: 23, portfolioCount: 8 },
+  { id: "3", name: "Acme Corp", slug: "acme-corp", description: "Global enterprise solutions and services", memberCount: 156, portfolioCount: 25 },
+  { id: "4", name: "GlobalTech Industries", slug: "globaltech-industries", description: "International technology conglomerate", memberCount: 342, portfolioCount: 45 }
 ];
 
 const mockPortfolios = [
@@ -141,7 +137,12 @@ const brokenDeployments = [
 ];
 
 export default function Dashboard() {
-  const [selectedClient, setSelectedClient] = useState(mockClients[0]);
+  // Get the selected client from Redux store instead of local state
+  const { selectedClient, clients } = useReduxData();
+  
+  // Use a fallback client if none is selected or if selectedClient is not in our mock data
+  const currentClient = selectedClient || mockClients[0];
+  
   const [filters, setFilters] = useState<FilterState>({
     keywords: "",
     portfolios: [],
@@ -150,7 +151,7 @@ export default function Dashboard() {
     dateRange: { from: undefined, to: undefined },
   });
   
-  const clientStats = getClientStats(selectedClient.id, filters);
+  const clientStats = getClientStats(currentClient.id, filters);
 
   const handleFiltersChange = (newFilters: FilterState) => {
     setFilters(newFilters);
@@ -163,8 +164,8 @@ export default function Dashboard() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Dashboard - {selectedClient.name}</h1>
-          <p className="text-muted-foreground">Overview of {selectedClient.name}'s infrastructure and deployments</p>
+          <h1 className="text-3xl font-bold text-foreground">Dashboard - {currentClient.name}</h1>
+          <p className="text-muted-foreground">Overview of {currentClient.name}'s infrastructure and deployments</p>
         </div>
         <Button variant="gradient" className="gap-2">
           <Plus className="h-4 w-4" />
@@ -173,7 +174,7 @@ export default function Dashboard() {
       </div>
 
       {/* Dashboard Filters - NOW AT TOP */}
-      <DashboardFilters clientId={selectedClient.id} onFiltersChange={handleFiltersChange} />
+      <DashboardFilters clientId={currentClient.id} onFiltersChange={handleFiltersChange} />
 
       {/* Stats Grid - NOW FILTERED */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -240,10 +241,10 @@ export default function Dashboard() {
       )}
 
       {/* Charts Section */}
-      <DeploymentChart clientId={selectedClient.id} filters={filters} />
+      <DeploymentChart clientId={currentClient.id} filters={filters} />
 
       {/* Latest Deployments */}
-      <LatestDeployments clientId={selectedClient.id} filters={filters} />
+      <LatestDeployments clientId={currentClient.id} filters={filters} />
 
       {/* Quick Actions */}
       <Card className="shadow-soft">
