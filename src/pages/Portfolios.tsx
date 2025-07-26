@@ -1,11 +1,13 @@
-import { useState } from "react";
-import { Plus, Search, ExternalLink, Filter, Edit, Trash2, Folder } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import { Plus, Search, ExternalLink, Filter, Edit, Trash2, Folder, Building2, ArrowLeft } from "lucide-react";
+import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
+import { useReduxData } from "@/hooks/useReduxData";
 
 // Mock data
 const mockClients = [
@@ -79,9 +81,56 @@ const mockPortfolios = [
 
 export default function Portfolios() {
   const navigate = useNavigate();
-  const [portfolios] = useState(mockPortfolios);
-  const [selectedClient, setSelectedClient] = useState<string>("all");
+  const { portfolios, clients, selectedClient, initializePortfolios, initializeClients } = useReduxData();
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Initialize data
+  useEffect(() => {
+    if (clients.length === 0) {
+      initializeClients([
+        {
+          id: '1',
+          name: 'Acme Corp',
+          description: 'Main client',
+          homepage: 'https://acme.com',
+          contactName: 'John Doe',
+          contactEmail: 'john@acme.com',
+          primaryAwsRegion: 'us-east-1',
+          memberCount: 50,
+          portfolioCount: 3,
+        }
+      ]);
+    }
+
+    if (portfolios.length === 0) {
+      initializePortfolios([
+        {
+          id: '1',
+          clientId: '1',
+          name: 'Enterprise Suite',
+          slug: 'enterprise-suite',
+          code: 'ENT',
+          description: 'Comprehensive enterprise applications for business management',
+          homePageUrl: 'https://enterprise.company.com',
+          applicationCount: 12,
+          lastUpdated: '2024-01-15',
+          status: 'active',
+        },
+        {
+          id: '2',
+          clientId: '1',
+          name: 'Mobile Apps',
+          slug: 'mobile-apps',
+          code: 'MOB',
+          description: 'Cross-platform mobile applications for customer engagement',
+          homePageUrl: 'https://mobile.company.com',
+          applicationCount: 8,
+          lastUpdated: '2024-01-10',
+          status: 'active',
+        }
+      ]);
+    }
+  }, [clients.length, portfolios.length, initializeClients, initializePortfolios]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -96,41 +145,85 @@ export default function Portfolios() {
     }
   };
 
-  const filteredPortfolios = portfolios.filter((portfolio) => {
-    const matchesClient = selectedClient === "all" || portfolio.clientId.toString() === selectedClient;
-    const matchesSearch = !searchTerm || 
-      portfolio.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      portfolio.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      portfolio.description.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesClient && matchesSearch;
-  });
+  // Filter portfolios by selected client
+  const filteredPortfolios = useMemo(() => {
+    let filtered = selectedClient ? portfolios.filter(portfolio => portfolio.clientId === selectedClient.id) : portfolios;
+    
+    if (searchTerm) {
+      filtered = filtered.filter(portfolio =>
+        portfolio.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        portfolio.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        portfolio.description.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+    
+    return filtered;
+  }, [portfolios, selectedClient, searchTerm]);
 
-  const handleViewPortfolio = (portfolioId: number) => {
+  const handleViewPortfolio = (portfolioId: string) => {
     navigate(`/portfolio/${portfolioId}`);
   };
 
-  const handleEditPortfolio = (portfolioId: number) => {
+  const handleEditPortfolio = (portfolioId: string) => {
     navigate(`/portfolio/${portfolioId}?edit=true`);
   };
 
-  const handleDeletePortfolio = (portfolioId: number) => {
+  const handleDeletePortfolio = (portfolioId: string) => {
     // TODO: Add confirmation dialog and delete logic
     console.log(`Delete portfolio ${portfolioId}`);
   };
 
-  const handleViewApplications = (portfolioId: number, portfolioCode: string) => {
+  const handleViewApplications = (portfolioId: string, portfolioCode: string) => {
     navigate(`/applications?portfolio=${portfolioCode}`);
   };
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Selected Client Header - Prominent Display */}
+      {selectedClient && (
+        <Card className="border-l-4 border-l-primary bg-primary/5">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
+                  <Building2 className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-muted-foreground">ACTIVE CLIENT</span>
+                    <Badge variant="secondary" className="bg-primary/10 text-primary">Tenant</Badge>
+                  </div>
+                  <h2 className="text-2xl font-bold text-foreground">{selectedClient.name}</h2>
+                  <p className="text-sm text-muted-foreground">{selectedClient.description}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" asChild>
+                  <Link to={`/clients/${selectedClient.id}`}>
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    View Client Details
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Portfolios</h1>
-          <p className="text-muted-foreground">Manage your application portfolios</p>
+          <h1 className="text-3xl font-bold text-foreground">
+            {selectedClient ? `Portfolios Management` : 'All Portfolios'}
+          </h1>
+          <p className="text-muted-foreground">
+            {selectedClient 
+              ? `Manage application portfolios for ${selectedClient.name}`
+              : 'Manage your application portfolios across all clients'
+            }
+          </p>
         </div>
-        <Button variant="gradient" className="gap-2">
+        <Button variant="gradient" className="gap-2" disabled={!selectedClient}>
           <Plus className="h-4 w-4" />
           Create Portfolio
         </Button>
@@ -149,19 +242,6 @@ export default function Portfolios() {
             />
           </div>
         </div>
-        <Select value={selectedClient} onValueChange={setSelectedClient}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Select client" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All clients</SelectItem>
-            {mockClients.map((client) => (
-              <SelectItem key={client.id} value={client.id.toString()}>
-                {client.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Filter className="h-4 w-4" />
           {filteredPortfolios.length} portfolio{filteredPortfolios.length !== 1 ? 's' : ''}
@@ -174,7 +254,6 @@ export default function Portfolios() {
           <TableHeader>
             <TableRow>
               <TableHead>Portfolio</TableHead>
-              <TableHead>Client</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Applications</TableHead>
               <TableHead>Status</TableHead>
@@ -194,9 +273,6 @@ export default function Portfolios() {
                     <div className="font-medium">{portfolio.name}</div>
                     <div className="text-sm text-muted-foreground">Code: {portfolio.code}</div>
                   </div>
-                </TableCell>
-                <TableCell>
-                  <div className="text-sm">{portfolio.clientName}</div>
                 </TableCell>
                 <TableCell>
                   <div className="text-sm max-w-md truncate" title={portfolio.description}>
@@ -271,7 +347,12 @@ export default function Portfolios() {
 
       {filteredPortfolios.length === 0 && (
         <div className="text-center py-12">
-          <p className="text-muted-foreground">No portfolios found matching your criteria.</p>
+          <p className="text-muted-foreground">
+            {selectedClient 
+              ? `No portfolios found for ${selectedClient.name}`
+              : 'No portfolios found'
+            }
+          </p>
         </div>
       )}
     </div>

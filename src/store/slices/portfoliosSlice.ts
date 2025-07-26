@@ -4,10 +4,13 @@ export interface Portfolio {
   id: string;
   name: string;
   slug: string;
+  code: string;
   description: string;
   clientId: string;
+  homePageUrl: string;
   applicationCount: number;
   lastUpdated: string;
+  status: string;
 }
 
 interface PortfoliosState {
