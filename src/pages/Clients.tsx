@@ -5,48 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-// Mock data
-const clients = [
-  {
-    id: "1",
-    name: "TechCorp Solutions",
-    slug: "techcorp",
-    description: "Leading technology solutions provider for enterprise clients",
-    homepage: "https://techcorp.com",
-    contactName: "Sarah Johnson",
-    contactEmail: "sarah@techcorp.com",
-    primaryAwsRegion: "us-east-1",
-    memberCount: 45,
-    portfolioCount: 12
-  },
-  {
-    id: "2",
-    name: "Digital Innovations Inc",
-    slug: "digitalinnovations",
-    description: "Cutting-edge digital transformation consultancy",
-    homepage: "https://digitalinnovations.com",
-    contactName: "Michael Chen",
-    contactEmail: "michael@digitalinnovations.com",
-    primaryAwsRegion: "us-west-2",
-    memberCount: 23,
-    portfolioCount: 8
-  },
-  {
-    id: "3",
-    name: "CloudFirst Partners",
-    slug: "cloudfirstpartners",
-    description: "Cloud-native development and infrastructure specialists",
-    homepage: "https://cloudfirst.com",
-    contactName: "Emma Rodriguez",
-    contactEmail: "emma@cloudfirst.com",
-    primaryAwsRegion: "eu-west-1",
-    memberCount: 67,
-    portfolioCount: 15
-  }
-];
+import { useReduxData } from "@/hooks/useReduxData";
 
 export default function Clients() {
+  // Get clients from Redux store instead of hardcoded data
+  const { clients } = useReduxData();
   const [searchTerm, setSearchTerm] = useState("");
 
   const filteredClients = clients.filter(client =>
@@ -86,7 +49,7 @@ export default function Clients() {
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
                   <CardTitle className="text-lg">{client.name}</CardTitle>
-                  <p className="text-sm text-muted-foreground">{client.slug}</p>
+                  <p className="text-sm text-muted-foreground">ID: {client.id}</p>
                 </div>
                 <Building2 className="h-5 w-5 text-muted-foreground" />
               </div>
