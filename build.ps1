@@ -197,9 +197,9 @@ if (Get-Command npx -ErrorAction SilentlyContinue) {
 
 # Copy build to FastAPI static folder with error handling
 $STATIC_DIRS = @(
-    "..\..\sck-core-api\core_api\static",
-    "..\..\sck-core-docker-server\static", 
-    "..\..\sck-core-docker\static"
+    "..\sck-core-api\core_api\static",
+    "..\sck-core-docker-server\static", 
+    "..\sck-core-docker\static"
 )
 
 Write-Log "Copying build files to multiple static directories..." "INFO"
@@ -286,7 +286,7 @@ try {
 
         # Remove the local ZIP file after upload
         Remove-Item -Path $zipFilePath -Force
-        
+
     } else {
         throw "Failed to create ZIP file"
     }
