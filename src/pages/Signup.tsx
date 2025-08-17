@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import CompanySearch from "@/components/CompanySearch";
+import OrganizationSearch from "@/components/OrganizationSearch";
 
 export default function Signup() {
   const [showPassword, setShowPassword] = useState(false);
@@ -15,7 +15,7 @@ export default function Signup() {
     firstName: "",
     lastName: "",
     email: "",
-    company: "",
+    organization: "",
     password: "",
     confirmPassword: ""
   });
@@ -132,12 +132,12 @@ export default function Signup() {
               </div>
             </div>
 
-            <CompanySearch
-              value={formData.company}
-              onChange={(value) => updateFormData("company", value)}
-              onCompanySelect={(company) => {
-                updateFormData("company", company.name);
-                console.log("Selected company:", company);
+            <OrganizationSearch
+              value={formData.organization}
+              onChange={(value) => updateFormData("organization", value)}
+              onOrganizationSelect={(organization) => {
+                updateFormData("organization", organization.name);
+                console.log("Selected organization:", organization);
               }}
             />
 

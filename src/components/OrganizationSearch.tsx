@@ -5,19 +5,19 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 
-interface Company {
+interface Organization {
   id: string;
   name: string;
 }
 
-interface CompanySearchProps {
+interface OrganizationSearchProps {
   value: string;
   onChange: (value: string) => void;
-  onCompanySelect?: (company: Company) => void;
+  onOrganizationSelect?: (organization: Organization) => void;
 }
 
-export default function CompanySearch({ value, onChange, onCompanySelect }: CompanySearchProps) {
-  const [companies, setCompanies] = useState<Company[]>([]);
+export default function OrganizationSearch({ value, onChange, onOrganizationSelect }: OrganizationSearchProps) {
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState(value);
@@ -44,9 +44,9 @@ export default function CompanySearch({ value, onChange, onCompanySelect }: Comp
 
     debounceTimeoutRef.current = setTimeout(async () => {
       if (searchQuery.trim().length > 0) {
-        await searchCompanies(searchQuery.trim());
+        await searchOrganizations(searchQuery.trim());
       } else {
-        setCompanies([]);
+        setOrganizations([]);
         setIsDropdownOpen(false);
       }
     }, 300);
@@ -58,23 +58,23 @@ export default function CompanySearch({ value, onChange, onCompanySelect }: Comp
     };
   }, [searchQuery]);
 
-  const searchCompanies = async (query: string) => {
+  const searchOrganizations = async (query: string) => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('company-search', {
+      const { data, error } = await supabase.functions.invoke('organization-search', {
         body: { q: query }
       });
 
       if (error) {
-        console.error('Error searching companies:', error);
-        setCompanies([]);
+        console.error('Error searching organizations:', error);
+        setOrganizations([]);
       } else {
-        setCompanies(data?.companies || []);
+        setOrganizations(data?.organizations || []);
         setIsDropdownOpen(true);
       }
     } catch (error) {
-      console.error('Error searching companies:', error);
-      setCompanies([]);
+      console.error('Error searching organizations:', error);
+      setOrganizations([]);
     } finally {
       setIsLoading(false);
     }
@@ -86,28 +86,28 @@ export default function CompanySearch({ value, onChange, onCompanySelect }: Comp
     onChange(newValue);
   };
 
-  const handleCompanySelect = (company: Company) => {
-    setSearchQuery(company.name);
-    onChange(company.name);
+  const handleOrganizationSelect = (organization: Organization) => {
+    setSearchQuery(organization.name);
+    onChange(organization.name);
     setIsDropdownOpen(false);
-    onCompanySelect?.(company);
+    onOrganizationSelect?.(organization);
   };
 
   const handleInputFocus = () => {
-    if (companies.length > 0) {
+    if (organizations.length > 0) {
       setIsDropdownOpen(true);
     }
   };
 
   return (
     <div className="space-y-2" ref={dropdownRef}>
-      <Label htmlFor="company">Company</Label>
+      <Label htmlFor="organization">Organization</Label>
       <div className="relative">
         <Building className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
         <Input
-          id="company"
+          id="organization"
           type="text"
-          placeholder="Search for your company..."
+          placeholder="Search for your organization..."
           value={searchQuery}
           onChange={handleInputChange}
           onFocus={handleInputFocus}
@@ -117,7 +117,7 @@ export default function CompanySearch({ value, onChange, onCompanySelect }: Comp
         {isLoading && (
           <Loader2 className="absolute right-3 top-3 h-4 w-4 text-muted-foreground animate-spin" />
         )}
-        {!isLoading && companies.length > 0 && (
+        {!isLoading && organizations.length > 0 && (
           <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
         )}
       </div>
@@ -125,21 +125,21 @@ export default function CompanySearch({ value, onChange, onCompanySelect }: Comp
       {/* Results dropdown */}
       {isDropdownOpen && (
         <Card className="absolute z-50 w-full mt-1 max-h-60 overflow-y-auto bg-card border shadow-lg">
-          {companies.length === 0 && !isLoading ? (
+          {organizations.length === 0 && !isLoading ? (
             <div className="p-3 text-sm text-muted-foreground text-center">
-              No Company Found
+              No Organization Found
             </div>
           ) : (
             <div className="py-1">
-              {companies.map((company) => (
+              {organizations.map((organization) => (
                 <button
-                  key={company.id}
-                  onClick={() => handleCompanySelect(company)}
+                  key={organization.id}
+                  onClick={() => handleOrganizationSelect(organization)}
                   className="w-full px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus:outline-none"
                 >
                   <div className="flex items-center gap-2">
                     <Building className="h-4 w-4 text-muted-foreground" />
-                    {company.name}
+                    {organization.name}
                   </div>
                 </button>
               ))}

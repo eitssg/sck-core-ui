@@ -1,4 +1,4 @@
 project_id = "ywgtrvamrzppeqvuqaed"
 
-[functions.company-search]
+[functions.organization-search]
 verify_jwt = false
