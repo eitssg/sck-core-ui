@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import CompanySearch from "@/components/CompanySearch";
 
 export default function Signup() {
   const [showPassword, setShowPassword] = useState(false);
@@ -131,21 +132,14 @@ export default function Signup() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="company">Company</Label>
-              <div className="relative">
-                <Building className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="company"
-                  type="text"
-                  placeholder="Your Company"
-                  value={formData.company}
-                  onChange={(e) => updateFormData("company", e.target.value)}
-                  className="pl-10"
-                  required
-                />
-              </div>
-            </div>
+            <CompanySearch
+              value={formData.company}
+              onChange={(value) => updateFormData("company", value)}
+              onCompanySelect={(company) => {
+                updateFormData("company", company.name);
+                console.log("Selected company:", company);
+              }}
+            />
 
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
