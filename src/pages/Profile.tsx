@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { User, Save, Edit, Camera, Briefcase, Calendar, Building2 } from "lucide-react";
+import { User, Save, Edit, Camera, Briefcase, Calendar, Building2, Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,11 +9,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useReduxData } from "@/hooks/useReduxData";
+import { useTheme } from "@/components/ThemeProvider";
+
+type Theme = "dark" | "light" | "system";
 
 export default function Profile() {
   const navigate = useNavigate();
   const { selectedClient, portfolios } = useReduxData();
+  const { theme, setTheme } = useTheme();
   
   // Use actual user data from Redux or default values
   const [userData, setUserData] = useState({
@@ -202,6 +207,31 @@ export default function Profile() {
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Theme Settings */}
+          <Card className="shadow-soft">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Palette className="h-5 w-5 text-primary" />
+                Theme Settings
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <Label htmlFor="theme">Theme</Label>
+                <Select value={theme} onValueChange={(value: Theme) => setTheme(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select theme" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="light">Light</SelectItem>
+                    <SelectItem value="dark">Dark</SelectItem>
+                    <SelectItem value="system">System</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardContent>
           </Card>
         </div>

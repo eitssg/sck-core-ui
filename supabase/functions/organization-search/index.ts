@@ -1,10 +1,8 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
-interface OrganizationSearchResult {
-  id: string;
-  name: string;
-  // Add other fields as needed based on API response
-}
+const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
@@ -25,26 +23,36 @@ Deno.serve(async (req) => {
 
     console.log(`Searching for organizations with query: ${query}`);
 
-    // Call the external API
-    const apiUrl = `https://monster-jj.jvj28.com/core/api/client/names?q=${encodeURIComponent(query)}`;
-    const response = await fetch(apiUrl);
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    
+    // Search organizations in the database
+    const { data: organizations, error } = await supabase
+      .from('organizations')
+      .select('name, client')
+      .or(`name.ilike.%${query}%,client.ilike.%${query}%`)
+      .limit(10)
 
-    if (!response.ok) {
-      console.error(`API request failed: ${response.status} ${response.statusText}`);
+    if (error) {
+      console.error('Database error:', error)
       return new Response(
-        JSON.stringify({ error: 'Failed to fetch organizations', organizations: [] }),
-        { 
+        JSON.stringify({ error: 'Database error', organizations: [] }),
+        {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
-      );
+      )
     }
 
-    const data = await response.json();
-    console.log(`Found ${Array.isArray(data) ? data.length : 0} organizations`);
+    console.log(`Found ${organizations?.length || 0} organizations`)
+
+    // Transform to match expected format
+    const results = organizations?.map(org => ({
+      id: org.client, // Use client slug as ID
+      name: org.name
+    })) || []
 
     return new Response(
-      JSON.stringify({ organizations: data || [] }),
+      JSON.stringify({ organizations: results }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
