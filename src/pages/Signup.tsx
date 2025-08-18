@@ -48,7 +48,7 @@ export default function Signup() {
       <Card className="w-full max-w-md shadow-large animate-fade-in">
         <CardHeader className="text-center space-y-4">
           <div className="mx-auto w-16 h-16 bg-gradient-to-br from-primary to-primary-light rounded-full flex items-center justify-center shadow-medium">
-            <Building className="h-8 w-8 text-white" />
+            <Building className="h-8 w-8 text-primary-foreground" />
           </div>
           <div>
             <CardTitle className="text-2xl font-bold">Create Account</CardTitle>

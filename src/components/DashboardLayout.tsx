@@ -95,7 +95,7 @@ export default function DashboardLayout() {
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary-light rounded-lg flex items-center justify-center">
-                  <Cloud className="h-5 w-5 text-white" />
+                  <Cloud className="h-5 w-5 text-primary-foreground" />
                 </div>
                 <h1 className="text-xl font-bold text-foreground">Core Automation Portal</h1>
               </div>

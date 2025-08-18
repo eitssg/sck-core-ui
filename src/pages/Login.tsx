@@ -73,7 +73,7 @@ export default function Login() {
         <Card className="shadow-large animate-fade-in order-1 lg:order-2">
           <CardHeader className="text-center space-y-4">
             <div className="mx-auto w-16 h-16 bg-gradient-to-br from-primary to-primary-light rounded-full flex items-center justify-center shadow-medium">
-              <Briefcase className="h-8 w-8 text-white" />
+              <Briefcase className="h-8 w-8 text-primary-foreground" />
             </div>
             <div>
               <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
