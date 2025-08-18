@@ -56,8 +56,8 @@ export default {
 				},
 				dashboard: {
 					bg: 'hsl(var(--dashboard-bg))',
-					sidebar: 'hsl(var(--sidebar-bg))',
-					header: 'hsl(var(--header-bg))'
+					sidebar: 'hsl(var(--dashboard-sidebar))',
+					header: 'hsl(var(--dashboard-header))'
 				},
 				sidebar: {
 					DEFAULT: 'hsl(var(--sidebar-background))',
