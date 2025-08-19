@@ -1,114 +1,140 @@
-import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import type { RootState, AppDispatch } from '../store';
+import type { ApiResponse } from '../shared';
+import { toArray } from '../shared';
 
-export interface Client {
-  id: string;
-  name: string;
-  description: string;
-  homepage: string;
-  contactName: string;
-  contactEmail: string;
-  primaryAwsRegion: string;
-  memberCount: number;
-  portfolioCount: number;
+export interface ClientSummary {
+  Name: string;
+  Client: string; // slug
 }
 
 interface ClientsState {
-  clients: Client[];
-  selectedClientId: string | null;
-  defaultClientId: string | null;
-  loading: boolean;
-  error: string | null;
+  items: ClientSummary[];
+  status: 'idle' | 'loading' | 'succeeded' | 'failed';
+  error?: string | null;
+  cursor: string | null;
+  lastFetched: number | null;
+  // compatibility with hooks/useReduxData.ts
+  selectedClient: string | null;
+  defaultClient: string | null;
 }
 
 const initialState: ClientsState = {
-  clients: [
-    {
-      id: 'client-1',
-      name: 'Acme Corporation',
-      description: 'Leading technology company specializing in cloud solutions and digital transformation.',
-      homepage: 'https://acme.com',
-      contactName: 'John Smith',
-      contactEmail: 'john.smith@acme.com',
-      primaryAwsRegion: 'us-east-1',
-      memberCount: 45,
-      portfolioCount: 8,
-    },
-    {
-      id: 'client-2',
-      name: 'Global Tech Solutions',
-      description: 'Enterprise software development and consulting services.',
-      homepage: 'https://globaltech.com',
-      contactName: 'Sarah Johnson',
-      contactEmail: 'sarah.johnson@globaltech.com',
-      primaryAwsRegion: 'us-west-2',
-      memberCount: 32,
-      portfolioCount: 5,
-    },
-    {
-      id: 'client-3',
-      name: 'Innovation Labs',
-      description: 'R&D focused company building next-generation platforms.',
-      homepage: 'https://innovationlabs.com',
-      contactName: 'Mike Chen',
-      contactEmail: 'mike.chen@innovationlabs.com',
-      primaryAwsRegion: 'eu-west-1',
-      memberCount: 28,
-      portfolioCount: 12,
-    },
-  ],
-  selectedClientId: null,
-  defaultClientId: 'client-1',
-  loading: false,
+  items: [],
+  status: 'idle',
   error: null,
+  cursor: null,
+  lastFetched: null,
+  selectedClient: null,
+  defaultClient: null,
 };
+
+export const fetchClients = createAsyncThunk<
+  ApiResponse<ClientSummary>,
+  { limit?: number; cursor?: string | null; force?: boolean } | undefined,
+  { state: RootState }
+>(
+  'clients/fetch',
+  async (args) => {
+    const limit = args?.limit ?? 100;
+    const cursor = args?.cursor ?? null;
+
+    const url = new URL('/api/v1/registry/clients', window.location.origin);
+    url.searchParams.set('limit', String(limit));
+    if (cursor) url.searchParams.set('cursor', cursor);
+
+    const res = await fetch(url.toString(), {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const json = (await res.json()) as unknown as ApiResponse<ClientSummary>;
+    return json;
+  },
+  {
+    condition: (args, { getState }) => {
+      const state = getState() as RootState;
+      const force = args?.force === true;
+      if (force) return true;
+
+      const slice = state.clients as ClientsState | undefined;
+      if (!slice) return true;
+      if (slice.status === 'loading') return false;
+
+      const ttlMs = 2 * 60 * 1000;
+      const fresh = !!slice.lastFetched && Date.now() - slice.lastFetched < ttlMs;
+      const sameCursor = (args?.cursor ?? null) === (slice.cursor ?? null);
+      return !(fresh && sameCursor);
+    },
+  }
+);
+
+export const refreshClients =
+  () => (dispatch: AppDispatch) => {
+    dispatch(clientsSlice.actions.clear());
+    return dispatch(fetchClients({ limit: 100, cursor: null, force: true }));
+  };
 
 const clientsSlice = createSlice({
   name: 'clients',
   initialState,
   reducers: {
-    setClients: (state, action: PayloadAction<Client[]>) => {
-      state.clients = action.payload;
+    clear(state) {
+      state.items = [];
+      state.cursor = null;
+      state.lastFetched = null;
+      state.status = 'idle';
+      state.error = null;
+      state.selectedClient = null;
+      state.defaultClient = null;
     },
-    addClient: (state, action: PayloadAction<Client>) => {
-      state.clients.push(action.payload);
+    // compatibility setters expected by useReduxData.ts
+    setClients(state, action: PayloadAction<ClientSummary[]>) {
+      state.items = action.payload ?? [];
+      state.lastFetched = Date.now();
+      state.status = 'succeeded';
+      state.error = null;
     },
-    updateClient: (state, action: PayloadAction<Client>) => {
-      const index = state.clients.findIndex(client => client.id === action.payload.id);
-      if (index !== -1) {
-        state.clients[index] = action.payload;
-      }
+    setSelectedClient(state, action: PayloadAction<string | null>) {
+      state.selectedClient = action.payload ?? null;
     },
-    removeClient: (state, action: PayloadAction<string>) => {
-      state.clients = state.clients.filter(client => client.id !== action.payload);
+    setDefaultClient(state, action: PayloadAction<string | null>) {
+      state.defaultClient = action.payload ?? null;
     },
-    setSelectedClient: (state, action: PayloadAction<string | null>) => {
-      state.selectedClientId = action.payload;
-    },
-    setDefaultClient: (state, action: PayloadAction<string | null>) => {
-      state.defaultClientId = action.payload;
-      // If no client is currently selected, use the default
-      if (!state.selectedClientId && action.payload) {
-        state.selectedClientId = action.payload;
-      }
-    },
-    setLoading: (state, action: PayloadAction<boolean>) => {
-      state.loading = action.payload;
-    },
-    setError: (state, action: PayloadAction<string | null>) => {
-      state.error = action.payload;
-    },
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchClients.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(
+        fetchClients.fulfilled,
+        (state, action: PayloadAction<ApiResponse<ClientSummary>>) => {
+          state.items = toArray<ClientSummary>(action.payload.data);
+          state.cursor = action.payload.metadata?.cursor ?? null;
+          state.status = 'succeeded';
+          state.lastFetched = Date.now();
+          state.error = null;
+        }
+      )
+      .addCase(fetchClients.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.error.message ?? 'Failed to load clients';
+      });
   },
 });
 
-export const {
-  setClients,
-  addClient,
-  updateClient,
-  removeClient,
-  setSelectedClient,
-  setDefaultClient,
-  setLoading,
-  setError,
-} = clientsSlice.actions;
+export const { clear, setClients, setSelectedClient, setDefaultClient } = clientsSlice.actions;
+
+// Selectors
+export const selectClients = (state: RootState) => state.clients.items;
+export const selectClientsStatus = (state: RootState) => state.clients.status;
+export const selectClientsError = (state: RootState) => state.clients.error;
+export const selectClientsCursor = (state: RootState) => state.clients.cursor;
+export const selectClientsLastFetched = (state: RootState) => state.clients.lastFetched;
+export const selectSelectedClient = (state: RootState) => state.clients.selectedClient;
+export const selectDefaultClient = (state: RootState) => state.clients.defaultClient;
 
 export default clientsSlice.reducer;
