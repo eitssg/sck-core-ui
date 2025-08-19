@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Outlet, useNavigate, useLocation, Link } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
 import { 
   Home, 
   User, 
@@ -79,9 +80,13 @@ export default function DashboardLayout() {
     { name: "Profile", href: "/profile", icon: User },
   ];
 
-  const handleLogout = () => {
-    // TODO: Implement logout logic
-    navigate("/login");
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      navigate("/login");
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
   };
 
   const isActive = (href: string) => location.pathname === href || location.pathname.startsWith(href + '/');

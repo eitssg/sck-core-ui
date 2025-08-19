@@ -13,14 +13,14 @@ export const useReduxData = () => {
   const dispatch = useAppDispatch();
   
   // Selectors
-  const clients = useAppSelector(state => state.clients.clients);
-  const selectedClientId = useAppSelector(state => state.clients.selectedClientId);
-  const defaultClientId = useAppSelector(state => state.clients.defaultClientId);
+  const clients = useAppSelector(state => state.clients.items);
+  const selectedClientId = useAppSelector(state => state.clients.selectedClient);
+  const defaultClientId = useAppSelector(state => state.clients.defaultClient);
   const selectedClient = useAppSelector(state => 
-    state.clients.clients.find(client => client.id === state.clients.selectedClientId)
+    state.clients.items.find(client => client.id === state.clients.selectedClient)
   );
   const defaultClient = useAppSelector(state => 
-    state.clients.clients.find(client => client.id === state.clients.defaultClientId)
+    state.clients.items.find(client => client.id === state.clients.defaultClient)
   );
   
   const portfolios = useAppSelector(state => state.portfolios.portfolios);

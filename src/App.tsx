@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Provider } from "react-redux";
 import { store } from "@/store";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { useAuth } from "@/contexts/AuthContext";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
@@ -30,6 +32,17 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+// Landing page component for authenticated users
+const Landing = () => {
+  const { user } = useAuth();
+  
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  
+  return <Navigate to="/login" replace />;
+};
+
 const App = () => (
   <Provider store={store}>
     <QueryClientProvider client={queryClient}>
@@ -39,75 +52,163 @@ const App = () => (
         <BrowserRouter>
         <Routes>
           {/* Public routes */}
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           
           {/* Protected dashboard routes */}
-          <Route path="/dashboard" element={<DashboardLayout />}>
+          <Route path="/dashboard" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<Dashboard />} />
           </Route>
-          <Route path="/profile" element={<DashboardLayout />}>
+          <Route path="/profile" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<Profile />} />
           </Route>
-          <Route path="/portfolios" element={<DashboardLayout />}>
+          <Route path="/portfolios" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<Portfolios />} />
           </Route>
-          <Route path="/portfolios/create" element={<DashboardLayout />}>
+          <Route path="/portfolios/create" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<CreatePortfolio />} />
           </Route>
-          <Route path="/portfolios/:id" element={<DashboardLayout />}>
+          <Route path="/portfolios/:id" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<PortfolioDetails />} />
           </Route>
-          <Route path="/applications" element={<DashboardLayout />}>
+          <Route path="/applications" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<Applications />} />
           </Route>
-          <Route path="/applications/create" element={<DashboardLayout />}>
+          <Route path="/applications/create" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<CreateApplication />} />
           </Route>
-          <Route path="/applications/:id" element={<DashboardLayout />}>
+          <Route path="/applications/:id" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<ApplicationDetails />} />
           </Route>
-          <Route path="/clients" element={<DashboardLayout />}>
+          <Route path="/clients" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<Clients />} />
           </Route>
-          <Route path="/clients/create" element={<DashboardLayout />}>
+          <Route path="/clients/create" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<CreateClient />} />
           </Route>
-          <Route path="/clients/:id" element={<DashboardLayout />}>
+          <Route path="/clients/:id" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<ClientDetails />} />
           </Route>
-          <Route path="/clients/:id/edit" element={<DashboardLayout />}>
+          <Route path="/clients/:id/edit" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<CreateClient />} />
           </Route>
-          <Route path="/clients/:clientId/zones" element={<DashboardLayout />}>
+          <Route path="/clients/:clientId/zones" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<Zones />} />
           </Route>
-          <Route path="/clients/:clientId/zones/create" element={<DashboardLayout />}>
+          <Route path="/clients/:clientId/zones/create" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<CreateZone />} />
           </Route>
-          <Route path="/zones" element={<DashboardLayout />}>
+          <Route path="/zones" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<Zones />} />
           </Route>
-          <Route path="/zones/create" element={<DashboardLayout />}>
+          <Route path="/zones/create" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<CreateZone />} />
           </Route>
-          <Route path="/zones/:id" element={<DashboardLayout />}>
+          <Route path="/zones/:id" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<ZoneDetails />} />
           </Route>
-          <Route path="/zones/:id/edit" element={<DashboardLayout />}>
+          <Route path="/zones/:id/edit" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<CreateZone />} />
           </Route>
-          <Route path="/deployments" element={<DashboardLayout />}>
+          <Route path="/deployments" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<Deployments />} />
           </Route>
-          <Route path="/deployments/:id" element={<DashboardLayout />}>
+          <Route path="/deployments/:id" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<DeploymentDetails />} />
           </Route>
-          <Route path="/docs" element={<DashboardLayout />}>
+          <Route path="/docs" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<Docs />} />
           </Route>
-          <Route path="/settings" element={<DashboardLayout />}>
+          <Route path="/settings" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
             <Route index element={<Settings />} />
           </Route>
           

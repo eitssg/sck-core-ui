@@ -8,8 +8,21 @@ export interface ClientSummary {
   Client: string; // slug
 }
 
+// Extended client interface for compatibility with existing code
+export interface Client extends ClientSummary {
+  id: string;
+  name: string;
+  description?: string;
+  homepage?: string;
+  contactName?: string;
+  contactEmail?: string;
+  primaryAwsRegion?: string;
+  memberCount?: number;
+  portfolioCount?: number;
+}
+
 interface ClientsState {
-  items: ClientSummary[];
+  items: Client[];
   status: 'idle' | 'loading' | 'succeeded' | 'failed';
   error?: string | null;
   cursor: string | null;
@@ -90,7 +103,7 @@ const clientsSlice = createSlice({
       state.defaultClient = null;
     },
     // compatibility setters expected by useReduxData.ts
-    setClients(state, action: PayloadAction<ClientSummary[]>) {
+    setClients(state, action: PayloadAction<Client[]>) {
       state.items = action.payload ?? [];
       state.lastFetched = Date.now();
       state.status = 'succeeded';
@@ -112,7 +125,13 @@ const clientsSlice = createSlice({
       .addCase(
         fetchClients.fulfilled,
         (state, action: PayloadAction<ApiResponse<ClientSummary>>) => {
-          state.items = toArray<ClientSummary>(action.payload.data);
+          const summaryData = toArray<ClientSummary>(action.payload.data);
+          // Transform ClientSummary to Client interface
+          state.items = summaryData.map(summary => ({
+            ...summary,
+            id: summary.Client,
+            name: summary.Name
+          }));
           state.cursor = action.payload.metadata?.cursor ?? null;
           state.status = 'succeeded';
           state.lastFetched = Date.now();
