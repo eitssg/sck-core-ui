@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Outlet, useNavigate, useLocation, Link } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { 
   Home, 
   User, 
@@ -58,6 +58,7 @@ export default function DashboardLayout() {
   const dispatch = useAppDispatch();
   const deployments = useAppSelector(state => state.deployments.deployments);
   const { clients, selectedClient, defaultClient, selectClient } = useReduxData();
+  const { signOut } = useAuth();
 
   // All data should be managed by Redux slices, not initialized here
   useEffect(() => {
@@ -82,7 +83,7 @@ export default function DashboardLayout() {
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      await signOut();
       navigate("/login");
     } catch (error) {
       console.error('Logout failed:', error);
