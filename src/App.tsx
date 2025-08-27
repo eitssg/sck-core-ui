@@ -25,6 +25,7 @@ import Zones from "./pages/Zones";
 import ZoneDetails from "./pages/ZoneDetails";
 import CreateZone from "./pages/CreateZone";
 import Deployments from "./pages/Deployments";
+import GoToGitHub from "./pages/GoToGitHub";
 import DeploymentDetails from "./pages/DeploymentDetails";
 import Docs from "./pages/Docs";
 import DashboardLayout from "./components/DashboardLayout";
@@ -210,6 +211,13 @@ const App = () => (
             </ProtectedRoute>
           }>
             <Route index element={<Settings />} />
+          </Route>
+          <Route path="/goto/github" element={
+            <ProtectedRoute>
+              <DashboardLayout />
+            </ProtectedRoute>
+          }>
+            <Route index element={<GoToGitHub />} />
           </Route>
           
           {/* Catch-all route */}
