@@ -129,3 +129,17 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  .shadow-soft {
+    box-shadow: var(--shadow-soft, 0 1px 2px 0 rgb(0 0 0 / 0.05));
+  }
+  
+  .shadow-medium {
+    box-shadow: var(--shadow-medium, 0 4px 6px -1px rgb(0 0 0 / 0.1));
+  }
+  
+  .shadow-large {
+    box-shadow: var(--shadow-large, 0 20px 25px -5px rgb(0 0 0 / 0.1));
+  }
+}

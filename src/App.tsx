@@ -5,227 +5,142 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Provider } from "react-redux";
 import { store } from "@/store";
+import { ThemeManager } from "@/components/ThemeManager";
+import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
-import Login from "./pages/Login";
-import Signup from "./pages/Signup";
-import Dashboard from "./pages/Dashboard";
-import Profile from "./pages/Profile";
-import Settings from "./pages/Settings";
-import Portfolios from "./pages/Portfolios";
-import Applications from "./pages/Applications";
-import CreatePortfolio from "./pages/CreatePortfolio";
-import CreateApplication from "./pages/CreateApplication";
-import PortfolioDetails from "./pages/PortfolioDetails";
-import ApplicationDetails from "./pages/ApplicationDetails";
-import Clients from "./pages/Clients";
-import ClientDetails from "./pages/ClientDetails";
-import CreateClient from "./pages/CreateClient";
-import Zones from "./pages/Zones";
-import ZoneDetails from "./pages/ZoneDetails";
-import CreateZone from "./pages/CreateZone";
-import Deployments from "./pages/Deployments";
-import GoToGitHub from "./pages/GoToGitHub";
-import DeploymentDetails from "./pages/DeploymentDetails";
-import Docs from "./pages/Docs";
+import { lazy, Suspense } from "react";
+import { createProtectedRoute, createPublicRoute } from '@/utils/routeHelpers';
+import { PageLoader } from '@/components/PageLoader';
+
+// Always-loaded components (critical path)
 import DashboardLayout from "./components/DashboardLayout";
-import NotFound from "./pages/NotFound";
+
+// Lazy-loaded pages
+const Login = lazy(() => import("./pages/Login"));
+const Signup = lazy(() => import("./pages/Signup"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const EnterCode = lazy(() => import("./pages/EnterCode"));
+const NewPassword = lazy(() => import("./pages/NewPassword"));
+const OAuthCallback = lazy(() => import("./pages/OAuthCallback"));
+const NoAccount = lazy(() => import("./pages/NoAccount")); 
+
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Profile = lazy(() => import("./pages/Profile"));
+const Settings = lazy(() => import("./pages/Settings"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+// Portfolio pages
+const Portfolios = lazy(() => import("./pages/Portfolios"));
+const CreatePortfolio = lazy(() => import("./pages/CreatePortfolio"));
+const PortfolioDetails = lazy(() => import("./pages/PortfolioDetails"));
+
+// Application pages
+const Applications = lazy(() => import("./pages/Applications"));
+const CreateApplication = lazy(() => import("./pages/CreateApplication"));
+const ApplicationDetails = lazy(() => import("./pages/ApplicationDetails"));
+
+// Client pages
+const Clients = lazy(() => import("./pages/Clients"));
+const ClientDetails = lazy(() => import("./pages/ClientDetails"));
+const CreateClient = lazy(() => import("./pages/CreateClient"));
+
+// Zone pages
+const Zones = lazy(() => import("./pages/Zones"));
+const ZoneDetails = lazy(() => import("./pages/ZoneDetails"));
+const CreateZone = lazy(() => import("./pages/CreateZone"));
+
+// Other pages
+const Deployments = lazy(() => import("./pages/Deployments"));
+const DeploymentDetails = lazy(() => import("./pages/DeploymentDetails"));
+const GoToGitHub = lazy(() => import("./pages/GoToGitHub"));
+const Docs = lazy(() => import("./pages/Docs"));
 
 const queryClient = new QueryClient();
 
-// Landing page component for authenticated users
-const Landing = () => {
-  const { user } = useAuth();
-  
-  if (user) {
-    return <Navigate to="/dashboard" replace />;
-  }
-  
-  return <Navigate to="/login" replace />;
+// Create separate components to avoid hook usage outside providers
+const AppRoutes = () => {
+  const Landing = () => {
+    const { user } = useAuth();
+    
+    if (user) {
+      return <Navigate to="/dashboard" replace />;
+    }
+    
+    return <Navigate to="/login" replace />;
+  };
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Public routes */}
+        <Route path="/" element={<Landing />} />
+        {createPublicRoute('/login', Login)}
+        {createPublicRoute('/signup', Signup)}
+        {createPublicRoute('/forgot-password', ForgotPassword)}
+        {createPublicRoute('/enter-code', EnterCode)}
+        {createPublicRoute('/new-password', NewPassword)}
+        {createPublicRoute('/authorized', OAuthCallback)}
+        {createPublicRoute('/no-account', NoAccount)}
+        
+        {/* Protected routes */}
+        {createProtectedRoute('/dashboard', Dashboard, 'dashboard')}
+        {createProtectedRoute('/profile', Profile, 'form')}
+        {createProtectedRoute('/settings', Settings, 'form')}
+        
+        {/* Portfolio routes */}
+        {createProtectedRoute('/portfolios', Portfolios, 'list')}
+        {createProtectedRoute('/portfolios/create', CreatePortfolio, 'form')}
+        {createProtectedRoute('/portfolios/:id', PortfolioDetails, 'dashboard')}
+        
+        {/* Application routes */}
+        {createProtectedRoute('/applications', Applications, 'list')}
+        {createProtectedRoute('/applications/create', CreateApplication, 'form')}
+        {createProtectedRoute('/applications/:id', ApplicationDetails, 'dashboard')}
+        
+        {/* Client routes */}
+        {createProtectedRoute('/clients', Clients, 'list')}
+        {createProtectedRoute('/clients/create', CreateClient, 'form')}
+        {createProtectedRoute('/clients/:id', ClientDetails, 'dashboard')}
+        {createProtectedRoute('/clients/:id/edit', CreateClient, 'form')}
+        
+        {/* Zone routes */}
+        {createProtectedRoute('/zones', Zones, 'list')}
+        {createProtectedRoute('/zones/create', CreateZone, 'form')}
+        {createProtectedRoute('/zones/:id', ZoneDetails, 'dashboard')}
+        
+        {/* Deployment routes */}
+        {createProtectedRoute('/deployments', Deployments, 'list')}
+        {createProtectedRoute('/deployments/:id', DeploymentDetails, 'dashboard')}
+        
+        {/* Other routes */}
+        {createProtectedRoute('/docs', Docs, 'default')}
+        {createPublicRoute('/github', GoToGitHub)}
+        
+        <Route path="*" element={
+          <Suspense fallback={<PageLoader type="default" />}>
+            <NotFound />
+          </Suspense>
+        } />
+      </Routes>
+    </BrowserRouter>
+  );
 };
 
+// Main App component with correct provider hierarchy
 const App = () => (
   <Provider store={store}>
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-        <Routes>
-          {/* Public routes */}
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          
-          {/* Protected dashboard routes */}
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<Dashboard />} />
-          </Route>
-          <Route path="/profile" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<Profile />} />
-          </Route>
-          <Route path="/portfolios" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<Portfolios />} />
-          </Route>
-          <Route path="/portfolios/create" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<CreatePortfolio />} />
-          </Route>
-          <Route path="/portfolios/:id" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<PortfolioDetails />} />
-          </Route>
-          <Route path="/applications" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<Applications />} />
-          </Route>
-          <Route path="/applications/create" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<CreateApplication />} />
-          </Route>
-          <Route path="/applications/:id" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<ApplicationDetails />} />
-          </Route>
-          <Route path="/clients" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<Clients />} />
-          </Route>
-          <Route path="/clients/create" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<CreateClient />} />
-          </Route>
-          <Route path="/clients/:id" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<ClientDetails />} />
-          </Route>
-          <Route path="/clients/:id/edit" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<CreateClient />} />
-          </Route>
-          <Route path="/clients/:clientId/zones" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<Zones />} />
-          </Route>
-          <Route path="/clients/:clientId/zones/create" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<CreateZone />} />
-          </Route>
-          <Route path="/zones" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<Zones />} />
-          </Route>
-          <Route path="/zones/create" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<CreateZone />} />
-          </Route>
-          <Route path="/zones/:id" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<ZoneDetails />} />
-          </Route>
-          <Route path="/zones/:id/edit" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<CreateZone />} />
-          </Route>
-          <Route path="/deployments" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<Deployments />} />
-          </Route>
-          <Route path="/deployments/:id" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<DeploymentDetails />} />
-          </Route>
-          <Route path="/docs" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<Docs />} />
-          </Route>
-          <Route path="/settings" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<Settings />} />
-          </Route>
-          <Route path="/goto/github" element={
-            <ProtectedRoute>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<GoToGitHub />} />
-          </Route>
-          
-          {/* Catch-all route */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+    <AuthProvider>
+      <ThemeManager>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <AppRoutes />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </ThemeManager>
+    </AuthProvider>
   </Provider>
 );
 

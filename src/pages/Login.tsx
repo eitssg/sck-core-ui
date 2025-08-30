@@ -89,7 +89,7 @@ export default function Login() {
               </div>
             </div>
             <Link to="/signup">
-              <Button variant="gradient" size="lg" className="w-full">
+              <Button variant="gradient" size="lg">
                 Create New Account
               </Button>
             </Link>
@@ -116,7 +116,8 @@ export default function Login() {
             )}
             <Button 
               variant="outline" 
-              className="w-full gap-2 h-12"
+              size="lg"
+              className="w-full"
               onClick={handleGitHubLogin}
             >
               <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
@@ -184,7 +185,8 @@ export default function Login() {
 
               <Button 
                 type="submit" 
-                className="w-full h-12" 
+                size="lg"
+                className="w-full"
                 variant="gradient"
                 disabled={isLoading}
               >

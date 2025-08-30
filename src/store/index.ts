@@ -1,19 +1,21 @@
 import { configureStore } from '@reduxjs/toolkit';
-import { useDispatch, useSelector } from 'react-redux';
-import type { TypedUseSelectorHook } from 'react-redux';
+import { useDispatch, useSelector, type TypedUseSelectorHook } from 'react-redux';
+import clientDetailsSlice from './slices/clientDetailsSlice';
 import clientsSlice from './slices/clientsSlice';
 import portfoliosSlice from './slices/portfoliosSlice';
 import applicationsSlice from './slices/applicationsSlice';
-import zonesSlice from './slices/zonesSlice';
 import deploymentsSlice from './slices/deploymentsSlice';
+import zonesSlice from './slices/zonesSlice';
+import profileSlice from './slices/profileSlice';
 
 export const store = configureStore({
   reducer: {
     clients: clientsSlice,
     portfolios: portfoliosSlice,
     applications: applicationsSlice,
-    zones: zonesSlice,
     deployments: deploymentsSlice,
+    zones: zonesSlice,
+    profile: profileSlice,
   },
 });
 

@@ -1,15 +1,19 @@
 import { configureStore } from '@reduxjs/toolkit';
-import clientsReducer from './slices/clientsSlice';
+import clientReducer from './slices/clientsSlice';
 import clientDetailsReducer from './slices/clientDetailsSlice';
+import portfoliosReducer from './slices/portfoliosSlice';
+import themeReducer from './slices/themeSlice';
+import profileReducer from './slices/profileSlice';
 
 export const store = configureStore({
   reducer: {
-    clients: clientsReducer,
-    clientDetails: clientDetailsReducer,
+    theme: themeReducer,
+    clients: clientReducer,
+    portfolios: portfoliosReducer,
+    profile: profileReducer,
   },
   devTools: process.env.NODE_ENV !== 'production',
 });
 
-// Inferred types exported for slices/components (use `import type`)
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;

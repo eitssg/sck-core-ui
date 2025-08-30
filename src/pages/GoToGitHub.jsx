@@ -1,9 +1,9 @@
 // QuickRedirect.jsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { getCookie } from '../utils/cookies';
+import Cookies from 'js-cookie';
 import { useReduxData } from "@/hooks/useReduxData";
-import { useTheme } from "@/components/ThemeProvider";
+import { useTheme } from "@/hooks/useTheme";
 
 export default function GoToGitHub() {
     const navigate = useNavigate();
@@ -11,12 +11,14 @@ export default function GoToGitHub() {
     const { theme, setTheme } = useTheme();
 
     useEffect(() => {
-        const githubUrl = getCookie('github_auth_url');
+        const githubUrl = Cookies.get('github_auth_url');
         
         if (githubUrl) {
             // Very short delay to show the message
             setTimeout(() => {
                 window.location.href = githubUrl;
+                // Clean up the cookie after redirect
+                Cookies.remove('github_auth_url');
             }, 500);
         }
     }, []);

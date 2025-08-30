@@ -1,64 +1,94 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { authAPI } from '@/lib/auth-api';
 
 interface User {
   id: string;
   email: string;
-  firstName?: string;
-  lastName?: string;
+  name: string;
+  avatar?: string;
+  theme?: string;
+  role?: string;
 }
 
 interface AuthContextType {
   user: User | null;
+  login: (token: string) => Promise<void>;
+  logout: () => void;
   loading: boolean;
-  signOut: () => Promise<void>;
+  error: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
-
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  const login = async (token: string) => {
+    localStorage.setItem('token', token);
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/auth/v1/me', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch profile');
+      }
+
+      const profile = await response.json();
+      setUser(profile);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMessage);
+      localStorage.removeItem('token');
+      setUser(null);
+      console.error('Login failed:', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    setUser(null);
+    setError(null);
+  };
+
+  // Initialize auth state on mount
   useEffect(() => {
-    // Check for existing authentication
-    const initAuth = async () => {
-      try {
-        const result = await authAPI.getCurrentUser();
-        setUser(result.user);
-      } catch (error) {
-        console.error('Auth initialization error:', error);
-        setUser(null);
-      } finally {
+    const initializeAuth = async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        await login(token);
+      } else {
         setLoading(false);
       }
     };
 
-    initAuth();
+    initializeAuth();
   }, []);
 
-  const signOut = async () => {
-    try {
-      await authAPI.logout();
-      setUser(null);
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
-  };
-
-  const value = {
+  const value: AuthContextType = {
     user,
+    login,
+    logout,
     loading,
-    signOut,
+    error,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };
