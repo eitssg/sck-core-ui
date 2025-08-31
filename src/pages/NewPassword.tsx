@@ -73,7 +73,7 @@ export default function NewPassword() {
         setError(result.error);
       } else {
         // Success - redirect to login with success message
-        navigate("/login", { 
+        navigate("/new-password-success", { 
           state: { 
             message: "Password reset successfully. Please log in with your new password." 
           } 

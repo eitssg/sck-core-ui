@@ -1,14 +1,17 @@
+import { store } from '@/store/store';
+import { selectTokens } from '@/store/slices/authSlice';
+
 // API Configuration
 export const API_CONFIG = {
   BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8090',
-  
+
   // OAuth Configuration
   OAUTH: {
     CLIENT_ID: import.meta.env.VITE_OAUTH_CLIENT_ID || '',
     REDIRECT_URI: import.meta.env.VITE_OAUTH_REDIRECT_URI || 'http://localhost:8080/authorized',
     SCOPE: import.meta.env.VITE_OAUTH_SCOPE || 'read:profile write:profile',
   },
-  
+
   // API Endpoints
   ENDPOINTS: {
     // OAuth endpoints
@@ -17,7 +20,7 @@ export const API_CONFIG = {
       TOKEN: '/auth/v1/token',
       REVOKE: '/auth/v1/revoke',
     },
-    
+
     // Auth endpoints
     AUTH: {
       LOGIN: '/auth/v1/login',
@@ -29,7 +32,7 @@ export const API_CONFIG = {
       GITHUB_LOGIN: '/auth/github/login',
       GITHUB_CALLBACK: '/auth/github/callback',
     },
-    
+
     // API endpoints
     API: {
       USERS: '/api/v1/users',
@@ -56,24 +59,22 @@ export const buildOAuthAuthorizeUrl = (state?: string): string => {
     scope: API_CONFIG.OAUTH.SCOPE,
     ...(state && { state }),
   });
-  
+
   return `${buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.AUTHORIZE)}?${params.toString()}`;
 };
 
 // Helper function for auth headers
-export const getAuthHeaders = (token?: string) => {
+export function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  } else {
-    const storedToken = localStorage.getItem('access_token');
-    if (storedToken) {
-      headers['Authorization'] = `Bearer ${storedToken}`;
-    }
+
+  // Fallback to localStorage for non-React contexts
+  const accessToken = localStorage.getItem('access_token');
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
   }
-  
+
   return headers;
+
 };

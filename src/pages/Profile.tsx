@@ -11,7 +11,13 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAppSelector, useAppDispatch } from "@/store";
-import { selectUser, selectUserProfiles, selectCurrentProfile, fetchUserProfile } from "@/store/slices/profileSlice";
+import { 
+  selectUser, 
+  selectUserProfiles, 
+  selectCurrentProfile, 
+  fetchUserProfile,
+  switchToProfile
+} from "@/store/slices/profileSlice";
 import { useReduxData } from "@/hooks/useReduxData";
 import { ThemeSelector } from "@/components/ThemeSelector";
 import { useTheme } from "@/hooks/useTheme";
@@ -88,12 +94,12 @@ export default function Profile() {
     setEditData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleProfileSwitch = async (profileName: string) => {
-    try {
-      await dispatch(fetchUserProfile(profileName)).unwrap();
-    } catch (error) {
-      console.error('Failed to switch profile:', error);
-    }
+  const handleProfileSwitch = (profileName: string) => {
+    // Switch to cached profile immediately (no API call needed)
+    dispatch(switchToProfile({ 
+      profileName: profileName,
+      context: 'auth'
+    }));
   };
 
   // Format full name from first/last name
@@ -149,7 +155,7 @@ export default function Profile() {
           {/* Profile Selector */}
           {userProfiles && userProfiles.length > 1 && (
             <Select 
-              value={currentProfile || user.profile_name} 
+              value={currentProfile || user?.profile_name || ''} 
               onValueChange={handleProfileSwitch}
             >
               <SelectTrigger className="w-48">
@@ -157,8 +163,8 @@ export default function Profile() {
               </SelectTrigger>
               <SelectContent>
                 {userProfiles.map((profile) => (
-                  <SelectItem key={profile} value={profile}>
-                    {profile}
+                  <SelectItem key={profile.profile_name} value={profile.profile_name}>
+                    {profile.display_name || profile.profile_name}
                   </SelectItem>
                 ))}
               </SelectContent>

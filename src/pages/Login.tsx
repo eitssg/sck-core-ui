@@ -35,7 +35,7 @@ export default function Login() {
       
       if (result.error) {
         setError(result.error);
-      } else if (result.user) {
+      } else {
         // Reload the page to update auth context
         window.location.href = "/dashboard";
       }

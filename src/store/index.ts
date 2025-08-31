@@ -7,6 +7,7 @@ import applicationsSlice from './slices/applicationsSlice';
 import deploymentsSlice from './slices/deploymentsSlice';
 import zonesSlice from './slices/zonesSlice';
 import profileSlice from './slices/profileSlice';
+import authSlice from './slices/authSlice';
 
 export const store = configureStore({
   reducer: {
@@ -16,6 +17,7 @@ export const store = configureStore({
     deployments: deploymentsSlice,
     zones: zonesSlice,
     profile: profileSlice,
+    auth: authSlice,
   },
 });
 

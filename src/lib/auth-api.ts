@@ -8,38 +8,213 @@ import type {
   UserProfile
 } from './auth-types';
 
+function mapOAuthErrorToUserMessage(error: string, statusCode?: number): string {
+  // Handle OAuth-specific errors with user-friendly messages
+  const lowerError = error.toLowerCase();
+
+  if (lowerError.includes('invalid_redirect_uri') || lowerError.includes('redirect_uri not registered')) {
+    return 'Login service configuration error. Please contact support.';
+  }
+
+  if (lowerError.includes('invalid_client') || lowerError.includes('client not found')) {
+    return 'Application configuration error. Please contact support.';
+  }
+
+  if (lowerError.includes('invalid_grant') || lowerError.includes('authorization code')) {
+    return 'Login session expired. Please try logging in again.';
+  }
+
+  if (lowerError.includes('access_denied')) {
+    return 'Access denied. Please check your credentials and try again.';
+  }
+
+  if (lowerError.includes('unauthorized') || statusCode === 401) {
+    return 'Invalid email or password. Please check your credentials.';
+  }
+
+  if (lowerError.includes('invalid_scope')) {
+    return 'Permission error. Please contact support.';
+  }
+
+  if (lowerError.includes('server_error') || statusCode === 500) {
+    return 'Server error. Please try again in a few moments.';
+  }
+
+  if (lowerError.includes('temporarily_unavailable') || lowerError.includes('service unavailable')) {
+    return 'Login service temporarily unavailable. Please try again in a few moments.';
+  }
+
+  if (lowerError.includes('network') || lowerError.includes('fetch')) {
+    return 'Network connection error. Please check your internet connection.';
+  }
+
+  // Default fallback for unknown errors
+  return 'Login failed. Please try again or contact support if the problem persists.';
+}
+
 export const authAPI = {
-  // Standard email/password login
+
+  // Standard email/password login - now handles OAuth session token flow
   async login(email: string, password: string): Promise<LoginResponse> {
     try {
+      console.log('Step 1: Getting session token from /auth/v1/login');
+
+      // Step 1: Get session token from /auth/v1/login (HTTP 200)
       const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGIN), {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
           email,
           password,
-          client_id: API_CONFIG.OAUTH.CLIENT_ID  // Add client_id for login
+          client_id: API_CONFIG.OAUTH.CLIENT_ID
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        return { user: null, error: errorData.message || `HTTP ${response.status}` };
+        const userFriendlyMessage = mapOAuthErrorToUserMessage(
+          errorData.message || errorData.error || 'Login failed',
+          response.status
+        );
+        return { user: null, error: userFriendlyMessage };
       }
 
-      const data = await response.json();
+      const loginData = await response.json();
+      console.log('Login response:', loginData);
 
-      // Store tokens if provided
-      if (data.access_token) {
-        localStorage.setItem('access_token', data.access_token);
-        if (data.refresh_token) {
-          localStorage.setItem('refresh_token', data.refresh_token);
+      // Extract session token from response
+      const sessionToken = loginData.data?.token;
+      const tokenType = loginData.data?.token_type || 'Bearer';
+
+      if (!sessionToken) {
+        return { user: null, error: 'Login service error. Please contact support.' };
+      }
+
+      console.log('Step 2: Using session token for OAuth authorize');
+
+      // Step 2: Use the session token for /auth/v1/authorize (with redirect: 'manual')
+      const authorizeUrl = buildOAuthAuthorizeUrl();
+      const authorizeResponse = await fetch(authorizeUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `${tokenType} ${sessionToken}`,  // ✅ Use the session token!
+          'Content-Type': 'application/json',
+        },
+        redirect: 'manual'  // ✅ Handle 302 redirect manually
+      });
+
+      // Handle the 302 redirect manually
+      if (response.status === 302) {
+
+        const setCookieHeaders = response.headers.get('Set-Cookie');
+        if (setCookieHeaders) {
+          // Parse and set cookies manually
+          const cookies = setCookieHeaders.split(',').map(cookie => cookie.trim());
+
+          cookies.forEach(cookieString => {
+            // Extract cookie name=value and attributes
+            const [nameValue, ...attributes] = cookieString.split(';');
+            const [name, value] = nameValue.split('=');
+
+            if (name.trim() === 'sck_token') {
+              // Set the sck_token cookie
+              document.cookie = cookieString;
+            }
+          });
+        }
+
+        // This is correct OAuth behavior
+        const redirectUrl = response.headers.get('Location');
+        if (redirectUrl) {
+          // Handle the redirect (e.g., window.location.href = redirectUrl)
+          window.location.href = redirectUrl;
+          return;
+        }
+      } else {
+        // Only try to parse JSON for non-redirect responses
+        if (response.headers.get('content-type')?.includes('application/json')) {
+          const data = await response.json();
+          // Handle your current error format: {"status": "error", "code": 500, "message": "Unknown Exception"}
+          if (!response.ok || data.status === "error") {
+            throw new Error(data.message || `HTTP ${response.status}`);
+          }
+          return data;
         }
       }
-
-      return { user: data.user, tokens: data };
     } catch (error) {
-      return { user: null, error: error instanceof Error ? error.message : 'Login failed' };
+      console.error('Login flow error:', error);
+      const userFriendlyMessage = mapOAuthErrorToUserMessage(
+        error instanceof Error ? error.message : 'Login failed'
+      );
+      return { user: null, error: userFriendlyMessage };
+    }
+  },
+
+  // Handle OAuth callback from /authorized page - PROPER OAuth token exchange
+  async handleOAuthCallback(code: string): Promise<LoginResponse> {
+    try {
+      console.log('Step 3: Exchanging authorization code for access token');
+
+      // STANDARD OAUTH: application/x-www-form-urlencoded
+      const tokenRequest = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: code,
+        client_id: API_CONFIG.OAUTH.CLIENT_ID,
+        redirect_uri: API_CONFIG.OAUTH.REDIRECT_URI,
+      });
+
+      console.log('Token exchange request:', {
+        grant_type: 'authorization_code',
+        code: code.substring(0, 10) + '...',
+        client_id: API_CONFIG.OAUTH.CLIENT_ID,
+        redirect_uri: API_CONFIG.OAUTH.REDIRECT_URI,
+      });
+
+      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',  // STANDARD OAUTH
+        },
+        body: tokenRequest.toString(),  // STANDARD OAUTH format
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Token exchange error:', errorData);
+
+        const userFriendlyMessage = mapOAuthErrorToUserMessage(
+          errorData.error_description || errorData.error || errorData.message || 'Token exchange failed',
+          response.status
+        );
+        return { user: null, error: userFriendlyMessage };
+      }
+
+      const tokens: OAuthTokenResponse = await response.json();
+      console.log('Access tokens received');
+
+      // Store tokens
+      localStorage.setItem('access_token', tokens.access_token);
+      if (tokens.refresh_token) {
+        localStorage.setItem('refresh_token', tokens.refresh_token);
+      }
+
+      // Clean up session storage
+      sessionStorage.removeItem('oauth_session_token');
+      sessionStorage.removeItem('oauth_token_type');
+
+      // Fetch user profile with new token
+      const userResponse = await this.fetchUserProfile();
+      if (userResponse.error) {
+        return { user: null, error: 'Failed to load user profile. Please try logging in again.' };
+      }
+
+      return { user: userResponse, tokens };
+    } catch (error) {
+      console.error('Token exchange error:', error);
+      const userFriendlyMessage = mapOAuthErrorToUserMessage(
+        error instanceof Error ? error.message : 'Token exchange failed'
+      );
+      return { user: null, error: userFriendlyMessage };
     }
   },
 
@@ -59,6 +234,8 @@ export const authAPI = {
         redirect_uri: API_CONFIG.OAUTH.REDIRECT_URI,
       };
 
+      console.log('Token exchange request:', { ...tokenRequest, code: code.substring(0, 10) + '...' });
+
       const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
         method: 'POST',
         headers: {
@@ -69,10 +246,17 @@ export const authAPI = {
 
       if (!response.ok) {
         const errorData = await response.json();
-        return { user: null, error: errorData.error_description || 'Token exchange failed' };
+        console.error('Token exchange error:', errorData);
+
+        const userFriendlyMessage = mapOAuthErrorToUserMessage(
+          errorData.error_description || errorData.error || errorData.message || 'Token exchange failed',
+          response.status
+        );
+        return { user: null, error: userFriendlyMessage };
       }
 
       const tokens: OAuthTokenResponse = await response.json();
+      console.log('Access tokens received');
 
       // Store tokens
       localStorage.setItem('access_token', tokens.access_token);
@@ -83,12 +267,16 @@ export const authAPI = {
       // Fetch user profile with new token
       const userResponse = await this.fetchUserProfile();
       if (userResponse.error) {
-        return { user: null, error: userResponse.error };
+        return { user: null, error: 'Failed to load user profile. Please try logging in again.' };
       }
 
       return { user: userResponse, tokens };
     } catch (error) {
-      return { user: null, error: error instanceof Error ? error.message : 'Token exchange failed' };
+      console.error('Token exchange error:', error);
+      const userFriendlyMessage = mapOAuthErrorToUserMessage(
+        error instanceof Error ? error.message : 'Token exchange failed'
+      );
+      return { user: null, error: userFriendlyMessage };
     }
   },
 

@@ -23,7 +23,9 @@ const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const EnterCode = lazy(() => import("./pages/EnterCode"));
 const NewPassword = lazy(() => import("./pages/NewPassword"));
 const OAuthCallback = lazy(() => import("./pages/OAuthCallback"));
-const NoAccount = lazy(() => import("./pages/NoAccount")); 
+const NoAccount = lazy(() => import("./pages/NoAccount"));
+const NewPasswordSuccess = lazy(() => import("./pages/NewPasswordSuccess"));
+const Authorized = lazy(() => import("./pages/Authorized"));
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Profile = lazy(() => import("./pages/Profile"));
@@ -71,7 +73,7 @@ const AppRoutes = () => {
   };
 
   return (
-    <BrowserRouter>
+    <BrowserRouter >
       <Routes>
         {/* Public routes */}
         <Route path="/" element={<Landing />} />
@@ -82,7 +84,9 @@ const AppRoutes = () => {
         {createPublicRoute('/new-password', NewPassword)}
         {createPublicRoute('/authorized', OAuthCallback)}
         {createPublicRoute('/no-account', NoAccount)}
-        
+        {createPublicRoute('/new-password-success', NewPasswordSuccess)}
+        {createPublicRoute('/authorized', Authorized)}
+
         {/* Protected routes */}
         {createProtectedRoute('/dashboard', Dashboard, 'dashboard')}
         {createProtectedRoute('/profile', Profile, 'form')}
