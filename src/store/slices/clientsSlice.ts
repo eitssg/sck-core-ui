@@ -1,114 +1,811 @@
-import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { API_CONFIG, buildApiUrl, getAuthHeaders } from '@/lib/api-config';
+import type { OAuthTokenRequest, OAuthTokenResponse } from '@/lib/auth-types';
+import type { RootState, AppDispatch } from '../store';
+import type { ApiResponse } from '../shared';
+import { toArray } from '../shared';
 
+/**
+ * CLIENT CACHING STRATEGY:
+ * 
+ * Clients change VERY rarely - they represent business entities/organizations
+ * - Extended TTL of 30 minutes for client lists (increased from 10)
+ * - Individual client caching for 60 minutes (increased from 15)
+ * - Ultra-aggressive cache-first approach to minimize server costs
+ * - Only force refresh when explicitly requested
+ * - Cache individual clients for extended periods
+ * - Smart cache sharing across different contexts
+ */
+
+// Client interface based on your models.py
 export interface Client {
-  id: string;
-  name: string;
-  description: string;
-  homepage: string;
-  contactName: string;
-  contactEmail: string;
-  primaryAwsRegion: string;
-  memberCount: number;
-  portfolioCount: number;
+  // Core client fields (matching ClientFact Pydantic model)
+  client: string; // Primary key - client slug/ID
+  client_id?: string; // OAuth client_id (can exist on many records)
+  client_secret?: string; // OAuth client secret
+  client_type?: string; // 'enterprise', 'startup', 'government', etc.
+  client_status?: string; // 'active', 'inactive', 'suspended'
+  client_description?: string;
+  client_name?: string; // Human-readable name
+  client_scopes?: string[];
+  client_redirect_urls?: string[];
+
+  // AWS Organization configuration
+  organization_id?: string;
+  organization_name?: string;
+  organization_account?: string;
+  organization_email?: string;
+
+  // Domain and networking
+  domain?: string;
+
+  // AWS Account assignments
+  iam_account?: string;
+  audit_account?: string;
+  automation_account?: string;
+  security_account?: string;
+  network_account?: string;
+
+  // Regional configuration
+  master_region?: string;
+  client_region?: string;
+  bucket_region?: string;
+
+  // S3 bucket configuration
+  bucket_name?: string;
+  docs_bucket_name?: string;
+  artefact_bucket_name?: string;
+  ui_bucket_name?: string;
+  ui_bucket?: string; // Legacy field
+
+  // Resource naming
+  scope?: string;
+
+  // Audit fields (inherited from DatabaseRecord)
+  created_at?: string;
+  updated_at?: string;
+
+  // Compatibility fields for existing UI components
+  id?: string; // Will be set to client value
+  name?: string; // Will be set to client_name value
+  description?: string; // Will be set to client_description
+}
+
+// Summary interface for list operations (matches ClientSummary from your API)
+export interface ClientSummary {
+  Name: string;
+  Client: string;
 }
 
 interface ClientsState {
-  clients: Client[];
-  selectedClientId: string | null;
-  defaultClientId: string | null;
-  loading: boolean;
-  error: string | null;
+  items: Client[];
+  status: 'idle' | 'loading' | 'succeeded' | 'failed';
+  error?: string | null;
+  cursor: string | null;
+  lastFetched: number | null;
+  selectedClient: string | null;
+  defaultClient: string | null;
+  // Enhanced caching
+  individualClientCache: Record<string, number>; // clientSlug -> timestamp
+  fullClientDataCache: Record<string, boolean>; // Track which clients have full data vs summary
+
+  // NEW: Client switching state
+  currentActiveClient: string | null; // The client context from JWT token
+  switchingToClient: string | null; // Client currently being switched to
+  switchError: string | null; // Error during client switching
 }
 
 const initialState: ClientsState = {
-  clients: [
-    {
-      id: 'client-1',
-      name: 'Acme Corporation',
-      description: 'Leading technology company specializing in cloud solutions and digital transformation.',
-      homepage: 'https://acme.com',
-      contactName: 'John Smith',
-      contactEmail: 'john.smith@acme.com',
-      primaryAwsRegion: 'us-east-1',
-      memberCount: 45,
-      portfolioCount: 8,
-    },
-    {
-      id: 'client-2',
-      name: 'Global Tech Solutions',
-      description: 'Enterprise software development and consulting services.',
-      homepage: 'https://globaltech.com',
-      contactName: 'Sarah Johnson',
-      contactEmail: 'sarah.johnson@globaltech.com',
-      primaryAwsRegion: 'us-west-2',
-      memberCount: 32,
-      portfolioCount: 5,
-    },
-    {
-      id: 'client-3',
-      name: 'Innovation Labs',
-      description: 'R&D focused company building next-generation platforms.',
-      homepage: 'https://innovationlabs.com',
-      contactName: 'Mike Chen',
-      contactEmail: 'mike.chen@innovationlabs.com',
-      primaryAwsRegion: 'eu-west-1',
-      memberCount: 28,
-      portfolioCount: 12,
-    },
-  ],
-  selectedClientId: null,
-  defaultClientId: 'client-1',
-  loading: false,
+  items: [],
+  status: 'idle',
   error: null,
+  cursor: null,
+  lastFetched: null,
+  selectedClient: null,
+  defaultClient: null,
+  individualClientCache: {},
+  fullClientDataCache: {},
+  // NEW fields
+  currentActiveClient: null,
+  switchingToClient: null,
+  switchError: null,
 };
+
+// Helper function to transform client data for UI compatibility
+const transformClientForUI = (client: Client): Client => ({
+  ...client,
+  id: client.client, // Set id to client for compatibility
+  name: client.client_name || client.client, // Set name for compatibility
+  description: client.client_description, // Set description for compatibility
+});
+
+// CRUD Operations with Aggressive Caching
+
+// CREATE - Create new client (POST /api/v1/registry/clients)
+export const createClient = createAsyncThunk(
+  'clients/create',
+  async (clientData: Partial<Client>, thunkAPI) => {
+    try {
+      const response = await fetch(buildApiUrl('/api/v1/registry/clients'), {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(clientData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to create client');
+      }
+
+      const result = await response.json();
+      return transformClientForUI(result.data);
+    } catch (error) {
+      return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+);
+
+// READ - List all clients (GET /api/v1/registry/clients) - HEAVILY CACHED
+export const fetchClients = createAsyncThunk<
+  ApiResponse<ClientSummary>,
+  { limit?: number; cursor?: string | null; force?: boolean } | undefined,
+  { state: RootState }
+>(
+  'clients/fetchList',
+  async (args) => {
+    const limit = args?.limit ?? 100;
+    const cursor = args?.cursor ?? null;
+
+    const url = new URL(buildApiUrl('/api/v1/registry/clients'));
+    url.searchParams.set('limit', String(limit));
+    if (cursor) url.searchParams.set('cursor', cursor);
+
+    const response = await fetch(url.toString(), {
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const json = await response.json() as ApiResponse<ClientSummary>;
+    return json;
+  },
+  {
+    condition: (args, { getState }) => {
+      const state = getState();
+      const force = args?.force === true;
+      if (force) return true;
+
+      // Check if clients slice exists
+      if (!state.clients) return true;
+
+      const slice = state.clients;
+      if (slice.status === 'loading') return false;
+
+      // Clients change VERY rarely - extended TTL of 30 minutes
+      const ttlMs = 30 * 60 * 1000; // Increased from 10 to 30 minutes
+      const fresh = !!slice.lastFetched && Date.now() - slice.lastFetched < ttlMs;
+      const sameCursor = (args?.cursor ?? null) === (slice.cursor ?? null);
+
+      // Only fetch if not fresh or cursor changed
+      return !(fresh && sameCursor);
+    },
+  }
+);
+
+// READ - Get single client (GET /api/v1/registry/client/{client}) - CACHE INDIVIDUAL CLIENTS
+export const fetchClient = createAsyncThunk<
+  Client,
+  { clientSlug: string; force?: boolean },
+  { state: RootState }
+>(
+  'clients/fetchSingle',
+  async ({ clientSlug }) => {
+    try {
+      const response = await fetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
+        headers: getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch client');
+      }
+
+      const result = await response.json();
+      return transformClientForUI(result.data);
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : 'Unknown error');
+    }
+  },
+  {
+    condition: ({ clientSlug, force }, { getState }) => {
+      if (force) return true;
+
+      const state = getState();
+      if (!state.clients) return true;
+
+      // Check if we already have this client in the main list
+      const existingClient = state.clients.items.find(c => c.client === clientSlug);
+      if (existingClient) {
+        // Check if we have full client data or just summary
+        const hasFullData = state.clients.fullClientDataCache[clientSlug];
+        const lastFetched = state.clients.individualClientCache[clientSlug];
+
+        if (lastFetched) {
+          const ttlMs = 60 * 60 * 1000; // Increased to 60 minutes for individual clients
+          const fresh = Date.now() - lastFetched < ttlMs;
+
+          // If we have full data and it's fresh, don't fetch
+          if (hasFullData && fresh) return false;
+
+          // If we only have summary data but it's very recent (5 min), don't fetch
+          if (!hasFullData && fresh && (Date.now() - lastFetched < 5 * 60 * 1000)) {
+            return false;
+          }
+        }
+      }
+
+      return true; // Fetch if not in cache or cache expired
+    },
+  }
+);
+
+// UPDATE - Full update client (PUT /api/v1/registry/client/{client})
+export const updateClient = createAsyncThunk(
+  'clients/update',
+  async ({ clientSlug, clientData }: { clientSlug: string; clientData: Client }, thunkAPI) => {
+    try {
+      const response = await fetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(clientData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update client');
+      }
+
+      const result = await response.json();
+      return { clientSlug, client: transformClientForUI(result.data) };
+    } catch (error) {
+      return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+);
+
+// PATCH - Partial update client (PATCH /api/v1/registry/client/{client})
+export const patchClient = createAsyncThunk(
+  'clients/patch',
+  async ({ clientSlug, clientData }: { clientSlug: string; clientData: Partial<Client> }, thunkAPI) => {
+    try {
+      const response = await fetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(clientData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to patch client');
+      }
+
+      const result = await response.json();
+      return { clientSlug, client: transformClientForUI(result.data) };
+    } catch (error) {
+      return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+);
+
+// DELETE - Delete client (DELETE /api/v1/registry/client/{client})
+export const deleteClient = createAsyncThunk(
+  'clients/delete',
+  async (clientSlug: string, thunkAPI) => {
+    try {
+      const response = await fetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete client');
+      }
+
+      return clientSlug;
+    } catch (error) {
+      return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+);
+
+// Refresh action for force reload
+export const refreshClients = () => (dispatch: AppDispatch) => {
+  dispatch(clientsSlice.actions.clear());
+  return dispatch(fetchClients({ limit: 100, cursor: null, force: true }));
+};
+
+// Force refresh individual client
+export const refreshClient = (clientSlug: string) => (dispatch: AppDispatch) => {
+  dispatch(clientsSlice.actions.clearClientCache(clientSlug));
+  return dispatch(fetchClient({ clientSlug, force: true }));
+};
+
+// CLIENT SWITCHING - Switch active client context using refresh token
+export const switchToClient = createAsyncThunk<
+  { user: any; tokens: any; clientSlug: string },
+  string,
+  { state: RootState }
+>(
+  'clients/switchToClient',
+  async (clientSlug: string, thunkAPI) => {
+    try {
+      const refreshToken = localStorage.getItem('refresh_token');
+      if (!refreshToken) {
+        throw new Error('No refresh token available - please login again');
+      }
+
+      const tokenRequest: OAuthTokenRequest = {
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: API_CONFIG.OAUTH.CLIENT_ID,
+        state: `client=${clientSlug}`
+      };
+
+      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(tokenRequest),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+
+        // If refresh fails, user needs to re-authenticate
+        if (response.status === 401 || response.status === 403) {
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          throw new Error('Session expired. Please login again.');
+        }
+
+        throw new Error(errorData.error_description || `Failed to switch to client: ${clientSlug}`);
+      }
+
+      const tokens: OAuthTokenResponse = await response.json();
+
+      // Store new tokens (now scoped to new client)
+      localStorage.setItem('access_token', tokens.access_token);
+      if (tokens.refresh_token) {
+        localStorage.setItem('refresh_token', tokens.refresh_token);
+      }
+
+      // Fetch user profile from new client context
+      const userResponse = await fetch(buildApiUrl('/auth/v1/me'), {
+        headers: {
+          'Authorization': `Bearer ${tokens.access_token}`,
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!userResponse.ok) {
+        throw new Error('Failed to fetch user profile for new client context');
+      }
+
+      const user = await userResponse.json();
+
+      return { user, tokens, clientSlug };
+    } catch (error) {
+      return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Client switch failed');
+    }
+  });
+
+// Helper thunk to get current client from JWT token
+export const getCurrentClientFromJWT = createAsyncThunk(
+  'clients/getCurrentClientFromJWT',
+  async (_, thunkAPI) => {
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) return null;
+
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.client || 'core';
+    } catch (error) {
+      console.error('Failed to decode JWT:', error);
+      return 'core';
+    }
+  }
+);
 
 const clientsSlice = createSlice({
   name: 'clients',
   initialState,
   reducers: {
-    setClients: (state, action: PayloadAction<Client[]>) => {
-      state.clients = action.payload;
+    clear(state) {
+      state.items = [];
+      state.cursor = null;
+      state.lastFetched = null;
+      state.status = 'idle';
+      state.error = null;
+      state.selectedClient = null;
+      state.defaultClient = null;
+      state.individualClientCache = {};
+      state.fullClientDataCache = {};
+      state.currentActiveClient = null;
     },
-    addClient: (state, action: PayloadAction<Client>) => {
-      state.clients.push(action.payload);
+    clearClientCache(state, action: PayloadAction<string>) {
+      // Clear individual client cache
+      delete state.individualClientCache[action.payload];
+      delete state.fullClientDataCache[action.payload];
     },
-    updateClient: (state, action: PayloadAction<Client>) => {
-      const index = state.clients.findIndex(client => client.id === action.payload.id);
-      if (index !== -1) {
-        state.clients[index] = action.payload;
+    setClients(state, action: PayloadAction<Client[]>) {
+      state.items = action.payload?.map(transformClientForUI) ?? [];
+      state.lastFetched = Date.now();
+      state.status = 'succeeded';
+      state.error = null;
+      // Update individual cache timestamps
+      action.payload?.forEach(client => {
+        state.individualClientCache[client.client] = Date.now();
+        // Mark as summary data only (from list endpoint)
+        state.fullClientDataCache[client.client] = false;
+      });
+    },
+    setSelectedClient(state, action: PayloadAction<string | null>) {
+      state.selectedClient = action.payload ?? null;
+    },
+    setDefaultClient(state, action: PayloadAction<string | null>) {
+      state.defaultClient = action.payload ?? null;
+    },
+    syncFromAPI(state, action: PayloadAction<Client>) {
+      const client = transformClientForUI(action.payload);
+      const existingIndex = state.items.findIndex(c => c.client === client.client);
+
+      if (existingIndex >= 0) {
+        state.items[existingIndex] = client;
+      } else {
+        state.items.push(client);
       }
+
+      // Update individual cache timestamp and mark as full data
+      state.individualClientCache[client.client] = Date.now();
+      state.fullClientDataCache[client.client] = true;
     },
-    removeClient: (state, action: PayloadAction<string>) => {
-      state.clients = state.clients.filter(client => client.id !== action.payload);
+    // NEW: Bulk update from other API responses
+    bulkUpdateClients(state, action: PayloadAction<Client[]>) {
+      const timestamp = Date.now();
+      action.payload.forEach(clientData => {
+        const client = transformClientForUI(clientData);
+        const existingIndex = state.items.findIndex(c => c.client === client.client);
+
+        if (existingIndex >= 0) {
+          // Only update if new data is more recent or has more fields
+          const existing = state.items[existingIndex];
+          const hasMoreData = Object.keys(client).length > Object.keys(existing).length;
+          if (hasMoreData || !state.individualClientCache[client.client]) {
+            state.items[existingIndex] = client;
+            state.individualClientCache[client.client] = timestamp;
+            state.fullClientDataCache[client.client] = true;
+          }
+        } else {
+          state.items.push(client);
+          state.individualClientCache[client.client] = timestamp;
+          state.fullClientDataCache[client.client] = true;
+        }
+      });
     },
-    setSelectedClient: (state, action: PayloadAction<string | null>) => {
-      state.selectedClientId = action.payload;
+    // NEW: Optimize cache by removing very old entries
+    optimizeClientCache(state) {
+      const now = Date.now();
+      const maxAge = 24 * 60 * 60 * 1000; // 24 hours max age
+
+      // Remove clients older than 24 hours
+      state.items = state.items.filter(client => {
+        const timestamp = state.individualClientCache[client.client];
+        return timestamp && (now - timestamp) < maxAge;
+      });
+
+      // Clean up cache timestamps
+      Object.keys(state.individualClientCache).forEach(clientSlug => {
+        const timestamp = state.individualClientCache[clientSlug];
+        if (!timestamp || (now - timestamp) > maxAge) {
+          delete state.individualClientCache[clientSlug];
+          delete state.fullClientDataCache[clientSlug];
+        }
+      });
     },
-    setDefaultClient: (state, action: PayloadAction<string | null>) => {
-      state.defaultClientId = action.payload;
-      // If no client is currently selected, use the default
-      if (!state.selectedClientId && action.payload) {
-        state.selectedClientId = action.payload;
-      }
+
+    // NEW: Client switching reducers
+    setCurrentActiveClient(state, action: PayloadAction<string | null>) {
+      state.currentActiveClient = action.payload;
+      state.switchError = null;
     },
-    setLoading: (state, action: PayloadAction<boolean>) => {
-      state.loading = action.payload;
+    clearSwitchError(state) {
+      state.switchError = null;
     },
-    setError: (state, action: PayloadAction<string | null>) => {
-      state.error = action.payload;
+    // Clear all caches when switching clients (important for multi-tenant data isolation)
+    clearAllCachesForClientSwitch(state) {
+      state.items = [];
+      state.cursor = null;
+      state.lastFetched = null;
+      state.individualClientCache = {};
+      state.fullClientDataCache = {};
+      state.status = 'idle';
+      state.error = null;
     },
+  },
+  extraReducers: (builder) => {
+    builder
+      // CREATE Client
+      .addCase(createClient.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(createClient.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        state.items.push(action.payload);
+        state.lastFetched = Date.now();
+        // Cache the new client
+        state.individualClientCache[action.payload.client] = Date.now();
+      })
+      .addCase(createClient.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload as string;
+      })
+
+      // READ Clients List
+      .addCase(fetchClients.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(fetchClients.fulfilled, (state, action: PayloadAction<ApiResponse<ClientSummary>>) => {
+        const summaryData = toArray<ClientSummary>(action.payload.data);
+        // Transform ClientSummary to Client interface
+        state.items = summaryData.map(summary => transformClientForUI({
+          client: summary.Client,
+          client_name: summary.Name,
+          name: summary.Name,
+          id: summary.Client,
+        }));
+        state.cursor = action.payload.metadata?.cursor ?? null;
+        state.status = 'succeeded';
+        state.lastFetched = Date.now();
+        state.error = null;
+
+        // Update individual cache timestamps for all fetched clients
+        summaryData.forEach(summary => {
+          state.individualClientCache[summary.Client] = Date.now();
+        });
+      })
+      .addCase(fetchClients.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.error.message ?? 'Failed to load clients';
+      })
+
+      // READ Single Client
+      .addCase(fetchClient.pending, (state) => {
+        // Don't set global loading for individual client fetch
+        state.error = null;
+      })
+      .addCase(fetchClient.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+
+        // Update or add the client in the list
+        const existingIndex = state.items.findIndex(c => c.client === action.payload.client);
+        if (existingIndex >= 0) {
+          state.items[existingIndex] = action.payload;
+        } else {
+          state.items.push(action.payload);
+        }
+
+        // Update individual cache timestamp and mark as full data
+        state.individualClientCache[action.payload.client] = Date.now();
+        state.fullClientDataCache[action.payload.client] = true; // Mark as full data
+        state.lastFetched = Date.now();
+      })
+      .addCase(fetchClient.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.error.message ?? 'Failed to fetch client';
+      })
+
+      // UPDATE Client (PUT)
+      .addCase(updateClient.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(updateClient.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+
+        // Update the client in the list
+        const index = state.items.findIndex(c => c.client === action.payload.client.client);
+        if (index >= 0) {
+          state.items[index] = action.payload.client;
+        }
+
+        // Update individual cache timestamp
+        state.individualClientCache[action.payload.client.client] = Date.now();
+        state.lastFetched = Date.now();
+      })
+      .addCase(updateClient.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload as string;
+      })
+
+      // PATCH Client (PATCH)
+      .addCase(patchClient.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(patchClient.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+
+        // Update the client in the list
+        const index = state.items.findIndex(c => c.client === action.payload.client.client);
+        if (index >= 0) {
+          state.items[index] = action.payload.client;
+        }
+
+        // Update individual cache timestamp
+        state.individualClientCache[action.payload.client.client] = Date.now();
+        state.lastFetched = Date.now();
+      })
+      .addCase(patchClient.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload as string;
+      })
+
+      // DELETE Client
+      .addCase(deleteClient.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(deleteClient.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+
+        // Remove the client from the list
+        state.items = state.items.filter(c => c.client !== action.payload);
+
+        // Clear selection if deleted client was selected
+        if (state.selectedClient === action.payload) {
+          state.selectedClient = null;
+        }
+        if (state.defaultClient === action.payload) {
+          state.defaultClient = null;
+        }
+
+        // Remove from individual cache
+        delete state.individualClientCache[action.payload];
+
+        state.lastFetched = Date.now();
+      })
+      .addCase(deleteClient.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload as string;
+      })
+
+      // Client switching cases
+      .addCase(switchToClient.pending, (state, action) => {
+        state.switchingToClient = action.meta.arg; // The clientSlug being switched to
+        state.switchError = null;
+      })
+      .addCase(switchToClient.fulfilled, (state, action) => {
+        const { clientSlug } = action.payload;
+
+        // Update current active client
+        state.currentActiveClient = clientSlug;
+        state.switchingToClient = null;
+        state.switchError = null;
+
+        // Set as selected client too
+        state.selectedClient = clientSlug;
+
+        // Clear all caches since we're in new client context
+        state.items = [];
+        state.cursor = null;
+        state.lastFetched = null;
+        state.individualClientCache = {};
+        state.fullClientDataCache = {};
+        state.status = 'idle';
+      })
+      .addCase(switchToClient.rejected, (state, action) => {
+        state.switchingToClient = null;
+        state.switchError = action.payload as string;
+
+        // If session expired, clear current client
+        const errorMessage = String(action.payload || '');
+        if (errorMessage.includes('login again')) {
+          state.currentActiveClient = null;
+        }
+      })
+
+      // Get current client from JWT
+      .addCase(getCurrentClientFromJWT.fulfilled, (state, action) => {
+        if (action.payload) {
+          state.currentActiveClient = action.payload;
+          if (!state.selectedClient) {
+            state.selectedClient = action.payload;
+          }
+        }
+      });
   },
 });
 
+// Enhanced selectors
+export const selectIsClientCachedWithFullData = (state: RootState, clientSlug: string) => {
+  const timestamp = state.clients.individualClientCache[clientSlug];
+  const hasFullData = state.clients.fullClientDataCache[clientSlug];
+  if (!timestamp) return false;
+  const ttlMs = 60 * 60 * 1000; // 60 minutes
+  return hasFullData && (Date.now() - timestamp < ttlMs);
+};
+
+export const selectClientCacheStats = (state: RootState) => {
+  const now = Date.now();
+  const totalClients = state.clients.items.length;
+  const cachedClients = Object.keys(state.clients.individualClientCache).length;
+  const fullDataClients = Object.values(state.clients.fullClientDataCache).filter(Boolean).length;
+  const freshClients = Object.values(state.clients.individualClientCache)
+    .filter(timestamp => (now - timestamp) < 60 * 60 * 1000).length;
+
+  return {
+    totalClients,
+    cachedClients,
+    fullDataClients,
+    freshClients,
+    cacheHitRate: cachedClients > 0 ? (freshClients / cachedClients * 100).toFixed(1) + '%' : '0%'
+  };
+};
+
+// Export enhanced actions
 export const {
+  clear,
+  clearClientCache,
   setClients,
-  addClient,
-  updateClient,
-  removeClient,
   setSelectedClient,
   setDefaultClient,
-  setLoading,
-  setError,
+  syncFromAPI,
+  bulkUpdateClients,
+  optimizeClientCache,
+  // NEW exports
+  setCurrentActiveClient,
+  clearSwitchError,
+  clearAllCachesForClientSwitch
 } = clientsSlice.actions;
+
+// Selectors
+export const selectClients = (state: RootState) => state.clients.items;
+export const selectClientsStatus = (state: RootState) => state.clients.status;
+export const selectClientsError = (state: RootState) => state.clients.error;
+export const selectClientsCursor = (state: RootState) => state.clients.cursor;
+export const selectClientsLastFetched = (state: RootState) => state.clients.lastFetched;
+export const selectSelectedClient = (state: RootState) => state.clients.selectedClient;
+export const selectDefaultClient = (state: RootState) => state.clients.defaultClient;
+export const selectClientBySlug = (state: RootState, clientSlug: string) =>
+  state.clients.items.find(c => c.client === clientSlug);
+export const selectClientsLoading = (state: RootState) => state.clients.status === 'loading';
+
+// Enhanced selectors for cache optimization
+export const selectClientCacheTimestamp = (state: RootState, clientSlug: string) =>
+  state.clients.individualClientCache[clientSlug];
+export const selectIsClientCached = (state: RootState, clientSlug: string) => {
+  const timestamp = state.clients.individualClientCache[clientSlug];
+  if (!timestamp) return false;
+  const ttlMs = 15 * 60 * 1000; // 15 minutes
+  return Date.now() - timestamp < ttlMs;
+};
+
+// NEW: Client switching selectors
+export const selectCurrentActiveClient = (state: RootState) => state.clients.currentActiveClient;
+export const selectSwitchingToClient = (state: RootState) => state.clients.switchingToClient;
+export const selectSwitchError = (state: RootState) => state.clients.switchError;
+export const selectIsClientSwitching = (state: RootState) => !!state.clients.switchingToClient;
+export const selectCanSwitchToClient = (state: RootState, clientSlug: string) => {
+  return state.clients.items.some(c => c.client === clientSlug);
+};
+export const selectAvailableClientsForSwitching = (state: RootState) => {
+  const currentClient = state.clients.currentActiveClient;
+  return state.clients.items.filter(c => c.client !== currentClient);
+};
 
 export default clientsSlice.reducer;
