@@ -1,1253 +1,687 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
-import { useDispatch, useSelector } from "react-redux";
-import { 
-  ArrowLeft, Edit, Save, X, Building2, Globe, Mail, User, MapPin, 
-  Users, Briefcase, ExternalLink, Settings, Cloud, Shield, 
-  Database, Network, Key, FileText, Calendar, CheckCircle2,
-  AlertCircle, Info, Copy, Eye, EyeOff, RefreshCw, Activity, Zap,
-  Search, Filter, Clock, XCircle, CheckCircle, AlertTriangle
-} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useSelector } from "react-redux";
+import type { RootState } from "@/store";
+import { selectIsAuthenticated } from "@/store/slices/authSlice";
+
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+
+import { buildApiUrl, getAuthHeaders, API_CONFIG } from "@/lib/api-config";
+import { useReduxData } from "@/hooks/useReduxData";
+import { useTheme } from "@/hooks/useTheme";
+import { useToast } from "@/hooks/use-toast";
+
+import type { Application, Portfolio, Zone } from "@/store/types";
+
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { toast } from "sonner";
-import { 
-  selectClientBySlug, 
-  selectClientsLoading, 
-  fetchClient, 
-  patchClient,
-} from "@/store/slices/clientsSlice";
-import { selectPortfolios, fetchPortfolios } from "@/store/slices/portfoliosSlice";
-import type { RootState, AppDispatch } from "@/store/store";
-import type { Client } from "@/store/slices/clientsSlice";
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormDescription,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-interface EditableFieldProps {
-  label: string;
-  value: string | undefined;
-  field: keyof Client;
-  type?: 'text' | 'email' | 'url' | 'textarea';
-  isEditing: boolean;
-  onChange: (field: keyof Client, value: string) => void;
-  icon?: React.ReactNode;
-  placeholder?: string;
-  required?: boolean;
+import {
+  ArrowLeft,
+  Globe,
+  Package2,
+  Plus,
+  Settings2,
+  Sparkles,
+  Tag,
+  GitBranch,
+} from "lucide-react";
+
+const envOptions = ["development", "staging", "testing", "production"] as const;
+
+const schema = z.object({
+  client: z.string().min(1, "Client is required"),
+  portfolio: z.string().min(1, "Portfolio is required"),
+  name: z.string().min(2, "Name is required"),
+  slug: z
+    .string()
+    .min(2, "Slug is required")
+    .regex(/^[a-z0-9-]+$/, "Only lowercase letters, numbers, and dashes"),
+  app_regex: z
+    .string()
+    .min(2, "Regex is required")
+    .regex(/^\^.*$/, "Regex should typically start with ^"),
+  environment: z.enum(envOptions),
+  region: z.string().min(2, "Region is required"),
+  zone: z.string().min(1, "Zone is required"),
+  repository: z.string().optional(),
+  enforce_validation: z.enum(["true", "false"]).default("true"),
+  image_aliases: z.record(z.string()).default({}),
+  tags: z.record(z.string()).default({}),
+  description: z.string().optional(),
+});
+
+type FormData = z.infer<typeof schema>;
+
+function slugify(v: string) {
+  return v.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }
 
-const EditableField: React.FC<EditableFieldProps> = ({
-  label, value, field, type = 'text', isEditing, onChange, icon, placeholder, required
-}) => {
-  if (isEditing) {
+export default function CreateApplication() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { isDark } = useTheme();
+  const { toast } = useToast();
+
+  // Auth guard
+  const isAuthenticated = useSelector((s: RootState) => selectIsAuthenticated(s));
+  useEffect(() => {
+    if (!isAuthenticated) navigate("/login", { replace: true });
+  }, [isAuthenticated, navigate]);
+
+  // Redux-backed data
+  const { selectedClient, portfolios, zones, actions } = useReduxData();
+
+  // Current client from URL or selected
+  const currentClient = useMemo(
+    () => searchParams.get("client") || (typeof selectedClient === "string" ? selectedClient : ""),
+    [searchParams, selectedClient]
+  );
+
+  // Load portfolios for current client (unconditional hook)
+  useEffect(() => {
+    if (!currentClient) return;
+    if (portfolios.currentClient !== currentClient) {
+      actions.portfolios.setCurrentClient(currentClient);
+    }
+    if (portfolios.status === "idle" || portfolios.currentClient !== currentClient) {
+      actions.portfolios.fetch(currentClient, { force: false });
+    }
+  }, [currentClient, portfolios.status, portfolios.currentClient, actions.portfolios]);
+
+  // Lists
+  const portfoliosList = useMemo<Portfolio[]>(
+    () => (Array.isArray((portfolios as any)?.items) ? ((portfolios as any).items as Portfolio[]) : []),
+    [portfolios?.items]
+  );
+  const clientPortfolios = useMemo(
+    () => (currentClient ? portfoliosList.filter((p) => p.client === currentClient) : portfoliosList),
+    [portfoliosList, currentClient]
+  );
+
+  const zonesList = useMemo<Zone[]>(
+    () => (Array.isArray(zones) ? (zones as Zone[]) : []),
+    [zones]
+  );
+  const clientZones = useMemo(
+    () => (currentClient ? zonesList.filter((z) => z.client === currentClient) : zonesList),
+    [zonesList, currentClient]
+  );
+
+  // Regions derived from zones (keys of region_facts)
+  const regionOptions = useMemo(() => {
+    const set = new Set<string>();
+    clientZones.forEach((z) => Object.keys(z.region_facts || {}).forEach((r) => set.add(r)));
+    return Array.from(set.size ? set : new Set(["us-east-1", "us-west-2", "eu-west-1"]));
+  }, [clientZones]);
+
+  // Form
+  const form = useForm<FormData>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      client: currentClient,
+      portfolio: searchParams.get("portfolio") || "",
+      name: "",
+      slug: "",
+      app_regex: "",
+      environment: "development",
+      region: regionOptions[0] || "us-east-1",
+      zone: searchParams.get("zone") || "",
+      repository: "",
+      enforce_validation: "true",
+      image_aliases: {},
+      tags: {},
+      description: "",
+    },
+    mode: "onChange",
+  });
+
+  // Keep client default in sync when url/selection changes
+  useEffect(() => {
+    if (currentClient && form.getValues("client") !== currentClient) {
+      form.setValue("client", currentClient, { shouldDirty: false });
+    }
+  }, [currentClient, form]);
+
+  // If zone changes, pre-fill environment if available
+  const zoneValue = form.watch("zone");
+  useEffect(() => {
+    const z = clientZones.find((cz) => cz.zone === zoneValue);
+    const env = z?.account_facts?.environment;
+    if (env && (envOptions as readonly string[]).includes(env)) {
+      form.setValue("environment", env as FormData["environment"], { shouldDirty: true });
+    }
+  }, [zoneValue, clientZones, form]);
+
+  // Auto-derive slug/app_regex from name until user edits slug manually
+  const slugEditedRef = useRef(false);
+  const nameValue = form.watch("name");
+  const slugValue = form.watch("slug");
+  useEffect(() => {
+    if (!nameValue) return;
+    if (!slugEditedRef.current) {
+      const s = slugify(nameValue);
+      form.setValue("slug", s, { shouldDirty: true, shouldValidate: true });
+      if (!form.getValues("app_regex")) {
+        form.setValue("app_regex", `^${s}.*$`, { shouldDirty: true, shouldValidate: true });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nameValue]);
+
+  useEffect(() => {
+    if (slugValue) slugEditedRef.current = true;
+  }, [slugValue]);
+
+  const onSubmit = async (data: FormData) => {
+    const payload: Application = {
+      portfolio: data.portfolio,
+      app_regex: data.app_regex,
+      name: data.name || undefined,
+      environment: data.environment,
+      region: data.region,
+      zone: data.zone,
+      repository: data.repository || undefined,
+      enforce_validation: data.enforce_validation,
+      image_aliases: Object.keys(data.image_aliases).length ? data.image_aliases : undefined,
+      tags: Object.keys(data.tags).length ? data.tags : undefined,
+      metadata: data.description ? { description: data.description } : undefined,
+    };
+
+    try {
+      const url = `${buildApiUrl(API_CONFIG.ENDPOINTS.API.APPLICATIONS)}?client=${encodeURIComponent(
+        data.client
+      )}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        let msg = `Failed to create application (HTTP ${res.status})`;
+        try {
+          const j = await res.json();
+          msg = j?.message || msg;
+        } catch {
+          // ignore
+        }
+        throw new Error(msg);
+      }
+
+      toast({
+        title: "Application created",
+        description: `"${data.name}" was added to ${data.portfolio}.`,
+      });
+      navigate("/applications");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Create failed";
+      toast({ title: "Create failed", description: msg, variant: "destructive" });
+    }
+  };
+
+  // Subcomponent: simple key/value editor for maps
+  function KeyValueEditor({
+    label,
+    values,
+    onChange,
+    placeholderKey = "key",
+    placeholderValue = "value",
+    icon,
+  }: {
+    label: string;
+    values: Record<string, string>;
+    onChange: (next: Record<string, string>) => void;
+    placeholderKey?: string;
+    placeholderValue?: string;
+    icon?: React.ReactNode;
+  }) {
+    const [k, setK] = useState("");
+    const [v, setV] = useState("");
+    const keyRef = useRef<HTMLInputElement>(null);
+
+    const add = () => {
+      const key = k.trim();
+      const val = v.trim();
+      if (!key || !val) return;
+      if (values[key] === val) return;
+      onChange({ ...values, [key]: val });
+      setK("");
+      setV("");
+      keyRef.current?.focus();
+    };
+
+    const remove = (rk: string) => {
+      const { [rk]: _, ...rest } = values;
+      onChange(rest);
+    };
+
     return (
       <div className="space-y-2">
-        <Label htmlFor={field} className="text-sm font-medium flex items-center gap-2">
+        <FormLabel className="text-sm flex items-center gap-2">
           {icon}
-          {label} {required && <span className="text-red-500">*</span>}
-        </Label>
-        {type === 'textarea' ? (
-          <Textarea
-            id={field}
-            value={value || ''}
-            onChange={(e) => onChange(field, e.target.value)}
-            placeholder={placeholder}
-            className="min-h-20"
-          />
-        ) : (
+          {label}
+        </FormLabel>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
           <Input
-            id={field}
-            type={type}
-            value={value || ''}
-            onChange={(e) => onChange(field, e.target.value)}
-            placeholder={placeholder}
+            ref={keyRef}
+            placeholder={placeholderKey}
+            value={k}
+            onChange={(e) => setK(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                add();
+              }
+            }}
           />
-        )}
+          <Input
+            placeholder={placeholderValue}
+            value={v}
+            onChange={(e) => setV(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                add();
+              }
+            }}
+          />
+          <Button type="button" variant="outline" onClick={add} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(values).length === 0 && (
+            <div className="text-xs text-muted-foreground">No items added</div>
+          )}
+          {Object.entries(values).map(([key, val]) => (
+            <Badge key={key} variant="secondary" className="gap-2">
+              <span className="font-mono">{key}</span>
+              <span className="opacity-70">=</span>
+              <span className="font-mono">{val}</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-4 w-4 p-0"
+                onClick={() => remove(key)}
+                aria-label={`Remove ${key}`}
+              >
+                ×
+              </Button>
+            </Badge>
+          ))}
+        </div>
       </div>
     );
   }
 
+  if (!isAuthenticated || !currentClient) return null;
+
   return (
-    <div className="flex items-start gap-3">
-      {icon && <div className="mt-1 text-muted-foreground">{icon}</div>}
-      <div className="flex-1">
-        <p className="text-sm font-medium text-foreground">{label}</p>
-        <p className="text-sm text-muted-foreground">
-          {value || <span className="italic">Not set</span>}
-        </p>
-      </div>
-    </div>
-  );
-};
-
-interface SecretFieldProps {
-  label: string;
-  value: string | undefined;
-  field: keyof Client;
-  isEditing: boolean;
-  onChange: (field: keyof Client, value: string) => void;
-}
-
-const SecretField: React.FC<SecretFieldProps> = ({ label, value, field, isEditing, onChange }) => {
-  const [showSecret, setShowSecret] = useState(false);
-
-  if (isEditing) {
-    return (
-      <div className="space-y-2">
-        <Label htmlFor={field} className="text-sm font-medium flex items-center gap-2">
-          <Key className="h-4 w-4" />
-          {label}
-        </Label>
-        <div className="relative">
-          <Input
-            id={field}
-            type={showSecret ? 'text' : 'password'}
-            value={value || ''}
-            onChange={(e) => onChange(field, e.target.value)}
-            placeholder="Enter secret value"
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="absolute right-1 top-1/2 -translate-y-1/2"
-            onClick={() => setShowSecret(!showSecret)}
-          >
-            {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+    <div className="space-y-6 animate-fade-in">
+      {/* Ambient header with theme accents */}
+      <div className="relative overflow-hidden rounded-xl border bg-card/80 shadow-medium">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -top-24 -left-20 h-64 w-64 rounded-full bg-primary/15 blur-3xl" />
+          <div className="absolute -bottom-24 -right-20 h-64 w-64 rounded-full bg-accent/20 blur-3xl" />
+        </div>
+        <div className="relative flex items-center justify-between p-6">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-medium flex items-center justify-center">
+              <Sparkles className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Create Application</h1>
+              <p className="text-sm text-muted-foreground">
+                Onboard a new application into your portfolio
+              </p>
+            </div>
+          </div>
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/applications">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Applications
+            </Link>
           </Button>
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div className="flex items-start gap-3">
-      <Key className="h-4 w-4 mt-1 text-muted-foreground" />
-      <div className="flex-1">
-        <p className="text-sm font-medium text-foreground">{label}</p>
-        <div className="flex items-center gap-2">
-          <p className="text-sm text-muted-foreground font-mono">
-            {value ? (showSecret ? value : '••••••••••••••••') : <span className="italic">Not set</span>}
-          </p>
-          {value && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowSecret(!showSecret)}
-            >
-              {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-interface PortfolioStatus {
-  id: string;
-  status: 'active' | 'inactive' | 'deploying' | 'failed' | 'updating';
-  version?: string;
-  lastDeployment?: {
-    status: 'success' | 'failed' | 'in-progress';
-    timestamp: string;
-    version?: string;
-  };
-  health?: 'healthy' | 'warning' | 'critical';
-  uptime?: number;
-}
-
-const getPortfolioStatusBadge = (status: string) => {
-  switch (status) {
-    case 'active': return <Badge variant="default" className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1" />Active</Badge>;
-    case 'inactive': return <Badge variant="secondary"><XCircle className="w-3 h-3 mr-1" />Inactive</Badge>;
-    case 'deploying': return <Badge variant="outline" className="bg-blue-100 text-blue-800"><Clock className="w-3 h-3 mr-1" />Deploying</Badge>;
-    case 'updating': return <Badge variant="outline" className="bg-yellow-100 text-yellow-800"><RefreshCw className="w-3 h-3 mr-1" />Updating</Badge>;
-    case 'failed': return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />Failed</Badge>;
-    default: return <Badge variant="outline">{status}</Badge>;
-  }
-};
-
-const getHealthBadge = (health?: string) => {
-  switch (health) {
-    case 'healthy': return <Badge variant="default" className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1" />Healthy</Badge>;
-    case 'warning': return <Badge variant="outline" className="bg-yellow-100 text-yellow-800"><AlertTriangle className="w-3 h-3 mr-1" />Warning</Badge>;
-    case 'critical': return <Badge variant="destructive"><AlertTriangle className="w-3 h-3 mr-1" />Critical</Badge>;
-    default: return null;
-  }
-};
-
-const getDeploymentStatusIcon = (status?: string) => {
-  switch (status) {
-    case 'success': return <CheckCircle className="w-4 h-4 text-green-600" />;
-    case 'failed': return <XCircle className="w-4 h-4 text-red-600" />;
-    case 'in-progress': return <Clock className="w-4 h-4 text-blue-600 animate-spin" />;
-    default: return <Clock className="w-4 h-4 text-gray-400" />;
-  }
-};
-
-const portfolioStatuses: Record<string, PortfolioStatus> = {
-  // This would come from your real-time status API
-  // For now, using empty object - replace with actual API call
-};
-
-export default function ClientDetails() {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const dispatch = useDispatch<AppDispatch>();
-  
-  const client = useSelector((state: RootState) => 
-    selectClientBySlug(state, id || '')
-  );
-  const portfolios = useSelector(selectPortfolios);
-  const isLoading = useSelector(selectClientsLoading);
-  
-  const [isEditing, setIsEditing] = useState(false);
-  const [editData, setEditData] = useState<Partial<Client>>({});
-  const [activeTab, setActiveTab] = useState('overview');
-  const [isSaving, setIsSaving] = useState(false);
-  const [portfolioSearch, setPortfolioSearch] = useState('');
-  const [portfolioStatusFilter, setPortfolioStatusFilter] = useState<string>('all');
-  const [portfolioSortBy, setPortfolioSortBy] = useState<'name' | 'status' | 'updated' | 'version'>('name');
-  const [isRefreshingPortfolios, setIsRefreshingPortfolios] = useState(false);
-
-  // Pagination state
-  const [portfoliosPage, setPortfoliosPage] = useState(0);
-  const [portfoliosPerPage] = useState(20); // Fixed page size
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-
-  // Filter portfolios for this client
-  const clientPortfolios = portfolios.filter(p => p.clientId === id);
-
-  useEffect(() => {
-    if (id && !client) {
-      dispatch(fetchClient({ clientSlug: id }));
-    }
-  }, [id, client, dispatch]);
-
-  useEffect(() => {
-    if (client) {
-      setEditData(client);
-    }
-  }, [client]);
-
-  const handleEdit = () => {
-    setIsEditing(true);
-    setEditData(client || {});
-  };
-
-  const handleCancel = () => {
-    setIsEditing(false);
-    setEditData(client || {});
-  };
-
-  const handleSave = async () => {
-    if (!id || !editData) return;
-    
-    setIsSaving(true);
-    try {
-      await dispatch(patchClient({ 
-        clientSlug: id, 
-        clientData: editData 
-      })).unwrap();
-      
-      setIsEditing(false);
-      toast.success('Client updated successfully');
-    } catch (error) {
-      toast.error('Failed to update client: ' + (error as Error).message);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleFieldChange = (field: keyof Client, value: string) => {
-    setEditData(prev => ({ ...prev, [field]: value }));
-  };
-
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success(`${label} copied to clipboard`);
-  };
-
-  // Enhanced filtered portfolios with pagination
-  const { paginatedPortfolios, totalFiltered } = useMemo(() => {
-    const filtered = clientPortfolios.filter(portfolio => {
-      const matchesSearch = portfolio.name?.toLowerCase().includes(portfolioSearch.toLowerCase()) ||
-                           portfolio.portfolio.toLowerCase().includes(portfolioSearch.toLowerCase()) ||
-                           portfolio.description?.toLowerCase().includes(portfolioSearch.toLowerCase());
-      
-      if (portfolioStatusFilter === 'all') return matchesSearch;
-      
-      const status = portfolioStatuses[portfolio.id]?.status || portfolio.status;
-      return matchesSearch && status === portfolioStatusFilter;
-    });
-
-    const sorted = filtered.sort((a, b) => {
-      switch (portfolioSortBy) {
-        case 'name': {
-          // Use actual Portfolio fields: name from project or portfolio slug
-          const nameA = a.project?.name || a.portfolio || '';
-          const nameB = b.project?.name || b.portfolio || '';
-          return nameA.localeCompare(nameB);
-        }
-        case 'status': {
-          // Portfolio interface doesn't have status field - using mock data only
-          const statusA = portfolioStatuses[a.id]?.status || 'inactive';
-          const statusB = portfolioStatuses[b.id]?.status || 'inactive';
-          return statusA.localeCompare(statusB);
-        }
-        case 'updated': {
-          // Use actual Portfolio field: updated_at
-          const timeA = portfolioStatuses[a.id]?.lastDeployment?.timestamp || a.updated_at || '';
-          const timeB = portfolioStatuses[b.id]?.lastDeployment?.timestamp || b.updated_at || '';
-          if (!timeA && !timeB) return 0;
-          if (!timeA) return 1;
-          if (!timeB) return -1;
-          return new Date(timeB).getTime() - new Date(timeA).getTime();
-        }
-        case 'version': {
-          // Portfolio interface doesn't have version - using mock data only
-          const versionA = portfolioStatuses[a.id]?.version || '';
-          const versionB = portfolioStatuses[b.id]?.version || '';
-          return versionB.localeCompare(versionA);
-        }
-        default:
-          return 0;
-      }
-    });
-
-    const startIndex = portfoliosPage * portfoliosPerPage;
-    const endIndex = startIndex + portfoliosPerPage;
-    
-    return {
-      paginatedPortfolios: sorted.slice(startIndex, endIndex),
-      totalFiltered: sorted.length
-    };
-  }, [clientPortfolios, portfolioSearch, portfolioStatusFilter, portfolioSortBy, portfolioStatuses, portfoliosPage, portfoliosPerPage]);
-
-  const handleRefreshPortfolios = async () => {
-    setIsRefreshingPortfolios(true);
-    try {
-      await dispatch(fetchPortfolios({ client: id, force: true }));
-      setPortfoliosPage(0); // Reset to first page
-      toast.success('Portfolio data refreshed');
-    } catch (error) {
-      toast.error('Failed to refresh portfolio data');
-    } finally {
-      setIsRefreshingPortfolios(false);
-    }
-  };
-
-  const hasMorePortfolios = useSelector((state: RootState) => !!state.portfolios.cursor);
-
-  const getStatusBadge = (status: string | undefined) => {
-    switch (status) {
-      case 'active': return <Badge variant="default" className="bg-green-100 text-green-800">Active</Badge>;
-      case 'inactive': return <Badge variant="secondary">Inactive</Badge>;
-      case 'suspended': return <Badge variant="destructive">Suspended</Badge>;
-      default: return <Badge variant="outline">Unknown</Badge>;
-    }
-  };
-
-  const getClientTypeBadge = (type: string | undefined) => {
-    switch (type) {
-      case 'enterprise': return <Badge variant="default">Enterprise</Badge>;
-      case 'startup': return <Badge variant="secondary">Startup</Badge>;
-      case 'government': return <Badge variant="outline">Government</Badge>;
-      default: return <Badge variant="outline">{type || 'Unknown'}</Badge>;
-    }
-  };
-
-  if (isLoading && !client) {
-    return (
-      <div className="space-y-6 animate-pulse">
-        <div className="flex items-center gap-4">
-          <div className="w-8 h-8 bg-muted rounded"></div>
-          <div className="flex-1">
-            <div className="w-64 h-8 bg-muted rounded mb-2"></div>
-            <div className="w-96 h-4 bg-muted rounded"></div>
-          </div>
-        </div>
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <div className="w-full h-96 bg-muted rounded"></div>
-          </div>
-          <div className="space-y-4">
-            <div className="w-full h-48 bg-muted rounded"></div>
-            <div className="w-full h-48 bg-muted rounded"></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!client) {
-    return (
-      <div className="space-y-6 animate-fade-in">
-        <Card>
-          <CardContent className="p-12 text-center">
-            <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Client Not Found</h3>
-            <p className="text-muted-foreground mb-6">
-              The requested client "{id}" could not be found.
-            </p>
-            <Button onClick={() => navigate('/clients')}>Return to Clients</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link to="/clients">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-3xl font-bold text-foreground">
-              {client.client_name || client.client}
-            </h1>
-            {getStatusBadge(client.client_status)}
-            {getClientTypeBadge(client.client_type)}
-          </div>
-          <p className="text-muted-foreground">
-            {client.client_description || 'No description provided'}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {!isEditing ? (
-            <>
-              <Button variant="outline" asChild>
-                <Link to={`/clients/${id}/portfolios`}>
-                  <Briefcase className="mr-2 h-4 w-4" />
-                  Portfolios ({clientPortfolios.length})
-                </Link>
-              </Button>
-              <Button onClick={handleEdit}>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit Client
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="outline" onClick={handleCancel}>
-                <X className="mr-2 h-4 w-4" />
-                Cancel
-              </Button>
-              <Button onClick={handleSave} disabled={isSaving}>
-                <Save className="mr-2 h-4 w-4" />
-                {isSaving ? 'Saving...' : 'Save Changes'}
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-6">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="organization">Organization</TabsTrigger>
-          <TabsTrigger value="aws-accounts">AWS Accounts</TabsTrigger>
-          <TabsTrigger value="infrastructure">Infrastructure</TabsTrigger>
-          <TabsTrigger value="oauth">OAuth & Security</TabsTrigger>
-          <TabsTrigger value="portfolios">Portfolios</TabsTrigger>
-        </TabsList>
-
-        {/* Overview Tab */}
-        <TabsContent value="overview">
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Building2 className="h-5 w-5" />
-                    Basic Information
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <EditableField
-                      label="Client Name"
-                      value={editData.client_name}
-                      field="client_name"
-                      isEditing={isEditing}
-                      onChange={handleFieldChange}
-                      icon={<Building2 className="h-4 w-4" />}
-                      placeholder="Enter client name"
-                      required
-                    />
-                    
-                    <div className="flex items-start gap-3">
-                      <Building2 className="h-4 w-4 mt-1 text-muted-foreground" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-foreground">Client ID</p>
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm text-muted-foreground font-mono">{client.client}</p>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyToClipboard(client.client, 'Client ID')}
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <EditableField
-                    label="Description"
-                    value={editData.client_description}
-                    field="client_description"
-                    type="textarea"
-                    isEditing={isEditing}
-                    onChange={handleFieldChange}
-                    icon={<FileText className="h-4 w-4" />}
-                    placeholder="Describe this client's purpose and business"
-                  />
-
-                  <Separator />
-
-                  <div className="grid gap-6 md:grid-cols-2">
-                    {isEditing ? (
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium flex items-center gap-2">
-                          <Settings className="h-4 w-4" />
-                          Client Type
-                        </Label>
-                        <Select
-                          value={editData.client_type || ''}
-                          onValueChange={(value) => handleFieldChange('client_type', value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select client type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="enterprise">Enterprise</SelectItem>
-                            <SelectItem value="startup">Startup</SelectItem>
-                            <SelectItem value="government">Government</SelectItem>
-                            <SelectItem value="nonprofit">Non-profit</SelectItem>
-                            <SelectItem value="individual">Individual</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ) : (
-                      <div className="flex items-start gap-3">
-                        <Settings className="h-4 w-4 mt-1 text-muted-foreground" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-foreground">Client Type</p>
-                          <p className="text-sm text-muted-foreground">
-                            {client.client_type || <span className="italic">Not set</span>}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {isEditing ? (
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium flex items-center gap-2">
-                          <CheckCircle2 className="h-4 w-4" />
-                          Status
-                        </Label>
-                        <Select
-                          value={editData.client_status || ''}
-                          onValueChange={(value) => handleFieldChange('client_status', value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="active">Active</SelectItem>
-                            <SelectItem value="inactive">Inactive</SelectItem>
-                            <SelectItem value="suspended">Suspended</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ) : (
-                      <div className="flex items-start gap-3">
-                        <CheckCircle2 className="h-4 w-4 mt-1 text-muted-foreground" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-foreground">Status</p>
-                          <div className="mt-1">
-                            {getStatusBadge(client.client_status)}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <EditableField
-                    label="Domain"
-                    value={editData.domain}
-                    field="domain"
-                    type="url"
-                    isEditing={isEditing}
-                    onChange={handleFieldChange}
-                    icon={<Globe className="h-4 w-4" />}
-                    placeholder="example.com"
-                  />
-                </CardContent>
-              </Card>
-            </div>
-
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Quick Stats</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Briefcase className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Portfolios</span>
-                    </div>
-                    <span className="font-semibold">{clientPortfolios.length}</span>
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Created</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">
-                      {client.created_at ? new Date(client.created_at).toLocaleDateString() : 'N/A'}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Last Updated</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">
-                      {client.updated_at ? new Date(client.updated_at).toLocaleDateString() : 'N/A'}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {client.domain && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Globe className="h-5 w-5" />
-                      Website
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Button variant="outline" className="w-full" asChild>
-                      <a href={`https://${client.domain}`} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="mr-2 h-4 w-4" />
-                        Visit {client.domain}
-                      </a>
-                    </Button>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* Organization Tab */}
-        <TabsContent value="organization">
-          <Card>
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          {/* Basic */}
+          <Card className="shadow-soft">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Building2 className="h-5 w-5" />
-                Organization Details
+                <Package2 className="h-5 w-5 text-primary" />
+                Application Details
               </CardTitle>
+              <CardDescription>Core identifiers and placement</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid gap-6 md:grid-cols-2">
-                <EditableField
-                  label="Organization ID"
-                  value={editData.organization_id}
-                  field="organization_id"
-                  isEditing={isEditing}
-                  onChange={handleFieldChange}
-                  icon={<Building2 className="h-4 w-4" />}
-                  placeholder="AWS Organization ID"
-                />
-                
-                <EditableField
-                  label="Organization Name"
-                  value={editData.organization_name}
-                  field="organization_name"
-                  isEditing={isEditing}
-                  onChange={handleFieldChange}
-                  icon={<Building2 className="h-4 w-4" />}
-                  placeholder="Organization display name"
-                />
-                
-                <EditableField
-                  label="Organization Account"
-                  value={editData.organization_account}
-                  field="organization_account"
-                  isEditing={isEditing}
-                  onChange={handleFieldChange}
-                  icon={<User className="h-4 w-4" />}
-                  placeholder="AWS Account ID"
-                />
-                
-                <EditableField
-                  label="Organization Email"
-                  value={editData.organization_email}
-                  field="organization_email"
-                  type="email"
-                  isEditing={isEditing}
-                  onChange={handleFieldChange}
-                  icon={<Mail className="h-4 w-4" />}
-                  placeholder="contact@organization.com"
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* AWS Accounts Tab */}
-        <TabsContent value="aws-accounts">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Cloud className="h-5 w-5" />
-                AWS Account Configuration
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid gap-6 md:grid-cols-2">
-                <EditableField
-                  label="IAM Account"
-                  value={editData.iam_account}
-                  field="iam_account"
-                  isEditing={isEditing}
-                  onChange={handleFieldChange}
-                  icon={<Shield className="h-4 w-4" />}
-                  placeholder="AWS Account ID for IAM"
-                />
-                
-                <EditableField
-                  label="Audit Account"
-                  value={editData.audit_account}
-                  field="audit_account"
-                  isEditing={isEditing}
-                  onChange={handleFieldChange}
-                  icon={<FileText className="h-4 w-4" />}
-                  placeholder="AWS Account ID for auditing"
-                />
-                
-                <EditableField
-                  label="Automation Account"
-                  value={editData.automation_account}
-                  field="automation_account"
-                  isEditing={isEditing}
-                  onChange={handleFieldChange}
-                  icon={<Settings className="h-4 w-4" />}
-                  placeholder="AWS Account ID for automation"
-                />
-                
-                <EditableField
-                  label="Security Account"
-                  value={editData.security_account}
-                  field="security_account"
-                  isEditing={isEditing}
-                  onChange={handleFieldChange}
-                  icon={<Shield className="h-4 w-4" />}
-                  placeholder="AWS Account ID for security"
-                />
-                
-                <EditableField
-                  label="Network Account"
-                  value={editData.network_account}
-                  field="network_account"
-                  isEditing={isEditing}
-                  onChange={handleFieldChange}
-                  icon={<Network className="h-4 w-4" />}
-                  placeholder="AWS Account ID for networking"
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Infrastructure Tab */}
-        <TabsContent value="infrastructure">
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MapPin className="h-5 w-5" />
-                  Regional Configuration
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid gap-6 md:grid-cols-3">
-                  <EditableField
-                    label="Master Region"
-                    value={editData.master_region}
-                    field="master_region"
-                    isEditing={isEditing}
-                    onChange={handleFieldChange}
-                    icon={<MapPin className="h-4 w-4" />}
-                    placeholder="us-east-1"
-                  />
-                  
-                  <EditableField
-                    label="Client Region"
-                    value={editData.client_region}
-                    field="client_region"
-                    isEditing={isEditing}
-                    onChange={handleFieldChange}
-                    icon={<MapPin className="h-4 w-4" />}
-                    placeholder="us-west-2"
-                  />
-                  
-                  <EditableField
-                    label="Bucket Region"
-                    value={editData.bucket_region}
-                    field="bucket_region"
-                    isEditing={isEditing}
-                    onChange={handleFieldChange}
-                    icon={<MapPin className="h-4 w-4" />}
-                    placeholder="us-east-1"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Database className="h-5 w-5" />
-                  S3 Bucket Configuration
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid gap-6 md:grid-cols-2">
-                  <EditableField
-                    label="Main Bucket"
-                    value={editData.bucket_name}
-                    field="bucket_name"
-                    isEditing={isEditing}
-                    onChange={handleFieldChange}
-                    icon={<Database className="h-4 w-4" />}
-                    placeholder="client-main-bucket"
-                  />
-                  
-                  <EditableField
-                    label="Documentation Bucket"
-                    value={editData.docs_bucket_name}
-                    field="docs_bucket_name"
-                    isEditing={isEditing}
-                    onChange={handleFieldChange}
-                    icon={<FileText className="h-4 w-4" />}
-                    placeholder="client-docs-bucket"
-                  />
-                  
-                  <EditableField
-                    label="Artifacts Bucket"
-                    value={editData.artefact_bucket_name}
-                    field="artefact_bucket_name"
-                    isEditing={isEditing}
-                    onChange={handleFieldChange}
-                    icon={<Database className="h-4 w-4" />}
-                    placeholder="client-artifacts-bucket"
-                  />
-                  
-                  <EditableField
-                    label="UI Bucket"
-                    value={editData.ui_bucket_name}
-                    field="ui_bucket_name"
-                    isEditing={isEditing}
-                    onChange={handleFieldChange}
-                    icon={<Globe className="h-4 w-4" />}
-                    placeholder="client-ui-bucket"
-                  />
-                </div>
-
-                <EditableField
-                  label="Resource Scope"
-                  value={editData.scope}
-                  field="scope"
-                  isEditing={isEditing}
-                  onChange={handleFieldChange}
-                  icon={<Settings className="h-4 w-4" />}
-                  placeholder="Resource naming scope/prefix"
-                />
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* OAuth & Security Tab */}
-        <TabsContent value="oauth">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Key className="h-5 w-5" />
-                OAuth & Security Configuration
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid gap-6 md:grid-cols-2">
-                <EditableField
-                  label="OAuth Client ID"
-                  value={editData.client_id}
-                  field="client_id"
-                  isEditing={isEditing}
-                  onChange={handleFieldChange}
-                  icon={<Key className="h-4 w-4" />}
-                  placeholder="OAuth client identifier"
-                />
-
-                <SecretField
-                  label="OAuth Client Secret"
-                  value={editData.client_secret}
-                  field="client_secret"
-                  isEditing={isEditing}
-                  onChange={handleFieldChange}
-                />
-              </div>
-
-              {isEditing && (
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium flex items-center gap-2">
-                    <Settings className="h-4 w-4" />
-                    OAuth Scopes
-                  </Label>
-                  <Textarea
-                    value={Array.isArray(editData.client_scopes) ? editData.client_scopes.join('\n') : ''}
-                    onChange={(e) => {
-                      const scopes = e.target.value.split('\n').filter(Boolean);
-                      setEditData(prev => ({ ...prev, client_scopes: scopes }));
-                    }}
-                    placeholder="Enter one scope per line&#10;read&#10;write&#10;admin"
-                    className="min-h-24"
-                  />
-                  <p className="text-xs text-muted-foreground">Enter one scope per line</p>
-                </div>
-              )}
-
-              {!isEditing && client.client_scopes && client.client_scopes.length > 0 && (
-                <div>
-                  <p className="text-sm font-medium mb-3 flex items-center gap-2">
-                    <Settings className="h-4 w-4" />
-                    OAuth Scopes
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {client.client_scopes.map((scope, index) => (
-                      <Badge key={index} variant="outline">{scope}</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {isEditing && (
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium flex items-center gap-2">
-                    <Globe className="h-4 w-4" />
-                    Redirect URLs
-                  </Label>
-                  <Textarea
-                    value={Array.isArray(editData.client_redirect_urls) ? editData.client_redirect_urls.join('\n') : ''}
-                    onChange={(e) => {
-                      const urls = e.target.value.split('\n').filter(Boolean);
-                      setEditData(prev => ({ ...prev, client_redirect_urls: urls }));
-                    }}
-                    placeholder="Enter one URL per line&#10;https://app.example.com/callback&#10;https://localhost:3000/callback"
-                    className="min-h-24"
-                  />
-                  <p className="text-xs text-muted-foreground">Enter one URL per line</p>
-                </div>
-              )}
-
-              {!isEditing && client.client_redirect_urls && client.client_redirect_urls.length > 0 && (
-                <div>
-                  <p className="text-sm font-medium mb-3 flex items-center gap-2">
-                    <Globe className="h-4 w-4" />
-                    Redirect URLs
-                  </p>
-                  <div className="space-y-2">
-                    {client.client_redirect_urls.map((url, index) => (
-                      <div key={index} className="flex items-center gap-2 text-sm text-muted-foreground font-mono">
-                        <span>{url}</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => copyToClipboard(url, 'Redirect URL')}
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Portfolios Tab */}
-        <TabsContent value="portfolios">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <Briefcase className="h-5 w-5" />
-                  Client Portfolios ({paginatedPortfolios.length} of {clientPortfolios.length})
-                </CardTitle>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={handleRefreshPortfolios}
-                  disabled={isRefreshingPortfolios}
-                >
-                  <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshingPortfolios ? 'animate-spin' : ''}`} />
-                  Refresh
-                </Button>
-              </div>
-              
-              {/* Search and Filter Controls */}
-              <div className="flex flex-col sm:flex-row gap-4 mt-4">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    placeholder="Search portfolios by name, ID, or description..."
-                    value={portfolioSearch}
-                    onChange={(e) => setPortfolioSearch(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                
-                <div className="flex gap-2">
-                  <Select value={portfolioStatusFilter} onValueChange={setPortfolioStatusFilter}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder="Filter by status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
-                      <SelectItem value="deploying">Deploying</SelectItem>
-                      <SelectItem value="updating">Updating</SelectItem>
-                      <SelectItem value="failed">Failed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  
-                  <Select value={portfolioSortBy} onValueChange={(value: any) => setPortfolioSortBy(value)}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue placeholder="Sort by" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="name">Name</SelectItem>
-                      <SelectItem value="status">Status</SelectItem>
-                      <SelectItem value="updated">Updated</SelectItem>
-                      <SelectItem value="version">Version</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </CardHeader>
-            
-            <CardContent>
-              {paginatedPortfolios.length > 0 ? (
-                <>
-                  <div className="space-y-3">
-                    {paginatedPortfolios.map((portfolio) => {
-                      const status = portfolioStatuses[portfolio.id];
-                      const currentStatus = status?.status || portfolio.status || 'inactive';
-                      
-                      return (
-                        <div 
-                          key={portfolio.id} 
-                          className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent cursor-pointer transition-colors group"
-                          onClick={() => navigate(`/portfolios/${portfolio.id}`)}
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-3 mb-2">
-                              <h4 className="font-medium text-foreground truncate">
-                                {portfolio.name || portfolio.portfolio}
-                              </h4>
-                              {getPortfolioStatusBadge(currentStatus)}
-                              {status?.health && getHealthBadge(status.health)}
-                            </div>
-                            
-                            <p className="text-sm text-muted-foreground truncate mb-2">
-                              {portfolio.description || 'No description'}
-                            </p>
-                            
-                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                              <span className="font-mono">ID: {portfolio.portfolio}</span>
-                              {status?.version && (
-                                <span className="flex items-center gap-1">
-                                  <Zap className="w-3 h-3" />
-                                  v{status.version}
-                                </span>
-                              )}
-                              {status?.uptime && (
-                                <span className="flex items-center gap-1">
-                                  <Activity className="w-3 h-3" />
-                                  {status.uptime}% uptime
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-4 ml-4">
-                            {/* Deployment Status */}
-                            {status?.lastDeployment && (
-                              <div className="text-center min-w-20">
-                                <div className="flex items-center justify-center gap-1 mb-1">
-                                  {getDeploymentStatusIcon(status.lastDeployment.status)}
-                                  <span className="text-xs font-medium">
-                                    {status.lastDeployment.status === 'in-progress' ? 'Deploying' : 
-                                     status.lastDeployment.status === 'success' ? 'Deployed' : 
-                                     status.lastDeployment.status === 'failed' ? 'Failed' : 'Unknown'}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                  {new Date(status.lastDeployment.timestamp).toLocaleDateString()}
-                                </p>
-                              </div>
-                            )}
-                            
-                            {/* Last Updated */}
-                            <div className="text-right min-w-20">
-                              <p className="text-xs text-muted-foreground">Updated</p>
-                              <p className="text-xs font-medium">
-                                {portfolio.lastUpdated ? new Date(portfolio.lastUpdated).toLocaleDateString() : 'N/A'}
-                              </p>
-                            </div>
-                            
-                            <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors flex-shrink-0" />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  
-                  {/* Pagination Controls */}
-                  <div className="flex items-center justify-between mt-6 pt-4 border-t">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span>
-                        Showing {portfoliosPage * portfoliosPerPage + 1} to {Math.min((portfoliosPage + 1) * portfoliosPerPage, totalFiltered)} of {totalFiltered} filtered portfolios
-                      </span>
-                      {clientPortfolios.length !== totalFiltered && (
-                        <span>({clientPortfolios.length} total loaded)</span>
-                      )}
-                    </div>
-                    
+            <CardContent className="grid gap-4 md:grid-cols-2">
+              {/* Client (read-only) */}
+              <FormField
+                control={form.control}
+                name="client"
+                render={() => (
+                  <FormItem>
+                    <FormLabel>Client</FormLabel>
                     <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPortfoliosPage(Math.max(0, portfoliosPage - 1))}
-                        disabled={portfoliosPage === 0}
-                      >
-                        Previous
-                      </Button>
-                      
-                      <span className="text-sm px-3">
-                        Page {portfoliosPage + 1} of {Math.ceil(totalFiltered / portfoliosPerPage)}
-                      </span>
-                      
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPortfoliosPage(portfoliosPage + 1)}
-                        disabled={(portfoliosPage + 1) * portfoliosPerPage >= totalFiltered}
-                      >
-                        Next
-                      </Button>
-                      
+                      <Badge variant="outline" className="font-mono">{currentClient}</Badge>
+                      <span className="text-xs text-muted-foreground">From header context</span>
                     </div>
-                  </div>
-                </>
-              ) : (
-                <div className="text-center py-12">
-                  {clientPortfolios.length === 0 ? (
-                    <>
-                      <Briefcase className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold mb-2">No Portfolios</h3>
-                      <p className="text-muted-foreground mb-6">
-                        This client doesn't have any portfolios yet.
-                      </p>
-                      <Button variant="outline" asChild>
-                        <Link to="/portfolios/new">Create Portfolio</Link>
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold mb-2">No Results Found</h3>
-                      <p className="text-muted-foreground mb-6">
-                        No portfolios match your current search and filter criteria.
-                      </p>
-                      <Button 
-                        variant="outline" 
-                        onClick={() => {
-                          setPortfolioSearch('');
-                          setPortfolioStatusFilter('all');
-                        }}
-                      >
-                        Clear Filters
-                      </Button>
-                    </>
+                    <FormDescription>The application will be created under this client.</FormDescription>
+                  </FormItem>
+                )}
+              />
+
+              {/* Portfolio */}
+              <FormField
+                control={form.control}
+                name="portfolio"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Portfolio</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select portfolio" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {clientPortfolios.map((p) => (
+                          <SelectItem key={`${p.client}/${p.portfolio}`} value={p.portfolio}>
+                            {p.project?.name || p.portfolio}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Name */}
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Application Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Order Service" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Slug + Regex */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:col-span-2">
+                <FormField
+                  control={form.control}
+                  name="slug"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Slug</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="order-service"
+                          {...field}
+                          onChange={(e) => {
+                            slugEditedRef.current = true;
+                            field.onChange(e);
+                          }}
+                        />
+                      </FormControl>
+                      <FormDescription>Used for app_regex and identifiers</FormDescription>
+                      <FormMessage />
+                    </FormItem>
                   )}
-                </div>
-              )}
-              
-              {/* Quick Stats Summary */}
-              {clientPortfolios.length > 0 && (
-                <div className="mt-6 pt-4 border-t">
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
-                    <div>
-                      <p className="text-2xl font-bold text-green-600">
-                        {clientPortfolios.filter(p => (portfolioStatuses[p.id]?.status || p.status) === 'active').length}
-                      </p>
-                      <p className="text-xs text-muted-foreground">Active</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-blue-600">
-                        {clientPortfolios.filter(p => (portfolioStatuses[p.id]?.status || p.status) === 'deploying').length}
-                      </p>
-                      <p className="text-xs text-muted-foreground">Deploying</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-red-600">
-                        {clientPortfolios.filter(p => (portfolioStatuses[p.id]?.status || p.status) === 'failed').length}
-                      </p>
-                      <p className="text-xs text-muted-foreground">Failed</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-gray-600">
-                        {clientPortfolios.filter(p => (portfolioStatuses[p.id]?.status || p.status) === 'inactive').length}
-                      </p>
-                      <p className="text-xs text-muted-foreground">Inactive</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-purple-600">
-                        {Object.values(portfolioStatuses).filter(s => s.health === 'healthy').length}
-                      </p>
-                      <p className="text-xs text-muted-foreground">Healthy</p>
-                    </div>
-                  </div>
-                </div>
-              )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="app_regex"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Application Regex</FormLabel>
+                      <FormControl>
+                        <Input placeholder="^order-service.*$" {...field} />
+                      </FormControl>
+                      <FormDescription>Regex to match deployment names for this app</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+
+          {/* Placement */}
+          <Card className="shadow-soft">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Globe className="h-5 w-5 text-primary" />
+                Environment & Placement
+              </CardTitle>
+              <CardDescription>Environment, region, and zone</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-3">
+              {/* Environment */}
+              <FormField
+                control={form.control}
+                name="environment"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Environment</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select environment" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {envOptions.map((env) => (
+                          <SelectItem key={env} value={env}>
+                            {env}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Region */}
+              <FormField
+                control={form.control}
+                name="region"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Region</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select region" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {regionOptions.map((r) => (
+                          <SelectItem key={r} value={r}>
+                            {r}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Zone */}
+              <FormField
+                control={form.control}
+                name="zone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Zone</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select zone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {clientZones.map((z) => (
+                          <SelectItem key={`${z.client}/${z.zone}`} value={z.zone}>
+                            {z.zone} {z.account_facts?.environment ? `(${z.account_facts.environment})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Advanced */}
+          <Card className="shadow-soft">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings2 className="h-5 w-5 text-primary" />
+                Advanced Settings
+              </CardTitle>
+              <CardDescription>Repository, validation, aliases, and tags</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Repository + validation */}
+              <div className="grid gap-4 md:grid-cols-3">
+                <FormField
+                  control={form.control}
+                  name="repository"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Repository URL (optional)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="https://github.com/org/repo" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="enforce_validation"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Enforce Validation</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">True</SelectItem>
+                          <SelectItem value="false">False</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>Require validation before releases</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* Image Aliases */}
+              <FormField
+                control={form.control}
+                name="image_aliases"
+                render={({ field }) => (
+                  <FormItem>
+                    <KeyValueEditor
+                      label="Image Aliases"
+                      values={(field.value || {}) as Record<string, string>}
+                      onChange={(next) => field.onChange(next)}
+                      placeholderKey="alias (e.g., app)"
+                      placeholderValue="image:tag"
+                      icon={<GitBranch className="h-4 w-4 text-primary" />}
+                    />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Tags */}
+              <FormField
+                control={form.control}
+                name="tags"
+                render={({ field }) => (
+                  <FormItem>
+                    <KeyValueEditor
+                      label="Tags"
+                      values={(field.value || {}) as Record<string, string>}
+                      onChange={(next) => field.onChange(next)}
+                      placeholderKey="key"
+                      placeholderValue="value"
+                      icon={<Tag className="h-4 w-4 text-primary" />}
+                    />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Description */}
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description (optional)</FormLabel>
+                    <FormControl>
+                      <Textarea rows={3} placeholder="Describe this application’s purpose" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between">
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/applications">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Cancel
+              </Link>
+            </Button>
+            <div className="flex items-center gap-3">
+              <Separator className="hidden md:block w-32" />
+              <Button type="submit" disabled={!form.formState.isValid || form.formState.isSubmitting} variant={isDark ? "secondary" : "default"}>
+                {form.formState.isSubmitting ? "Creating..." : "Create Application"}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </Form>
     </div>
   );
 }

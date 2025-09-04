@@ -1,84 +1,108 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Eye, EyeOff, Mail, Lock, User, Building } from "lucide-react";
-import { authAPI } from "@/lib/auth-api";
-import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import OrganizationSearch from "@/components/OrganizationSearch";
+import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/hooks/useTheme";
+import { useToast } from "@/hooks/use-toast";
+import { buildApiUrl } from "@/lib/api-config";
+import type { UserProfile } from "@/store/types";
+
+type SignUpForm = Pick<UserProfile, "first_name" | "last_name" | "email"> & {
+  password: string;
+  confirmPassword: string;
+  organization?: string;
+};
 
 export default function Signup() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { isDark } = useTheme();
+  const { toast } = useToast();
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [formData, setFormData] = useState({
-    firstName: "",
-    lastName: "",
+  const [formData, setFormData] = useState<SignUpForm>({
+    first_name: "",
+    last_name: "",
     email: "",
     organization: "",
     password: "",
-    confirmPassword: ""
+    confirmPassword: "",
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
-  const navigate = useNavigate();
-  const { user } = useAuth();
+  const [serverError, setServerError] = useState("");
 
   useEffect(() => {
-    // Redirect if already logged in
-    if (user) {
-      navigate("/dashboard");
-    }
+    if (user) navigate("/dashboard");
   }, [user, navigate]);
+
+  const canSubmit = useMemo(() => {
+    return (
+      formData.first_name.trim().length > 0 &&
+      formData.last_name.trim().length > 0 &&
+      formData.email.trim().length > 3 &&
+      formData.password.length >= 8 &&
+      formData.password === formData.confirmPassword
+    );
+  }, [formData]);
+
+  const updateForm = (key: keyof SignUpForm, value: string) =>
+    setFormData((prev) => ({ ...prev, [key]: value }));
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    setServerError("");
+
+    if (formData.password !== formData.confirmPassword) {
+      setServerError("Passwords do not match");
+      return;
+    }
+
     setIsLoading(true);
-    setError("");
-    
     try {
-      if (formData.password !== formData.confirmPassword) {
-        setError('Passwords do not match');
+      const url = buildApiUrl("/auth/v1/signup");
+      const payload = {
+        email: formData.email,
+        password: formData.password,
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        organization: formData.organization || undefined,
+      };
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        credentials: "include",
+      });
+
+      if (res.ok) {
+        toast({ title: "Account created", description: "You can now sign in." });
+        navigate("/login");
         return;
       }
 
-      const result = await authAPI.signup({
-        email: formData.email,
-        password: formData.password,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        organization: formData.organization
-      });
-      
-      if (result.error) {
-        setError(result.error);
-      } else if (result.user) {
-        // Reload the page to update auth context
-        window.location.href = "/dashboard";
+      // Not OK -> show server message
+      let message = "Signup failed. Please try again.";
+      try {
+        const data = await res.json();
+        message = data?.message || data?.error || message;
+      } catch {
+        // ignore JSON parse errors
       }
-    } catch (error) {
-      console.error('Signup failed:', error);
-      setError('Signup failed. Please try again.');
+      setServerError(message);
+      toast({ title: "Signup error", description: message });
+    } catch (err) {
+      setServerError("Network error. Please try again.");
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleGitHubSignup = async () => {
-    try {
-      setIsLoading(true);
-      await authAPI.githubLogin();
-    } catch (error) {
-      console.error('GitHub signup failed:', error);
-      setError('GitHub signup failed. Please try again.');
-      setIsLoading(false);
-    }
-  };
-
-  const updateFormData = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   return (
@@ -90,65 +114,53 @@ export default function Signup() {
           </div>
           <div>
             <CardTitle className="text-2xl font-bold">Create Account</CardTitle>
-            <p className="text-muted-foreground">Join our admin platform</p>
+            <p className="text-muted-foreground">Join our platform</p>
           </div>
         </CardHeader>
-        
+
         <CardContent className="space-y-6">
-          {error && (
+          {serverError && (
             <div className="p-3 text-sm text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md">
-              {error}
+              {serverError}
             </div>
           )}
-          <Button 
-            variant="outline" 
-            className="w-full gap-2 h-12"
-            onClick={handleGitHubSignup}
-          >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 0C5.374 0 0 5.373 0 12 0 17.302 3.438 21.8 8.207 23.387c.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
-            </svg>
-            Sign up with GitHub
-          </Button>
-
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
               <Separator className="w-full" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">Or create account with email</span>
+              <span className="bg-card px-2 text-muted-foreground">Create account with email</span>
             </div>
           </div>
 
-          {/* Email/Password Signup */}
           <form onSubmit={handleSignup} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="firstName">First Name</Label>
+                <Label htmlFor="first_name">First Name</Label>
                 <div className="relative">
                   <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
-                    id="firstName"
+                    id="first_name"
                     type="text"
                     placeholder="John"
-                    value={formData.firstName}
-                    onChange={(e) => updateFormData("firstName", e.target.value)}
+                    value={formData.first_name}
+                    onChange={(e) => updateForm("first_name", e.target.value)}
                     className="pl-10"
                     required
                   />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lastName">Last Name</Label>
+                <Label htmlFor="last_name">Last Name</Label>
                 <div className="relative">
                   <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
-                    id="lastName"
+                    id="last_name"
                     type="text"
                     placeholder="Doe"
-                    value={formData.lastName}
-                    onChange={(e) => updateFormData("lastName", e.target.value)}
+                    value={formData.last_name}
+                    onChange={(e) => updateForm("last_name", e.target.value)}
                     className="pl-10"
                     required
                   />
@@ -165,7 +177,7 @@ export default function Signup() {
                   type="email"
                   placeholder="john@company.com"
                   value={formData.email}
-                  onChange={(e) => updateFormData("email", e.target.value)}
+                  onChange={(e) => updateForm("email", e.target.value)}
                   className="pl-10"
                   required
                 />
@@ -173,11 +185,10 @@ export default function Signup() {
             </div>
 
             <OrganizationSearch
-              value={formData.organization}
-              onChange={(value) => updateFormData("organization", value)}
+              value={formData.organization || ""}
+              onChange={(value) => updateForm("organization", value)}
               onOrganizationSelect={(organization) => {
-                updateFormData("organization", organization.name);
-                console.log("Selected organization:", organization);
+                updateForm("organization", organization.name);
               }}
             />
 
@@ -188,9 +199,9 @@ export default function Signup() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="Create a password"
+                  placeholder="Create a password (min 8 chars)"
                   value={formData.password}
-                  onChange={(e) => updateFormData("password", e.target.value)}
+                  onChange={(e) => updateForm("password", e.target.value)}
                   className="pl-10 pr-10"
                   required
                 />
@@ -199,13 +210,9 @@ export default function Signup() {
                   variant="ghost"
                   size="icon"
                   className="absolute right-1 top-1 h-8 w-8"
-                  onClick={() => setShowPassword(!showPassword)}
+                  onClick={() => setShowPassword((s) => !s)}
                 >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
             </div>
@@ -219,7 +226,7 @@ export default function Signup() {
                   type={showConfirmPassword ? "text" : "password"}
                   placeholder="Confirm your password"
                   value={formData.confirmPassword}
-                  onChange={(e) => updateFormData("confirmPassword", e.target.value)}
+                  onChange={(e) => updateForm("confirmPassword", e.target.value)}
                   className="pl-10 pr-10"
                   required
                 />
@@ -228,22 +235,18 @@ export default function Signup() {
                   variant="ghost"
                   size="icon"
                   className="absolute right-1 top-1 h-8 w-8"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  onClick={() => setShowConfirmPassword((s) => !s)}
                 >
-                  {showConfirmPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
             </div>
 
-            <Button 
-              type="submit" 
-              className="w-full h-12" 
-              variant="gradient"
-              disabled={isLoading}
+            <Button
+              type="submit"
+              className="w-full h-12"
+              variant={isDark ? "secondary" : "gradient"}
+              disabled={isLoading || !canSubmit}
             >
               {isLoading ? "Creating account..." : "Create Account"}
             </Button>

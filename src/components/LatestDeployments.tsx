@@ -1,33 +1,18 @@
+import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Activity, GitBranch, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
-import { FilterState } from "./DashboardFilters";
-import { useAppSelector } from '@/store';
+import { useDispatch } from "react-redux";
+import type { AppDeploymentBuild } from "@/store/types";
+import { useReduxData } from "@/hooks/useReduxData";
+import type { AppDispatch, RootState } from "@/store";
+import { fetchBuilds } from "@/store/slices/deploymentsSlice";
+import { useSelector } from "react-redux";
 
-interface DeploymentEvent {
-  id: string;
-  type: 'deploy' | 'test' | 'release' | 'rollback' | 'error';
-  message: string;
-  timestamp: string;
-  status: 'success' | 'failed' | 'pending';
-}
-
-interface Deployment {
-  id: string;
-  appName: string;
-  version: string;
-  environment: string;
-  status: 'released' | 'not-released' | 'teardown-in-progress' | 'release-in-progress' | 'failed';
-  deployedAt: string;
-  deployedBy: string;
-  events: DeploymentEvent[];
-}
-
-interface LatestDeploymentsProps {
-  clientId: string;
-  filters?: FilterState;
-}
+type LatestDeploymentsProps = {
+  limit?: number; // default 5-10
+};
 
 // All data now comes from Redux store
 
@@ -45,7 +30,7 @@ const getStatusColor = (status: string) => {
 const getEventIcon = (type: string, status: string) => {
   if (status === 'failed') return <XCircle className="h-4 w-4 text-red-500" />;
   if (status === 'pending') return <Clock className="h-4 w-4 text-yellow-500" />;
-  
+
   switch (type) {
     case 'deploy': return <GitBranch className="h-4 w-4 text-blue-500" />;
     case 'test': return <CheckCircle className="h-4 w-4 text-green-500" />;
@@ -60,72 +45,45 @@ const formatTimestamp = (timestamp: string) => {
   return new Date(timestamp).toLocaleString();
 };
 
-export default function LatestDeployments({ clientId, filters }: LatestDeploymentsProps) {
-  const deployments = useAppSelector(state => state.deployments.deployments);
-  const events = useAppSelector(state => state.deployments.events);
+export default function LatestDeployments({ limit = 5 }: LatestDeploymentsProps) {
+  const dispatch = useDispatch<AppDispatch>();
+  const { selectedClient } = useReduxData();
+  const builds = useSelector((s: RootState) => (s as any)?.deployments?.builds ?? []) as AppDeploymentBuild[];
+  const loading = useSelector((s: RootState) => (s as any)?.deployments?.loading) as boolean;
+  const lastFetched = useSelector((s: RootState) => (s as any)?.deployments?.lastFetched) as number | null;
+  const cachedForClient = useSelector((s: RootState) => (s as any)?.deployments?.cachedForClient) as string | null;
 
-  // Get deployments for this client  
-  const clientDeployments = deployments.filter(dep => dep.clientId === clientId);
-
-  // Convert Redux deployment format to match component interface
-  const deploymentData = clientDeployments.map(dep => {
-    const deploymentEvents = events.filter(event => event.deploymentId === dep.id);
-    return {
-      id: dep.id,
-      appName: dep.applicationId, // Will show as application ID for now
-      version: dep.tag,
-      environment: dep.environment,
-      status: dep.status,
-      deployedAt: dep.deployedAt,
-      deployedBy: dep.deployedBy,
-      events: deploymentEvents.map(event => ({
-        id: event.id,
-        type: event.type,
-        message: event.message,
-        timestamp: event.timestamp,
-        status: event.status
-      }))
-    };
-  });
-
-  // Filter deployments based on applied filters
-  const filteredDeployments = deploymentData.filter(deployment => {
-    // Keyword filter
-    if (filters?.keywords) {
-      const keyword = filters.keywords.toLowerCase();
-      const matchesKeyword = 
-        deployment.appName.toLowerCase().includes(keyword) ||
-        deployment.environment.toLowerCase().includes(keyword) ||
-        deployment.status.toLowerCase().includes(keyword) ||
-        deployment.deployedBy.toLowerCase().includes(keyword);
-      
-      if (!matchesKeyword) return false;
+  // Fetch once per client (server uses current client from token)
+  React.useEffect(() => {
+    if (!selectedClient) return;
+    // If we have no cache or cache belongs to another client, fetch
+    if (!lastFetched || cachedForClient !== selectedClient) {
+      dispatch(fetchBuilds({ limit: Math.max(limit, 5) }));
     }
+  }, [dispatch, selectedClient, lastFetched, cachedForClient, limit]);
 
-    // Environment filter
-    if (filters?.environment && deployment.environment !== filters.environment) {
-      return false;
-    }
+  // Take the top N builds (already ordered by backend; if not, sort by created_at desc)
+  const list = React.useMemo(() => {
+    const sorted = [...builds].sort((a, b) => {
+      const ta = new Date(a.created_at).getTime();
+      const tb = new Date(b.created_at).getTime();
+      return tb - ta;
+    });
+    return sorted.slice(0, limit);
+  }, [builds, limit]);
 
-    // Deployment status filter
-    if (filters?.deploymentStatus && deployment.status !== filters.deploymentStatus) {
-      return false;
-    }
+  // Map to display model
+  const filteredDeployments = list.map((b) => ({
+    id: b.prn,
+    appName: b.app_prn || b.portfolio_prn || b.prn || 'unknown-app',
+    version: b.name,
+    environment: (b as any).environment || '—',
+    status: b.status as any,
+    deployedAt: b.created_at,
+    deployedBy: (b as any).deployed_by || '—',
+    events: [] as any[],
+  }));
 
-    // Application filter
-    if (filters?.applications.length > 0 && !filters.applications.includes(deployment.appName)) {
-      return false;
-    }
-
-    // Date range filter
-    if (filters?.dateRange.from || filters?.dateRange.to) {
-      const deploymentDate = new Date(deployment.deployedAt);
-      if (filters.dateRange.from && deploymentDate < filters.dateRange.from) return false;
-      if (filters.dateRange.to && deploymentDate > filters.dateRange.to) return false;
-    }
-
-    return true;
-  });
   return (
     <Card>
       <CardHeader>
@@ -136,62 +94,55 @@ export default function LatestDeployments({ clientId, filters }: LatestDeploymen
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
-          {filteredDeployments.length === 0 ? (
+          {loading && filteredDeployments.length === 0 ? (
+            <div className="space-y-3">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="h-10 w-full bg-muted/40 rounded-md animate-pulse" />
+              ))}
+            </div>
+          ) : filteredDeployments.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               No deployments found matching your filter criteria
             </div>
           ) : (
             filteredDeployments.map((deployment) => (
-            <div key={deployment.id} className="border rounded-lg p-4 space-y-4">
-              {/* Deployment Header */}
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-3">
-                    <h4 className="font-semibold text-foreground">{deployment.appName}</h4>
-                    <Badge variant="outline">{deployment.version}</Badge>
-                    <Badge variant="secondary">{deployment.environment}</Badge>
-                  </div>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span>Deployed by {deployment.deployedBy}</span>
-                    <span>{formatTimestamp(deployment.deployedAt)}</span>
-                  </div>
-                </div>
-                <Badge className={getStatusColor(deployment.status)}>
-                  {deployment.status.replace('-', ' ')}
-                </Badge>
-              </div>
-
-              {/* Latest 3 Events */}
-              <div className="space-y-3 pl-4 border-l-2 border-border">
-                <h5 className="text-sm font-medium text-muted-foreground">Recent Events</h5>
-                {deployment.events.slice(-3).map((event) => (
-                  <div key={event.id} className="flex items-start gap-3">
-                    {getEventIcon(event.type, event.status)}
-                    <div className="flex-1 space-y-1">
-                      <p className="text-sm text-foreground">{event.message}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatTimestamp(event.timestamp)}
-                      </p>
+              <div key={deployment.id} className="border rounded-lg p-4 space-y-4">
+                {/* Deployment Header */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-3">
+                      <h4 className="font-semibold text-foreground">{deployment.appName}</h4>
+                      <Badge variant="outline">{deployment.version}</Badge>
+                      <Badge variant="secondary">{deployment.environment}</Badge>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <span>Deployed by {deployment.deployedBy}</span>
+                      <span>{formatTimestamp(deployment.deployedAt)}</span>
                     </div>
                   </div>
-                ))}
-              </div>
+                  <Badge className={getStatusColor(deployment.status)}>
+                    {deployment.status.replace('-', ' ')}
+                  </Badge>
+                </div>
 
-              {/* Actions */}
-              <div className="flex gap-2 pt-2">
-                <Button variant="outline" size="sm">View Details</Button>
-                {deployment.status === 'not-released' && (
-                  <Button variant="default" size="sm">Release</Button>
-                )}
-                {deployment.status.includes('in-progress') && (
-                  <Button variant="destructive" size="sm">Cancel</Button>
-                )}
+                {/* Latest 3 Events */}
+                {/* Events are not available from builds endpoint; omit for now */}
+
+                {/* Actions */}
+                <div className="flex gap-2 pt-2">
+                  <Button variant="outline" size="sm">View Details</Button>
+                  {deployment.status === 'not-released' && (
+                    <Button variant="default" size="sm">Release</Button>
+                  )}
+                  {deployment.status.includes('in-progress') && (
+                    <Button variant="destructive" size="sm">Cancel</Button>
+                  )}
+                </div>
               </div>
-            </div>
             ))
           )}
         </div>
-        
+
         <div className="mt-6 text-center">
           <Button variant="outline" className="w-full">View All Deployments</Button>
         </div>

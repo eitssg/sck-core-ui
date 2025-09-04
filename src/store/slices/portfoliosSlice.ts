@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { API_CONFIG, buildApiUrl, getAuthHeaders } from '@/lib/api-config';
-import type { RootState, AppDispatch } from '../store';
+import type { RootState, AppDispatch } from '@/store';
 import type { ApiResponse } from '../shared';
 import { toArray } from '../shared';
 

@@ -1,134 +1,145 @@
-
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Plus, ArrowLeft, Building2, ExternalLink, Edit, Trash2, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
+import { Plus, Building2, ExternalLink, Edit, Trash2, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger
+} from '@/components/ui/alert-dialog';
 import { useReduxData } from '@/hooks/useReduxData';
 import { useToast } from '@/hooks/use-toast';
+import type { Zone } from '@/store/types';
+
+// Runtime type guard so TS narrows to Zone[]
+function isZone(x: unknown): x is Zone {
+  if (!x || typeof x !== 'object') return false;
+  const o = x as Record<string, unknown>;
+  return typeof o.client === 'string' && typeof o.zone === 'string';
+}
 
 const Zones = () => {
-  const { zones, clients, selectedClient, selectClient, removeZone } = useReduxData();
+  const { zones, selectedClient, removeZone } = useReduxData();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
+
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState('');
   const [filterTerms, setFilterTerms] = useState<string[]>([]);
-  const [newFilterTerm, setNewFilterTerm] = useState("");
+  const [newFilterTerm, setNewFilterTerm] = useState('');
 
   // Initialize filters from URL parameters
   useEffect(() => {
     const environmentFilter = searchParams.get('environment');
     const orgFilter = searchParams.get('organizationalUnit');
-    const initialFilters = [];
+    const initialFilters: string[] = [];
     if (environmentFilter) initialFilters.push(environmentFilter);
     if (orgFilter) initialFilters.push(orgFilter);
-    if (initialFilters.length > 0) {
-      setFilterTerms(initialFilters);
-    }
+    if (initialFilters.length > 0) setFilterTerms(initialFilters);
   }, [searchParams]);
 
-  useEffect(() => {
-    // Trigger data fetching when component mounts
-    // This should call Redux actions that simulate API calls
-  }, []);
+  // Helper to check if a value contains the term
+  const contains = (v: unknown, term: string) =>
+    v != null && String(v).toLowerCase().includes(term.toLowerCase());
 
-  // TODO: Replace with actual API call when filter terms change
-  useEffect(() => {
-    if (selectedClient && (searchTerm || filterTerms.length > 0)) {
-      // Future API call structure:
-      // fetchZones({
-      //   clientId: selectedClient.id,
-      //   searchTerm,
-      //   filterTerms,
-      //   page: currentPage,
-      //   limit: itemsPerPage
-      // });
-      console.log('API call would be made with:', {
-        clientId: selectedClient.id,
-        searchTerm,
-        filterTerms,
-        page: currentPage,
-        limit: itemsPerPage
-      });
-    }
-  }, [selectedClient, searchTerm, filterTerms, currentPage, itemsPerPage]);
+  // selectedClient is a string (client slug). If an object is ever passed, fall back to .client.
+  const selectedClientKey: string | null =
+    typeof selectedClient === 'string'
+      ? selectedClient
+      : (selectedClient && (selectedClient as any).client) || null;
+
+  // Always work with a strongly-typed Zone[] list
+  const zonesList = useMemo<Zone[]>(
+    () => (Array.isArray(zones) ? (zones as unknown[]).filter(isZone) : []),
+    [zones]
+  );
 
   // Filter zones by selected client, search term, and filter terms
-  const filteredZones = useMemo(() => {
-    let filtered = selectedClient ? zones.filter(zone => zone.clientId === selectedClient.id) : zones;
-    
-    // Apply search term
+  const filteredZones = useMemo<Zone[]>(() => {
+    let filtered: Zone[] = zonesList.slice();
+
+    if (selectedClientKey) {
+      filtered = filtered.filter((z: Zone) => z.client === selectedClientKey);
+    }
+
+    // Apply search term across key fields
     if (searchTerm) {
-      filtered = filtered.filter(zone =>
-        zone.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        zone.organizationalUnit.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        zone.awsAccountId.includes(searchTerm) ||
-        zone.accountName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        zone.environment.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (zone.namespace && zone.namespace.toLowerCase().includes(searchTerm.toLowerCase()))
-      );
+      const t = searchTerm.toLowerCase();
+      filtered = filtered.filter((z: Zone) => {
+        const af = z.account_facts ?? ({} as any);
+        const tags = z.tags ?? {};
+        return (
+          contains(z.zone, t) ||
+          contains(af.organizational_unit, t) ||
+          contains(af.aws_account_id, t) ||
+          contains(af.account_name, t) ||
+          contains(af.environment, t) ||
+          contains(af.resource_namespace, t) ||
+          Object.entries(tags).some(([k, v]) => contains(k, t) || contains(v, t))
+        );
+      });
     }
-    
-    // Apply filter terms
+
+    // Apply additional filter terms (AND across terms)
     if (filterTerms.length > 0) {
-      filtered = filtered.filter(zone =>
-        filterTerms.every(term =>
-          zone.environment.toLowerCase().includes(term.toLowerCase()) ||
-          zone.organizationalUnit.toLowerCase().includes(term.toLowerCase()) ||
-          zone.accountName.toLowerCase().includes(term.toLowerCase()) ||
-          zone.name.toLowerCase().includes(term.toLowerCase()) ||
-          (zone.namespace && zone.namespace.toLowerCase().includes(term.toLowerCase()))
-        )
-      );
+      filtered = filtered.filter((z: Zone) => {
+        const af = z.account_facts ?? ({} as any);
+        return filterTerms.every((term) => {
+          const tt = term.toLowerCase();
+          return (
+            contains(z.zone, tt) ||
+            contains(af.environment, tt) ||
+            contains(af.organizational_unit, tt) ||
+            contains(af.account_name, tt) ||
+            contains(af.resource_namespace, tt)
+          );
+        });
+      });
     }
-    
+
     return filtered;
-  }, [zones, selectedClient, searchTerm, filterTerms]);
+  }, [zonesList, selectedClientKey, searchTerm, filterTerms]);
 
   // Pagination calculations
   const totalItems = filteredZones.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedZones = filteredZones.slice(startIndex, endIndex);
+  const paginatedZones: Zone[] = filteredZones.slice(startIndex, endIndex);
 
   // Reset to first page when client, search, or filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedClient, searchTerm, filterTerms]);
+  }, [selectedClientKey, searchTerm, filterTerms]);
 
   const addFilterTerm = () => {
-    if (newFilterTerm.trim() && !filterTerms.includes(newFilterTerm.trim())) {
-      setFilterTerms([...filterTerms, newFilterTerm.trim()]);
-      setNewFilterTerm("");
+    const val = newFilterTerm.trim();
+    if (val && !filterTerms.includes(val)) {
+      setFilterTerms([...filterTerms, val]);
+      setNewFilterTerm('');
     }
   };
 
   const removeFilterTerm = (termToRemove: string) => {
-    setFilterTerms(filterTerms.filter(term => term !== termToRemove));
+    setFilterTerms(filterTerms.filter((term) => term !== termToRemove));
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      addFilterTerm();
-    }
+    if (e.key === 'Enter') addFilterTerm();
   };
 
-  const handleDeleteZone = (zone: any) => {
-    removeZone(zone.id);
+  const handleDeleteZone = (zone: Zone) => {
+    removeZone({ client: zone.client, zone: zone.zone } as any);
     toast({
-      title: "Zone deleted",
-      description: `Zone ${zone.accountName} has been deleted successfully.`,
+      title: 'Zone deleted',
+      description: `Zone ${zone.account_facts?.account_name ?? zone.zone} has been deleted successfully.`,
     });
-    
-    // Adjust current page if we deleted the last item on current page
+
     const newTotalItems = filteredZones.length - 1;
     const newTotalPages = Math.ceil(newTotalItems / itemsPerPage);
     if (currentPage > newTotalPages && newTotalPages > 0) {
@@ -136,7 +147,7 @@ const Zones = () => {
     }
   };
 
-  if (!selectedClient) {
+  if (!selectedClientKey) {
     return (
       <div className="space-y-6">
         <Card>
@@ -156,44 +167,13 @@ const Zones = () => {
 
   return (
     <div className="space-y-6">
-      {/* Selected Client Header - Prominent Display */}
-      <Card className="border-l-4 border-l-primary bg-primary/5">
-        <CardContent className="p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-                <Building2 className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-muted-foreground">ACTIVE CLIENT</span>
-                  <Badge variant="secondary" className="bg-primary/10 text-primary">Tenant</Badge>
-                </div>
-                <h2 className="text-2xl font-bold text-foreground">{selectedClient.name}</h2>
-                <p className="text-sm text-muted-foreground">{selectedClient.description}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <a href={selectedClient.homepage} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="h-4 w-4 mr-1" />
-                  Website
-                </a>
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Zones Management</h1>
-          <p className="text-muted-foreground">
-            Manage AWS zones and environments for {selectedClient.name}
-          </p>
+          <p className="text-muted-foreground">Manage AWS zones and environments</p>
         </div>
         <Button asChild>
-          <Link to={`/clients/${selectedClient.id}/zones/create`}>
+          <Link to={`/clients/${encodeURIComponent(selectedClientKey)}/zones/create`}>
             <Plus className="mr-2 h-4 w-4" />
             Add Zone
           </Link>
@@ -214,7 +194,7 @@ const Zones = () => {
                   className="pl-10"
                 />
               </div>
-              
+
               <div className="flex gap-2">
                 <Input
                   placeholder="Add filter term (environment, org unit, etc)..."
@@ -228,7 +208,7 @@ const Zones = () => {
                 </Button>
               </div>
             </div>
-            
+
             {filterTerms.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 <span className="text-sm text-muted-foreground self-center">Active Filters:</span>
@@ -263,15 +243,18 @@ const Zones = () => {
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span>{selectedClient.name} Zones ({totalItems})</span>
+              <span>Zones ({totalItems})</span>
             </div>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>Show:</span>
-                <Select value={itemsPerPage.toString()} onValueChange={(value) => {
-                  setItemsPerPage(Number(value));
-                  setCurrentPage(1);
-                }}>
+                <Select
+                  value={itemsPerPage.toString()}
+                  onValueChange={(value) => {
+                    setItemsPerPage(Number(value));
+                    setCurrentPage(1);
+                  }}
+                >
                   <SelectTrigger className="w-20">
                     <SelectValue />
                   </SelectTrigger>
@@ -301,85 +284,75 @@ const Zones = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedZones.map((zone) => (
-                <TableRow key={zone.id}>
-                  <TableCell className="font-medium">
-                    <div>
-                      <div className="font-medium">{zone.organizationalUnit}</div>
-                      <div className="text-xs text-muted-foreground">{zone.orgId}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-medium">{zone.name}</TableCell>
-                  <TableCell className="font-mono text-sm">{zone.awsAccountId}</TableCell>
-                  <TableCell>{zone.accountName}</TableCell>
-                  <TableCell>
-                    <Badge variant={zone.environment === 'production' ? 'destructive' : 'secondary'}>
-                      {zone.environment}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{zone.namespace || '-'}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        asChild
-                        title="View Zone Details"
-                      >
-                        <Link to={`/zones/${zone.id}`}>
-                          <ExternalLink className="h-4 w-4" />
-                        </Link>
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        asChild
-                        title="Edit Zone"
-                      >
-                        <Link to={`/zones/${zone.id}/edit`}>
-                          <Edit className="h-4 w-4" />
-                        </Link>
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            title="Delete Zone"
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Zone</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to delete the zone "{zone.accountName}"? This action cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction 
-                              onClick={() => handleDeleteZone(zone)}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              {paginatedZones.map((zone) => {
+                const af = zone.account_facts ?? ({} as any);
+                const rowKey = `${zone.client}:${zone.zone}`;
+                return (
+                  <TableRow key={rowKey}>
+                    <TableCell className="font-medium">
+                      <div>
+                        <div className="font-medium">{af.organizational_unit || '-'}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-medium">{zone.zone}</TableCell>
+                    <TableCell className="font-mono text-sm">{af.aws_account_id || '-'}</TableCell>
+                    <TableCell>{af.account_name || '-'}</TableCell>
+                    <TableCell>
+                      <Badge variant={af.environment === 'production' ? 'destructive' : 'secondary'}>
+                        {af.environment || '-'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{af.resource_namespace || '-'}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" asChild title="View Zone Details">
+                          <Link to={`/zones/${encodeURIComponent(zone.client)}/${encodeURIComponent(zone.zone)}`}>
+                            <ExternalLink className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                        <Button variant="ghost" size="sm" asChild title="Edit Zone">
+                          <Link to={`/zones/${encodeURIComponent(zone.client)}/${encodeURIComponent(zone.zone)}/edit`}>
+                            <Edit className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Delete Zone"
+                              className="text-destructive hover:text-destructive"
                             >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Zone</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete the zone "{af.account_name ?? zone.zone}"? This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteZone(zone)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
               {paginatedZones.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    {selectedClient 
-                      ? `No zones found for ${selectedClient.name}`
-                      : 'No zones found'
-                    }
+                    No zones found
                   </TableCell>
                 </TableRow>
               )}
@@ -395,47 +368,42 @@ const Zones = () => {
             Showing {startIndex + 1} to {Math.min(endIndex, totalItems)} of {totalItems} zones
           </div>
           <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
-              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
             >
               <ChevronLeft className="h-4 w-4" />
               Previous
             </Button>
-            
+
             <div className="flex items-center gap-1">
               {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                 let pageNum;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (currentPage <= 3) {
-                  pageNum = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = currentPage - 2 + i;
-                }
-                
+                if (totalPages <= 5) pageNum = i + 1;
+                else if (currentPage <= 3) pageNum = i + 1;
+                else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                else pageNum = currentPage - 2 + i;
+
                 return (
                   <Button
                     key={pageNum}
-                    variant={currentPage === pageNum ? "default" : "outline"}
+                    variant={pageNum === currentPage ? 'default' : 'outline'}
                     size="sm"
                     onClick={() => setCurrentPage(pageNum)}
-                    className="w-10"
+                    className="w-8 h-8 p-0 flex items-center justify-center"
                   >
                     {pageNum}
                   </Button>
                 );
               })}
             </div>
-            
-            <Button 
-              variant="outline" 
+
+            <Button
+              variant="outline"
               size="sm"
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
             >
               Next

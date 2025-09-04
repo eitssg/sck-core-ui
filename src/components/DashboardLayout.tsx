@@ -1,31 +1,21 @@
-import { useState, useEffect } from "react";
-import { Outlet, useNavigate, useLocation, Link } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
-import { 
-  Home, 
-  User, 
-  Briefcase, 
-  Plus, 
-  Settings, 
-  LogOut, 
-  Menu,
-  X,
-  ChevronDown,
+import React, { useEffect, useMemo, useState, PropsWithChildren } from 'react'
+import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom'
+import { useAuth } from '@/hooks/useAuth'
+import {
+  Home,
+  User,
+  Briefcase,
+  Plus,
+  Settings,
+  LogOut,
   FolderOpen,
   List,
   Building2,
   GitBranch,
-  Cloud
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Cloud,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Sidebar,
   SidebarContent,
@@ -37,65 +27,65 @@ import {
   SidebarMenuItem,
   SidebarProvider,
   SidebarTrigger,
-  useSidebar,
-} from "@/components/ui/sidebar";
-import { useReduxData } from "@/hooks/useReduxData";
-import { useAppDispatch, useAppSelector } from '@/store';
-import { setDeployments, setEvents } from '@/store/slices/deploymentsSlice';
+} from '@/components/ui/sidebar'
+import { useReduxData } from '@/hooks/useReduxData'
+import type { Client } from '@/store/types'
 
-// Mock data - will be replaced with real data later
-const mockPortfolios = [
-  { id: 1, name: "Enterprise Suite", code: "ENT" },
-  { id: 2, name: "Mobile Apps", code: "MOB" },
-  { id: 3, name: "Analytics Platform", code: "ANL" },
-];
+type DashboardLayoutProps = PropsWithChildren<{
+  activeItem?: string
+}>
 
-export default function DashboardLayout() {
-  const [currentPortfolio, setCurrentPortfolio] = useState(mockPortfolios[0]);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const navigate = useNavigate();
-  const location = useLocation();
-  const dispatch = useAppDispatch();
-  const deployments = useAppSelector(state => state.deployments.deployments);
-  const { clients, selectedClient, defaultClient, selectClient } = useReduxData();
-  const { signOut } = useAuth();
+export default function DashboardLayout({ children, activeItem }: DashboardLayoutProps) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { logout } = useAuth()
 
-  // All data should be managed by Redux slices, not initialized here
+  // Redux-backed data/hooks
+  const { clients: clientsState, selectedClient, selectClient } = useReduxData()
+
+  const clients = useMemo<Client[]>(
+    () => (Array.isArray(clientsState?.items) ? (clientsState.items as Client[]) : []),
+    [clientsState?.items]
+  )
+
+  // Auto-select first client if none selected and we have data
   useEffect(() => {
-    console.log('DashboardLayout mounted - data should come from Redux slice initial states');
-    
-    // Auto-select first client if available and none selected
-    if (clients.length > 0 && !defaultClient) {
-      selectClient(clients[0].id);
+    if (!selectedClient && clients.length > 0) {
+      selectClient(clients[0].client)
     }
-  }, [clients.length, defaultClient, selectClient]);
+  }, [selectedClient, clients, selectClient])
 
   const navigation = [
-    { name: "Dashboard", href: "/dashboard", icon: Home },
-    { name: "Clients", href: "/clients", icon: Building2 },
-    { name: "Zones", href: "/zones", icon: GitBranch },
-    { name: "Portfolios", href: "/portfolios", icon: Briefcase },
-    { name: "Applications", href: "/applications", icon: FolderOpen },
-    { name: "Deployments", href: "/deployments", icon: GitBranch },
-    { name: "Documentation", href: "/docs", icon: List },
-    { name: "Profile", href: "/profile", icon: User },
-  ];
+    { name: 'Dashboard', href: '/dashboard', icon: Home },
+    { name: 'Clients', href: '/clients', icon: Building2 },
+    { name: 'Zones', href: '/zones', icon: GitBranch },
+    { name: 'Portfolios', href: '/portfolios', icon: Briefcase },
+    { name: 'Applications', href: '/applications', icon: FolderOpen },
+    { name: 'Deployments', href: '/deployments', icon: GitBranch },
+    { name: 'Documentation', href: '/docs', icon: List },
+    { name: 'Profile', href: '/profile', icon: User },
+  ]
+
+  const isActive = (href: string) =>
+    location.pathname === href || location.pathname.startsWith(href + '/')
 
   const handleLogout = async () => {
     try {
-      await signOut();
-      navigate("/login");
-    } catch (error) {
-      console.error('Logout failed:', error);
+      await logout()
+      navigate('/login')
+    } catch (err) {
+      console.error('Logout failed:', err)
     }
-  };
+  }
 
-  const isActive = (href: string) => location.pathname === href || location.pathname.startsWith(href + '/');
+  // Content to render: children if provided, else nested routes via Outlet
+  const content = children ?? <Outlet />
 
   return (
     <SidebarProvider open={!sidebarCollapsed} onOpenChange={(open) => setSidebarCollapsed(!open)}>
       <div className="min-h-screen w-full flex flex-col">
-        {/* Full width header with portal branding */}
+        {/* Header */}
         <header className="bg-dashboard-header shadow-soft border-b border-border w-full">
           <div className="flex items-center justify-between px-4 py-4">
             <div className="flex items-center gap-4">
@@ -109,27 +99,27 @@ export default function DashboardLayout() {
             </div>
 
             <div className="flex items-center gap-4">
-              {/* Client Selection Dropdown */}
+              {/* Client Selection */}
               {clients.length > 0 && (
                 <div className="flex items-center gap-2">
-                  <Select 
-                    value={selectedClient?.id || defaultClient?.id || ""} 
+                  <Select
+                    value={selectedClient ?? ''}
                     onValueChange={(value) => selectClient(value || null)}
                   >
-                    <SelectTrigger className="w-48">
+                    <SelectTrigger className="w-56">
                       <SelectValue placeholder="Select client..." />
                     </SelectTrigger>
                     <SelectContent>
                       {clients.map((client) => (
-                        <SelectItem key={client.id} value={client.id}>
-                          {client.name}
+                        <SelectItem key={client.client} value={client.client}>
+                          {client.client_name || client.client}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               )}
-              
+
               <Button variant="ghost" size="icon" asChild>
                 <Link to="/settings">
                   <Settings className="h-5 w-5" />
@@ -142,58 +132,52 @@ export default function DashboardLayout() {
           </div>
         </header>
 
-        {/* Content area with sidebar and main content */}
+        {/* Content area with sidebar */}
         <div className="flex flex-1">
-          <AppSidebar 
-            navigation={navigation} 
-            isActive={isActive} 
-            handleLogout={handleLogout} 
+          <AppSidebar
+            navigation={navigation}
+            isActive={isActive}
+            handleLogout={handleLogout}
             collapsed={sidebarCollapsed}
           />
-          
-          {/* Main content */}
-          <main className="flex-1 p-6">
-            <Outlet />
-          </main>
+
+          <main className="flex-1 p-6">{content}</main>
         </div>
       </div>
     </SidebarProvider>
-  );
+  )
 }
 
 interface AppSidebarProps {
   navigation: Array<{
-    name: string;
-    href: string;
-    icon: React.ComponentType<{ className?: string }>;
-  }>;
-  isActive: (href: string) => boolean;
-  handleLogout: () => void;
-  collapsed: boolean;
+    name: string
+    href: string
+    icon: React.ComponentType<{ className?: string }>
+  }>
+  isActive: (href: string) => boolean
+  handleLogout: () => void
+  collapsed: boolean
 }
 
 function AppSidebar({ navigation, isActive, handleLogout, collapsed }: AppSidebarProps) {
-
   return (
-    <Sidebar 
+    <Sidebar
       className={`border-r bg-dashboard-sidebar transition-all duration-200 ${
         collapsed ? 'w-16' : 'w-64'
       }`}
       collapsible="none"
     >
       <SidebarContent>
-
-        {/* Navigation */}
         <SidebarGroup className="pt-4">
           {!collapsed && <SidebarGroupLabel>Navigation</SidebarGroupLabel>}
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1">
               {navigation.map((item) => {
-                const Icon = item.icon;
+                const Icon = item.icon
                 return (
                   <SidebarMenuItem key={item.name}>
-                    <SidebarMenuButton 
-                      asChild 
+                    <SidebarMenuButton
+                      asChild
                       isActive={isActive(item.href)}
                       className={collapsed ? 'justify-center' : ''}
                       title={collapsed ? item.name : undefined}
@@ -204,16 +188,16 @@ function AppSidebar({ navigation, isActive, handleLogout, collapsed }: AppSideba
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                );
+                )
               })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Quick Actions & Logout */}
+        {/* Footer actions */}
         <div className="mt-auto p-4 border-t border-border space-y-2">
-          <Button 
-            variant="gradient" 
+          <Button
+            variant="gradient"
             className={`gap-2 ${collapsed ? 'px-2' : 'w-full'}`}
             size={collapsed ? 'icon' : 'default'}
             title={collapsed ? 'Quick Create' : undefined}
@@ -221,11 +205,11 @@ function AppSidebar({ navigation, isActive, handleLogout, collapsed }: AppSideba
             <Plus className="h-4 w-4" />
             {!collapsed && 'Quick Create'}
           </Button>
-          
+
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton 
-                asChild 
+              <SidebarMenuButton
+                asChild
                 className={collapsed ? 'justify-center' : ''}
                 title={collapsed ? 'Logout' : undefined}
               >
@@ -239,5 +223,5 @@ function AppSidebar({ navigation, isActive, handleLogout, collapsed }: AppSideba
         </div>
       </SidebarContent>
     </Sidebar>
-  );
+  )
 }

@@ -1,75 +1,10 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { API_CONFIG, buildApiUrl, getAuthHeaders } from '@/lib/api-config';
 import type { OAuthTokenRequest, OAuthTokenResponse } from '@/lib/auth-types';
-import type { RootState, AppDispatch } from '../store';
+import type { RootState, AppDispatch } from '@/store';
 import type { ApiResponse } from '../shared';
 import { toArray } from '../shared';
-
-/**
- * CLIENT CACHING STRATEGY:
- * 
- * Clients change VERY rarely - they represent business entities/organizations
- * - Extended TTL of 30 minutes for client lists (increased from 10)
- * - Individual client caching for 60 minutes (increased from 15)
- * - Ultra-aggressive cache-first approach to minimize server costs
- * - Only force refresh when explicitly requested
- * - Cache individual clients for extended periods
- * - Smart cache sharing across different contexts
- */
-
-// Client interface based on your models.py
-export interface Client {
-  // Core client fields (matching ClientFact Pydantic model)
-  client: string; // Primary key - client slug/ID
-  client_id?: string; // OAuth client_id (can exist on many records)
-  client_secret?: string; // OAuth client secret
-  client_type?: string; // 'enterprise', 'startup', 'government', etc.
-  client_status?: string; // 'active', 'inactive', 'suspended'
-  client_description?: string;
-  client_name?: string; // Human-readable name
-  client_scopes?: string[];
-  client_redirect_urls?: string[];
-
-  // AWS Organization configuration
-  organization_id?: string;
-  organization_name?: string;
-  organization_account?: string;
-  organization_email?: string;
-
-  // Domain and networking
-  domain?: string;
-
-  // AWS Account assignments
-  iam_account?: string;
-  audit_account?: string;
-  automation_account?: string;
-  security_account?: string;
-  network_account?: string;
-
-  // Regional configuration
-  master_region?: string;
-  client_region?: string;
-  bucket_region?: string;
-
-  // S3 bucket configuration
-  bucket_name?: string;
-  docs_bucket_name?: string;
-  artefact_bucket_name?: string;
-  ui_bucket_name?: string;
-  ui_bucket?: string; // Legacy field
-
-  // Resource naming
-  scope?: string;
-
-  // Audit fields (inherited from DatabaseRecord)
-  created_at?: string;
-  updated_at?: string;
-
-  // Compatibility fields for existing UI components
-  id?: string; // Will be set to client value
-  name?: string; // Will be set to client_name value
-  description?: string; // Will be set to client_description
-}
+import type { Client } from '@/store/types'; // use shared type
 
 // Summary interface for list operations (matches ClientSummary from your API)
 export interface ClientSummary {
@@ -105,21 +40,13 @@ const initialState: ClientsState = {
   defaultClient: null,
   individualClientCache: {},
   fullClientDataCache: {},
-  // NEW fields
   currentActiveClient: null,
   switchingToClient: null,
   switchError: null,
 };
 
-// Helper function to transform client data for UI compatibility
-const transformClientForUI = (client: Client): Client => ({
-  ...client,
-  id: client.client, // Set id to client for compatibility
-  name: client.client_name || client.client, // Set name for compatibility
-  description: client.client_description, // Set description for compatibility
-});
-
-// CRUD Operations with Aggressive Caching
+// No UI-only fields; keep data aligned with types.ts
+const normalizeClient = (client: Client): Client => ({ ...client });
 
 // CREATE - Create new client (POST /api/v1/registry/clients)
 export const createClient = createAsyncThunk(
@@ -138,7 +65,7 @@ export const createClient = createAsyncThunk(
       }
 
       const result = await response.json();
-      return transformClientForUI(result.data);
+      return normalizeClient(result.data as Client);
     } catch (error) {
       return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -202,20 +129,16 @@ export const fetchClient = createAsyncThunk<
 >(
   'clients/fetchSingle',
   async ({ clientSlug }) => {
-    try {
-      const response = await fetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
-        headers: getAuthHeaders(),
-      });
+    const response = await fetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
+      headers: getAuthHeaders(),
+    });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch client');
-      }
-
-      const result = await response.json();
-      return transformClientForUI(result.data);
-    } catch (error) {
-      throw new Error(error instanceof Error ? error.message : 'Unknown error');
+    if (!response.ok) {
+      throw new Error('Failed to fetch client');
     }
+
+    const result = await response.json();
+    return normalizeClient(result.data as Client);
   },
   {
     condition: ({ clientSlug, force }, { getState }) => {
@@ -267,7 +190,7 @@ export const updateClient = createAsyncThunk(
       }
 
       const result = await response.json();
-      return { clientSlug, client: transformClientForUI(result.data) };
+      return { clientSlug, client: normalizeClient(result.data as Client) };
     } catch (error) {
       return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -291,7 +214,7 @@ export const patchClient = createAsyncThunk(
       }
 
       const result = await response.json();
-      return { clientSlug, client: transformClientForUI(result.data) };
+      return { clientSlug, client: normalizeClient(result.data as Client) };
     } catch (error) {
       return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -441,14 +364,12 @@ const clientsSlice = createSlice({
       delete state.fullClientDataCache[action.payload];
     },
     setClients(state, action: PayloadAction<Client[]>) {
-      state.items = action.payload?.map(transformClientForUI) ?? [];
+      state.items = action.payload ?? [];
       state.lastFetched = Date.now();
       state.status = 'succeeded';
       state.error = null;
-      // Update individual cache timestamps
       action.payload?.forEach(client => {
         state.individualClientCache[client.client] = Date.now();
-        // Mark as summary data only (from list endpoint)
         state.fullClientDataCache[client.client] = false;
       });
     },
@@ -459,28 +380,20 @@ const clientsSlice = createSlice({
       state.defaultClient = action.payload ?? null;
     },
     syncFromAPI(state, action: PayloadAction<Client>) {
-      const client = transformClientForUI(action.payload);
+      const client = normalizeClient(action.payload);
       const existingIndex = state.items.findIndex(c => c.client === client.client);
-
-      if (existingIndex >= 0) {
-        state.items[existingIndex] = client;
-      } else {
-        state.items.push(client);
-      }
-
-      // Update individual cache timestamp and mark as full data
+      if (existingIndex >= 0) state.items[existingIndex] = client;
+      else state.items.push(client);
       state.individualClientCache[client.client] = Date.now();
       state.fullClientDataCache[client.client] = true;
     },
     // NEW: Bulk update from other API responses
     bulkUpdateClients(state, action: PayloadAction<Client[]>) {
       const timestamp = Date.now();
-      action.payload.forEach(clientData => {
-        const client = transformClientForUI(clientData);
-        const existingIndex = state.items.findIndex(c => c.client === client.client);
-
+      action.payload.forEach(c => {
+        const client = normalizeClient(c);
+        const existingIndex = state.items.findIndex(x => x.client === client.client);
         if (existingIndex >= 0) {
-          // Only update if new data is more recent or has more fields
           const existing = state.items[existingIndex];
           const hasMoreData = Object.keys(client).length > Object.keys(existing).length;
           if (hasMoreData || !state.individualClientCache[client.client]) {
@@ -507,11 +420,11 @@ const clientsSlice = createSlice({
       });
 
       // Clean up cache timestamps
-      Object.keys(state.individualClientCache).forEach(clientSlug => {
-        const timestamp = state.individualClientCache[clientSlug];
+      Object.keys(state.individualClientCache).forEach(slug => {
+        const timestamp = state.individualClientCache[slug];
         if (!timestamp || (now - timestamp) > maxAge) {
-          delete state.individualClientCache[clientSlug];
-          delete state.fullClientDataCache[clientSlug];
+          delete state.individualClientCache[slug];
+          delete state.fullClientDataCache[slug];
         }
       });
     },
@@ -561,21 +474,17 @@ const clientsSlice = createSlice({
       })
       .addCase(fetchClients.fulfilled, (state, action: PayloadAction<ApiResponse<ClientSummary>>) => {
         const summaryData = toArray<ClientSummary>(action.payload.data);
-        // Transform ClientSummary to Client interface
-        state.items = summaryData.map(summary => transformClientForUI({
-          client: summary.Client,
-          client_name: summary.Name,
-          name: summary.Name,
-          id: summary.Client,
-        }));
+        // Transform ClientSummary to Client shape (no UI-only fields)
+        state.items = summaryData.map((s) => ({
+          client: s.Client,
+          client_name: s.Name,
+        } as Client));
         state.cursor = action.payload.metadata?.cursor ?? null;
         state.status = 'succeeded';
         state.lastFetched = Date.now();
         state.error = null;
-
-        // Update individual cache timestamps for all fetched clients
-        summaryData.forEach(summary => {
-          state.individualClientCache[summary.Client] = Date.now();
+        summaryData.forEach((s) => {
+          state.individualClientCache[s.Client] = Date.now();
         });
       })
       .addCase(fetchClients.rejected, (state, action) => {
@@ -616,15 +525,10 @@ const clientsSlice = createSlice({
       })
       .addCase(updateClient.fulfilled, (state, action) => {
         state.status = 'succeeded';
-
-        // Update the client in the list
-        const index = state.items.findIndex(c => c.client === action.payload.client.client);
-        if (index >= 0) {
-          state.items[index] = action.payload.client;
-        }
-
-        // Update individual cache timestamp
-        state.individualClientCache[action.payload.client.client] = Date.now();
+        const slug = action.payload.client.client;
+        const index = state.items.findIndex(c => c.client === slug);
+        if (index >= 0) state.items[index] = action.payload.client;
+        state.individualClientCache[slug] = Date.now();
         state.lastFetched = Date.now();
       })
       .addCase(updateClient.rejected, (state, action) => {
@@ -639,15 +543,10 @@ const clientsSlice = createSlice({
       })
       .addCase(patchClient.fulfilled, (state, action) => {
         state.status = 'succeeded';
-
-        // Update the client in the list
-        const index = state.items.findIndex(c => c.client === action.payload.client.client);
-        if (index >= 0) {
-          state.items[index] = action.payload.client;
-        }
-
-        // Update individual cache timestamp
-        state.individualClientCache[action.payload.client.client] = Date.now();
+        const slug = action.payload.client.client;
+        const index = state.items.findIndex(c => c.client === slug);
+        if (index >= 0) state.items[index] = action.payload.client;
+        state.individualClientCache[slug] = Date.now();
         state.lastFetched = Date.now();
       })
       .addCase(patchClient.rejected, (state, action) => {

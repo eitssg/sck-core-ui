@@ -1,4 +1,4 @@
-import { store } from '@/store/store';
+import { store } from '@/store';
 import { selectTokens } from '@/store/slices/authSlice';
 
 // API Configuration

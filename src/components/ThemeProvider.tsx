@@ -1,68 +1,70 @@
-import { useEffect } from "react"
-import { themes } from "@/lib/themes"
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { themes as available } from "@/lib/themes";
+import { ThemeName, ThemeContext, ThemeContextValue } from './ThemeContext'
 
-interface ThemeProviderProps {
-  children: React.ReactNode
-  theme?: string
+
+
+type ThemeProviderProps = {
+  children: React.ReactNode;
+  theme?: ThemeName;                   // comes from Redux/profile
+  onThemeChange?: (t: ThemeName) => void; // called when user selects a theme
+};
+
+function getSystemTheme(): "light" | "dark" {
+  if (typeof window === "undefined" || !window.matchMedia) return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-export function ThemeProvider({ children, theme = "system" }: ThemeProviderProps) {
-  // Apply theme to DOM - NO REDUX HOOKS HERE
-  const applyTheme = (themeId: string) => {
-    const root = window.document.documentElement
+export default function ThemeProvider({ children, theme = "system", onThemeChange }: ThemeProviderProps) {
+  const sys = getSystemTheme();
+  const [current, setCurrent] = useState<ThemeName>(theme);
+  const sysRef = useRef(sys);
 
-    // Remove all theme classes
-    root.classList.remove("light", "dark")
+  // Keep internal state in sync with prop changes
+  useEffect(() => setCurrent(theme), [theme]);
 
-    // System theme
-    if (themeId === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light"
-      root.classList.add(systemTheme)
-      return
-    }
+  // Watch system changes if using "system"
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => {
+      sysRef.current = mq.matches ? "dark" : "light";
+      // Re-apply DOM class if current is "system"
+      if (current === "system") applyDomTheme("system", sysRef.current);
+    };
+    mq.addEventListener?.("change", handler);
+    return () => mq.removeEventListener?.("change", handler);
+  }, [current]);
 
-    // Basic themes
-    if (themeId === "light" || themeId === "dark") {
-      root.classList.add(themeId)
-      return
-    }
+  const resolved: "light" | "dark" = current === "system" ? sysRef.current : (current as any) === "dark" ? "dark" : "light";
 
-    // Custom theme
-    const customTheme = themes[themeId]
-    if (customTheme) {
-      // Apply custom CSS variables
-      Object.entries(customTheme.colors).forEach(([property, value]) => {
-        root.style.setProperty(property, value)
-      })
-      root.classList.add(customTheme.isDark ? "dark" : "light")
-    } else {
-      // Fallback to system theme
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light"
-      root.classList.add(systemTheme)
-    }
+  // Apply theme to <html> element (class + data attribute)
+  function applyDomTheme(sel: ThemeName, res: "light" | "dark") {
+    const root = document.documentElement;
+    root.classList.toggle("dark", res === "dark");
+    root.setAttribute("data-theme", typeof sel === "string" ? sel : res);
   }
-
-  // Apply theme when theme prop changes
   useEffect(() => {
-    applyTheme(theme)
-  }, [theme])
+    applyDomTheme(current, resolved);
+  }, [current, resolved]);
 
-  // Listen for system theme changes
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleChange = () => {
-      if (theme === 'system') {
-        applyTheme('system')
-      }
-    }
+  const setTheme = (t: ThemeName) => {
+    setCurrent(t);
+    onThemeChange?.(t);
+  };
 
-    mediaQuery.addEventListener('change', handleChange)
-    return () => mediaQuery.removeEventListener('change', handleChange)
-  }, [theme])
+  const allThemes = useMemo(() => Array.isArray(available) ? available : [], [available]);
+  const themeConfig = useMemo(() => allThemes.find((t: any) => t.name === current), [allThemes, current]);
 
-  return <>{children}</>
+  const value: ThemeContextValue = {
+    theme: current,
+    resolvedTheme: resolved,
+    setTheme,
+    availableThemes: allThemes,
+    themeConfig,
+    isDark: resolved === "dark",
+  };
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
+

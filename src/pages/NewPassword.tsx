@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, Lock, Briefcase, Check } from "lucide-react";
 import { authAPI } from "@/lib/auth-api";
 import { Button } from "@/components/ui/button";
@@ -14,16 +14,71 @@ export default function NewPassword() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { token, tokenType } = location.state || {};
+  const [searchParams] = useSearchParams();
 
-  // Redirect if no token
+  // Get token from URL params OR state (for direct email links vs navigation)
+  const urlCode = searchParams.get('code');
+  const urlToken = searchParams.get('token');
+  const { token: stateToken, tokenType, email } = location.state || {};
+  
+  const finalToken = urlToken || stateToken;
+  const finalEmail = email || searchParams.get('email');
+
+  // Auto-verify code if coming from email link
   useEffect(() => {
-    if (!token) {
+    const autoVerifyFromEmail = async () => {
+      if (urlCode && urlToken && !stateToken) {
+        // This is a direct email link - auto-verify the code
+        setIsVerifying(true);
+        
+        try {
+          const result = await authAPI.verifyResetCode(urlCode, urlToken);
+          
+          if (result.error) {
+            setError(`Code verification failed: ${result.error}`);
+            // Redirect to enter-code page for manual entry
+            navigate("/enter-code", { 
+              state: { 
+                token: urlToken, 
+                email: finalEmail,
+                error: "Invalid link. Please enter the code manually." 
+              } 
+            });
+            return;
+          }
+          
+          // Verification successful - stay on this page for password entry
+          console.log('Email link verified successfully');
+          
+        } catch (error) {
+          console.error('Auto-verification failed:', error);
+          setError('Invalid or expired link. Please enter the code manually.');
+          navigate("/enter-code", { 
+            state: { 
+              token: urlToken, 
+              email: finalEmail,
+              error: "Link verification failed." 
+            } 
+          });
+          return;
+        } finally {
+          setIsVerifying(false);
+        }
+      }
+    };
+
+    autoVerifyFromEmail();
+  }, [urlCode, urlToken, stateToken, navigate, finalEmail]);
+
+  // Redirect if no token at all
+  useEffect(() => {
+    if (!finalToken && !isVerifying) {
       navigate("/enter-code");
     }
-  }, [token, navigate]);
+  }, [finalToken, navigate, isVerifying]);
 
   // Password validation
   const passwordValidation = {
@@ -54,13 +109,13 @@ export default function NewPassword() {
     setError("");
     
     try {
-      const result = await authAPI.updatePassword(token, tokenType, password);
+      // Use the final token (from URL or state)
+      const result = await authAPI.updatePassword(finalToken, 'Bearer', password);
       
       if (result.error) {
         // Check if it's a 404 (user profile not found)
         if (result.error.includes('User profile not found') || result.error.includes('404')) {
-          // Extract email from token for the no-account page
-          const email = location.state?.email || 'your email address';
+          const email = finalEmail || 'your email address';
           navigate("/no-account", { 
             state: { 
               email: email,
@@ -87,7 +142,23 @@ export default function NewPassword() {
     }
   };
 
-  if (!token) return null;
+  // Show loading state during auto-verification
+  if (isVerifying) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-dashboard-bg to-primary/5 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <Card className="shadow-large animate-fade-in">
+            <CardContent className="flex flex-col items-center justify-center py-12 space-y-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <p className="text-muted-foreground">Verifying reset link...</p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (!finalToken) return null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-dashboard-bg to-primary/5 flex items-center justify-center p-4">

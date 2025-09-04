@@ -1,266 +1,244 @@
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, ResponsiveContainer } from "recharts";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis } from "recharts";
 import { Calendar, TrendingUp, AlertTriangle } from "lucide-react";
 import { FilterState } from "./DashboardFilters";
-import { useAppSelector } from '@/store';
+import { useReduxData } from "@/hooks/useReduxData";
+import type { Zone } from "@/store/types";
 
-interface DeploymentChartProps {
-  clientId: string;
+type DeploymentChartProps = {
+  client?: string; // optional; will fall back to selected client from store
   filters?: FilterState;
-}
-
-// All data comes from Redux store - no mock data
-
-const chartConfig = {
-  successful: {
-    label: "Successful",
-    color: "hsl(var(--success))",
-  },
-  failed: {
-    label: "Failed",
-    color: "hsl(var(--destructive))",
-  },
-  zones: {
-    label: "Zones",
-    color: "hsl(var(--primary))",
-  },
 };
 
-export default function DeploymentChart({ clientId, filters }: DeploymentChartProps) {
-  const deployments = useAppSelector(state => state.deployments.deployments);
-  const zones = useAppSelector(state => state.zones.zones);
+type MaybeDeployment = {
+  id?: string;
+  client?: string;
+  portfolio?: string;
+  application?: string;
+  environment?: string;
+  status?: string;
+  created_at?: string | number | Date;
+};
 
-  // Smart keyword taxonomy - determines what type of keyword we're dealing with
-  const categorizeKeyword = (keyword: string) => {
-    const lowerKeyword = keyword.toLowerCase();
-    
-    // Environment keywords
-    const environments = ['production', 'prod', 'staging', 'stage', 'development', 'dev', 'test', 'testing'];
-    if (environments.some(env => lowerKeyword.includes(env))) {
-      return { type: 'environment', value: lowerKeyword };
+const chartConfig = {
+  successful: { label: "Successful", color: "hsl(var(--success))" },
+  failed: { label: "Failed", color: "hsl(var(--destructive))" },
+  zones: { label: "Zones", color: "hsl(var(--primary))" },
+};
+
+const safe = (v: unknown) => (v == null ? "" : String(v));
+const toDate = (v: unknown): Date | null => {
+  if (!v) return null;
+  try {
+    const d = new Date(v as any);
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
+};
+
+export default function DeploymentChart({ client, filters }: DeploymentChartProps) {
+  const { deployments, zones, selectedClient } = useReduxData();
+
+  const clientSlug = client ?? (typeof selectedClient === "string" ? selectedClient : null);
+
+  const deploymentsList = useMemo<MaybeDeployment[]>(() => {
+    const d: any = deployments;
+    if (Array.isArray(d?.items)) return d.items as MaybeDeployment[];
+    if (Array.isArray(d)) return d as MaybeDeployment[];
+    return [];
+  }, [deployments]);
+
+  const zonesList = useMemo<Zone[]>(
+    () => (Array.isArray(zones) ? (zones as Zone[]) : ([] as Zone[])),
+    [zones]
+  );
+
+  const clientDeployments = useMemo<MaybeDeployment[]>(
+    () => (clientSlug ? deploymentsList.filter((dep) => dep.client === clientSlug) : deploymentsList),
+    [deploymentsList, clientSlug]
+  );
+
+  const clientZones = useMemo<Zone[]>(
+    () => (clientSlug ? zonesList.filter((z) => z.client === clientSlug) : zonesList),
+    [zonesList, clientSlug]
+  );
+
+  const matchesFilters = (dep: MaybeDeployment): boolean => {
+    // Date range
+    if (filters?.dateRange?.from || filters?.dateRange?.to) {
+      const d = toDate(dep.created_at) ?? new Date(0);
+      const from = filters.dateRange.from ? new Date(filters.dateRange.from) : null;
+      const to = filters.dateRange.to ? new Date(filters.dateRange.to) : null;
+      if (from && d < from) return false;
+      if (to) {
+        const end = new Date(to);
+        end.setHours(23, 59, 59, 999);
+        if (d > end) return false;
+      }
     }
-    
-    // Status keywords
-    const statuses = ['failed', 'success', 'released', 'pending', 'progress', 'teardown'];
-    if (statuses.some(status => lowerKeyword.includes(status))) {
-      return { type: 'status', value: lowerKeyword };
+
+    // Environment
+    if (filters?.environment && safe(dep.environment) !== filters.environment) return false;
+
+    // Status
+    if (filters?.deploymentStatus && safe(dep.status) !== filters.deploymentStatus) return false;
+
+    // Portfolios
+    if (filters?.portfolios?.length) {
+      const p = safe(dep.portfolio).toLowerCase();
+      if (!filters.portfolios.some((x) => p.includes(x.toLowerCase()))) return false;
     }
-    
-    // App/Portfolio keywords (can be anything else)
-    return { type: 'general', value: lowerKeyword };
-  };
 
-  // Get client deployments and zones from Redux
-  const clientDeployments = deployments.filter(dep => dep.clientId === clientId);
-  const clientZones = zones.filter(zone => zone.clientId === clientId);
+    // Applications
+    if (filters?.applications?.length) {
+      const a = safe(dep.application).toLowerCase();
+      if (!filters.applications.some((x) => a.includes(x.toLowerCase()))) return false;
+    }
 
-  // Create deployment records from actual Redux data
-  const deploymentRecords = clientDeployments.map(dep => ({
-    environment: dep.environment,
-    status: dep.status,
-    app: dep.applicationId,
-    portfolio: dep.portfolioId
-  }));
-
-  // Filter deployment records based on all criteria
-  const filterDeploymentRecords = () => {
-    let filtered = [...deploymentRecords];
-
-    // Apply keyword filter with smart categorization
+    // Keywords
     if (filters?.keywords) {
-      const keywordInfo = categorizeKeyword(filters.keywords);
-      
-      filtered = filtered.filter(record => {
-        switch (keywordInfo.type) {
-          case 'environment':
-            return record.environment.toLowerCase().includes(keywordInfo.value);
-          case 'status':
-            return record.status.toLowerCase().includes(keywordInfo.value);
-          case 'general':
-            // Search across app, portfolio, and other fields
-            return (
-              record.app.toLowerCase().includes(keywordInfo.value) ||
-              record.portfolio.toLowerCase().includes(keywordInfo.value) ||
-              record.environment.toLowerCase().includes(keywordInfo.value) ||
-              record.status.toLowerCase().includes(keywordInfo.value)
-            );
-          default:
-            return true;
-        }
-      });
+      const kw = filters.keywords.toLowerCase();
+      const hay = [
+        safe(dep.environment),
+        safe(dep.status),
+        safe(dep.application),
+        safe(dep.portfolio),
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (!hay.includes(kw)) return false;
     }
 
-    // Apply explicit environment filter
-    if (filters?.environment) {
-      filtered = filtered.filter(record => record.environment === filters.environment);
-    }
-
-    // Apply explicit status filter
-    if (filters?.deploymentStatus) {
-      filtered = filtered.filter(record => record.status === filters.deploymentStatus);
-    }
-
-    // Apply portfolio filter
-    if (filters?.portfolios.length > 0) {
-      filtered = filtered.filter(record => 
-        filters.portfolios.some(portfolio => record.portfolio.includes(portfolio))
-      );
-    }
-
-    // Apply application filter
-    if (filters?.applications.length > 0) {
-      filtered = filtered.filter(record => 
-        filters.applications.some(app => record.app.includes(app))
-      );
-    }
-
-    return filtered;
+    return true;
   };
 
-  const filteredRecords = filterDeploymentRecords();
+  const filteredDeployments = useMemo<MaybeDeployment[]>(
+    () => clientDeployments.filter(matchesFilters),
+    [clientDeployments, filters]
+  );
 
-  // Calculate deployment status distribution from filtered records
-  const calculateStatusDistribution = (records: typeof deploymentRecords) => {
-    const statusCounts = records.reduce((acc, record) => {
-      acc[record.status] = (acc[record.status] || 0) + 1;
+  // Status Distribution
+  const statusTypes = [
+    { name: "Released", key: "released", color: "hsl(142 71% 45%)" },
+    { name: "Not Released", key: "not-released", color: "hsl(48 96% 53%)" },
+    { name: "Failed", key: "failed", color: "hsl(0 84% 60%)" },
+    { name: "Teardown in Progress", key: "teardown-in-progress", color: "hsl(0 72% 50%)" },
+    { name: "Release in Progress", key: "release-in-progress", color: "hsl(221 83% 53%)" },
+  ];
+
+  const statusDistribution = useMemo(
+    () => {
+      const counts = filteredDeployments.reduce((acc, d) => {
+        const s = safe(d.status);
+        acc[s] = (acc[s] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      return statusTypes
+        .map((s) => ({ name: s.name, value: counts[s.key] || 0, color: s.color }))
+        .filter((s) => s.value > 0);
+    },
+    [filteredDeployments]
+  );
+
+  // Zones by environment (from zone.account_facts.environment)
+  const zoneEnvironments = useMemo(() => {
+    const counts = clientZones.reduce((acc, z) => {
+      const env = safe(z.account_facts?.environment) || "unknown";
+      acc[env] = (acc[env] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
-    // Define status types with colors, using only data from Redux
-    const statusTypes = [
-      { name: "Released", key: "released", color: "hsl(142 71% 45%)" },
-      { name: "Not Released", key: "not-released", color: "hsl(48 96% 53%)" },
-      { name: "Failed", key: "failed", color: "hsl(0 84% 60%)" },
-      { name: "Teardown in Progress", key: "teardown-in-progress", color: "hsl(0 72% 50%)" },
-      { name: "Release in Progress", key: "release-in-progress", color: "hsl(221 83% 53%)" }
-    ];
-
-    return statusTypes.map(status => ({
-      name: status.name,
-      value: statusCounts[status.key] || 0,
-      color: status.color
-    })).filter(status => status.value > 0); // Only show statuses that have data
-  };
-
-  const filteredDeploymentStatus = calculateStatusDistribution(filteredRecords);
-
-  // Calculate zone environments from actual Redux data
-  const zoneEnvironmentCounts = clientZones.reduce((acc, zone) => {
-    acc[zone.environment] = (acc[zone.environment] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
-  const actualZoneEnvironments = Object.entries(zoneEnvironmentCounts).map(([environment, zones]) => ({
-    environment,
-    zones
-  }));
-
-  // Filter zone environments based on keywords and environment filter
-  const filteredZoneEnvironments = actualZoneEnvironments.filter(zone => {
-    // Check keyword filter
+    let rows = Object.entries(counts).map(([environment, zones]) => ({ environment, zones }));
+    // Apply environment/keyword filters to zone envs
+    if (filters?.environment) rows = rows.filter((r) => r.environment === filters.environment);
     if (filters?.keywords) {
-      const keywordInfo = categorizeKeyword(filters.keywords);
-      if (keywordInfo.type === 'environment' && !zone.environment.toLowerCase().includes(keywordInfo.value)) {
-        return false;
-      }
+      const kw = filters.keywords.toLowerCase();
+      rows = rows.filter((r) => r.environment.toLowerCase().includes(kw));
     }
-    
-    // Check environment filter
-    if (filters?.environment && filters.environment !== zone.environment) {
-      return false;
-    }
-    
-    return true;
-  });
+    return rows;
+  }, [clientZones, filters?.environment, filters?.keywords]);
 
-  // For keyword filtering, if keyword matches an environment, show only that environment with actual data
-  // and set others to 0
-  const processedZoneEnvironments = filters?.keywords ? 
-    actualZoneEnvironments.map(zone => {
-      const keywordInfo = categorizeKeyword(filters.keywords);
-      if (keywordInfo.type === 'environment') {
-        const matchesKeyword = zone.environment.toLowerCase().includes(keywordInfo.value);
-        return {
-          ...zone,
-          zones: matchesKeyword ? zone.zones : 0
-        };
-      }
-      return zone;
-    }) : filteredZoneEnvironments;
-
-  // Filter deployment data based on environment and keywords
-  const filterDeploymentData = (data: any[]) => {
-    if (!filters?.keywords && !filters?.environment) return data;
-    
-    // If filtering by environment-related keywords, simulate filtering deployments
-    if (filters?.keywords) {
-      const keywordInfo = categorizeKeyword(filters.keywords);
-      if (keywordInfo.type === 'environment' && keywordInfo.value.includes('prod')) {
-        // Reduce numbers to simulate production-only data
-        return data.map(item => ({
-          ...item,
-          successful: Math.floor(item.successful * 0.6), // Simulate production being ~60% of total
-          failed: Math.floor(item.failed * 0.4)
-        }));
-      }
-    }
-    
-    return data;
-  };
-
-  // Generate daily/monthly data from Redux deployments only
-  const generateActualDeploymentData = () => {
+  // Time-bucket deployments (Daily last 7 days, Monthly last 4 months)
+  const dailyData = useMemo(() => {
+    // Build last 7 day buckets
     const today = new Date();
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const dailyData = [];
-    
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const dayName = days[date.getDay()];
-      
-      // Distribute deployments across the week based on deployment ID hash
-      const dayDeployments = clientDeployments.filter(dep => {
-        const deploymentDay = parseInt(dep.id.slice(-1), 16) % 7;
-        return deploymentDay === (6 - i);
-      });
-      
-      const successful = dayDeployments.filter(dep => dep.status === 'released').length;
-      const failed = dayDeployments.filter(dep => dep.status === 'failed').length;
-      
-      dailyData.push({
-        date: dayName,
-        successful,
-        failed,
-        total: successful + failed
-      });
-    }
-    
-    const monthlyData = [];
-    const months = ['Oct', 'Nov', 'Dec', 'Jan'];
-    
-    for (const month of months) {
-      // Distribute monthly data based on deployment index
-      const monthIndex = months.indexOf(month);
-      const monthDeployments = clientDeployments.filter((dep, index) => index % 4 === monthIndex);
-      
-      const successful = monthDeployments.filter(dep => dep.status === 'released').length;
-      const failed = monthDeployments.filter(dep => dep.status === 'failed').length;
-      
-      monthlyData.push({ 
-        month, 
-        successful, 
-        failed 
-      });
-    }
-    
-    return { dailyData, monthlyData };
-  };
+    const days: { key: string; label: string }[] = [];
+    const fmt = (d: Date) => d.toISOString().slice(0, 10); // YYYY-MM-DD
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-  const { dailyData, monthlyData } = generateActualDeploymentData();
-  const filteredDailyDeployments = filterDeploymentData(dailyData);
-  const filteredMonthlyDeployments = filterDeploymentData(monthlyData);
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      days.push({ key: fmt(d), label: dayNames[d.getDay()] });
+    }
+
+    const buckets: Record<string, { successful: number; failed: number }> = {};
+    days.forEach((d) => (buckets[d.key] = { successful: 0, failed: 0 }));
+
+    filteredDeployments.forEach((d) => {
+      const created = toDate(d.created_at);
+      const key = created ? created.toISOString().slice(0, 10) : days[days.length - 1].key;
+      if (!buckets[key]) return;
+      const s = safe(d.status);
+      if (s === "released") buckets[key].successful += 1;
+      else if (s === "failed") buckets[key].failed += 1;
+    });
+
+    return days.map(({ key, label }) => ({
+      date: label,
+      successful: buckets[key].successful,
+      failed: buckets[key].failed,
+    }));
+  }, [filteredDeployments]);
+
+  const monthlyData = useMemo(() => {
+    // Last 4 month labels based on current date
+    const months: { key: string; label: string }[] = [];
+    const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const cursor = new Date();
+
+    for (let i = 3; i >= 0; i--) {
+      const d = new Date(cursor.getFullYear(), cursor.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      months.push({ key, label: monthLabels[d.getMonth()] });
+    }
+
+    const buckets: Record<string, { successful: number; failed: number }> = {};
+    months.forEach((m) => (buckets[m.key] = { successful: 0, failed: 0 }));
+
+    filteredDeployments.forEach((d) => {
+      const created = toDate(d.created_at);
+      if (!created) return;
+      const key = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, "0")}`;
+      if (!buckets[key]) return;
+      const s = safe(d.status);
+      if (s === "released") buckets[key].successful += 1;
+      else if (s === "failed") buckets[key].failed += 1;
+    });
+
+    return months.map(({ key, label }) => ({
+      month: label,
+      successful: buckets[key].successful,
+      failed: buckets[key].failed,
+    }));
+  }, [filteredDeployments]);
+
+  if (!clientSlug) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Select a client to see charts</CardTitle>
+          </CardHeader>
+          <CardContent />
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Daily Deployments */}
@@ -273,7 +251,7 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
         </CardHeader>
         <CardContent>
           <ChartContainer config={chartConfig} className="h-64">
-            <BarChart data={filteredDailyDeployments}>
+            <BarChart data={dailyData}>
               <XAxis dataKey="date" />
               <YAxis />
               <ChartTooltip content={<ChartTooltipContent />} />
@@ -296,14 +274,14 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
           <ChartContainer config={chartConfig} className="h-64">
             <PieChart>
               <Pie
-                data={filteredDeploymentStatus}
+                data={statusDistribution}
                 cx="50%"
                 cy="50%"
                 outerRadius={80}
                 dataKey="value"
-                label={({ name, value }) => value > 0 ? `${name}: ${value}` : null}
+                label={({ name, value }) => (value > 0 ? `${name}: ${value}` : null)}
               >
-                {filteredDeploymentStatus.map((entry, index) => (
+                {statusDistribution.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
@@ -313,7 +291,7 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
         </CardContent>
       </Card>
 
-      {/* Zone Environments */}
+      {/* Zones by Environment */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -323,7 +301,7 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
         </CardHeader>
         <CardContent>
           <ChartContainer config={chartConfig} className="h-64">
-            <BarChart data={processedZoneEnvironments}>
+            <BarChart data={zoneEnvironments}>
               <XAxis dataKey="environment" />
               <YAxis />
               <ChartTooltip content={<ChartTooltipContent />} />
@@ -343,7 +321,7 @@ export default function DeploymentChart({ clientId, filters }: DeploymentChartPr
         </CardHeader>
         <CardContent>
           <ChartContainer config={chartConfig} className="h-64">
-            <LineChart data={filteredMonthlyDeployments}>
+            <LineChart data={monthlyData}>
               <XAxis dataKey="month" />
               <YAxis />
               <ChartTooltip content={<ChartTooltipContent />} />

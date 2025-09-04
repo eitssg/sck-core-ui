@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import type { AppDispatch } from '@/store/store'; // Use your existing type
+import type { AppDispatch } from '@/store'; // Use your existing type
 import { 
   selectAuth, 
   selectIsAuthenticated, 

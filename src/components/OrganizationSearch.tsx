@@ -3,7 +3,6 @@ import { Building, ChevronDown, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { supabase } from "@/integrations/supabase/client";
 
 interface Organization {
   id: string;
@@ -61,17 +60,15 @@ export default function OrganizationSearch({ value, onChange, onOrganizationSele
   const searchOrganizations = async (query: string) => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('organization-search', {
-        body: { q: query }
-      });
-
-      if (error) {
-        console.error('Error searching organizations:', error);
-        setOrganizations([]);
-      } else {
+      const response = await fetch(`/api/organizations?search=${encodeURIComponent(query)}`);
+      const data = await response.json();
+      if (response.ok) {
         setOrganizations(data?.organizations || []);
-        setIsDropdownOpen(true);
+      } else {
+        console.error('Error searching organizations:', data);
+        setOrganizations([]);
       }
+      setIsDropdownOpen(true);
     } catch (error) {
       console.error('Error searching organizations:', error);
       setOrganizations([]);

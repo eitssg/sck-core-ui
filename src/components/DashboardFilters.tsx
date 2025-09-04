@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { CalendarIcon, Search, Filter, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,18 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command,
   CommandEmpty,
@@ -27,13 +16,10 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useReduxData } from "@/hooks/useReduxData";
-
-interface DashboardFiltersProps {
-  onFiltersChange: (filters: FilterState) => void;
-  clientId: string;
-}
+import type { Zone } from "@/store/types";
 
 export interface FilterState {
   keywords: string;
@@ -48,18 +34,77 @@ export interface FilterState {
   deploymentStatus?: string;
 }
 
-export default function DashboardFilters({ onFiltersChange, clientId }: DashboardFiltersProps) {
-  const { portfolios, applications, zones } = useReduxData();
-  
-  // Filter data for the selected client
-  const clientPortfolios = portfolios.filter(p => p.clientId === clientId);
-  const clientApplications = applications.filter(a => {
-    const portfolio = portfolios.find(p => p.id === a.portfolioId);
-    return portfolio?.clientId === clientId;
-  });
-  const clientZones = zones.filter(z => z.clientId === clientId);
+type DashboardFiltersProps = {
+  onFiltersChange: (filters: FilterState) => void;
+  client?: string; // optional; if omitted we'll use the selected client from the store
+};
 
-  const environments = ["Production", "Staging", "Development", "Testing"];
+// Minimal shapes aligned to current model names
+type Portfolio = {
+  client: string;
+  portfolio: string;
+  name?: string;
+};
+
+type Application = {
+  client: string;
+  portfolio?: string;
+  application: string;
+  name?: string;
+};
+
+export default function DashboardFilters({ onFiltersChange, client }: DashboardFiltersProps) {
+  const { portfolios: portfoliosState, applications: applicationsState, zones, selectedClient } = useReduxData();
+  const clientSlug = client ?? (typeof selectedClient === "string" ? selectedClient : null);
+
+  // Normalize lists from Redux
+  const portfoliosList = useMemo<Portfolio[]>(
+    () =>
+      Array.isArray((portfoliosState as any)?.items)
+        ? ((portfoliosState as any).items as Portfolio[])
+        : ([] as Portfolio[]),
+    [portfoliosState]
+  );
+
+  const applicationsList = useMemo<Application[]>(
+    () =>
+      Array.isArray((applicationsState as any)?.items)
+        ? ((applicationsState as any).items as Application[])
+        : ([] as Application[]),
+    [applicationsState]
+  );
+
+  const zonesList = useMemo<Zone[]>(
+    () => (Array.isArray(zones) ? (zones as Zone[]) : ([] as Zone[])),
+    [zones]
+  );
+
+  // Filter data for the selected client
+  const clientPortfolios = useMemo<Portfolio[]>(
+    () => (clientSlug ? portfoliosList.filter((p) => p.client === clientSlug) : portfoliosList),
+    [portfoliosList, clientSlug]
+  );
+
+  const clientApplications = useMemo<Application[]>(
+    () => (clientSlug ? applicationsList.filter((a) => a.client === clientSlug) : applicationsList),
+    [applicationsList, clientSlug]
+  );
+
+  const clientZones = useMemo<Zone[]>(
+    () => (clientSlug ? zonesList.filter((z) => z.client === clientSlug) : zonesList),
+    [zonesList, clientSlug]
+  );
+
+  // Derive environments from zones
+  const environments = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    clientZones.forEach((z) => {
+      const env = z.account_facts?.environment;
+      if (env) set.add(env);
+    });
+    return Array.from(set.size ? set : new Set(["production", "staging", "development", "testing"]));
+  }, [clientZones]);
+
   const deploymentStatuses = ["released", "not-released", "failed", "release-in-progress", "teardown-in-progress"];
 
   const [filters, setFilters] = useState<FilterState>({
@@ -86,7 +131,7 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
   };
 
   const clearAllFilters = () => {
-    const clearedFilters: FilterState = {
+    const cleared: FilterState = {
       keywords: "",
       portfolios: [],
       applications: [],
@@ -95,46 +140,56 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
       environment: undefined,
       deploymentStatus: undefined,
     };
-    setFilters(clearedFilters);
+    setFilters(cleared);
     setKeywordInput("");
-    onFiltersChange(clearedFilters);
+    onFiltersChange(cleared);
   };
 
   const removeFilter = (type: keyof FilterState, value?: string) => {
     switch (type) {
-      case 'portfolios':
-        updateFilters({ portfolios: filters.portfolios.filter(p => p !== value) });
+      case "portfolios":
+        updateFilters({ portfolios: filters.portfolios.filter((p) => p !== value) });
         break;
-      case 'applications':
-        updateFilters({ applications: filters.applications.filter(a => a !== value) });
+      case "applications":
+        updateFilters({ applications: filters.applications.filter((a) => a !== value) });
         break;
-      case 'zones':
-        updateFilters({ zones: filters.zones.filter(z => z !== value) });
+      case "zones":
+        updateFilters({ zones: filters.zones.filter((z) => z !== value) });
         break;
-      case 'environment':
+      case "environment":
         updateFilters({ environment: undefined });
         break;
-      case 'deploymentStatus':
+      case "deploymentStatus":
         updateFilters({ deploymentStatus: undefined });
         break;
-      case 'dateRange':
+      case "dateRange":
         updateFilters({ dateRange: { from: undefined, to: undefined } });
         break;
-      case 'keywords':
+      case "keywords":
         updateFilters({ keywords: "" });
         setKeywordInput("");
         break;
     }
   };
 
-  const hasActiveFilters = 
-    filters.keywords || 
-    filters.portfolios.length > 0 || 
-    filters.applications.length > 0 || 
-    filters.zones.length > 0 || 
-    filters.dateRange.from || 
-    filters.environment || 
-    filters.deploymentStatus;
+  const hasActiveFilters =
+    !!filters.keywords ||
+    filters.portfolios.length > 0 ||
+    filters.applications.length > 0 ||
+    filters.zones.length > 0 ||
+    !!filters.dateRange.from ||
+    !!filters.environment ||
+    !!filters.deploymentStatus;
+
+  // Label helpers
+  const portfolioLabel = (p: Portfolio) => p.name || p.portfolio;
+  const portfolioValue = (p: Portfolio) => p.portfolio;
+
+  const applicationLabel = (a: Application) => a.name || a.application;
+  const applicationValue = (a: Application) => a.application;
+
+  const zoneLabel = (z: Zone) => z.zone;
+  const zoneValue = (z: Zone) => z.zone;
 
   return (
     <Card className="shadow-soft">
@@ -153,7 +208,10 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
                   filters.dateRange.from && 1,
                   filters.environment && 1,
                   filters.deploymentStatus && 1,
-                ].filter(Boolean).reduce((a, b) => Number(a) + Number(b), 0)} active
+                ]
+                  .filter(Boolean)
+                  .reduce((a, b) => Number(a) + Number(b), 0)}{" "}
+                active
               </Badge>
             )}
           </CardTitle>
@@ -165,7 +223,7 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={() => setIsExpanded(!isExpanded)}>
-              {isExpanded ? 'Collapse' : 'Expand'}
+              {isExpanded ? "Collapse" : "Expand"}
             </Button>
           </div>
         </div>
@@ -180,7 +238,7 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
               value={keywordInput}
               onChange={(e) => setKeywordInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === "Enter") {
                   e.preventDefault();
                   applyKeywords();
                 }
@@ -188,11 +246,7 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
               className="pl-10"
             />
           </div>
-          <Button 
-            onClick={applyKeywords}
-            disabled={keywordInput === filters.keywords}
-            className="shrink-0"
-          >
+          <Button onClick={applyKeywords} disabled={keywordInput === filters.keywords} className="shrink-0">
             Apply
           </Button>
         </div>
@@ -203,44 +257,44 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
             {filters.keywords && (
               <Badge variant="outline" className="gap-1">
                 Keywords: {filters.keywords}
-                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter('keywords')} />
+                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter("keywords")} />
               </Badge>
             )}
-            {filters.portfolios.map(portfolio => (
+            {filters.portfolios.map((portfolio) => (
               <Badge key={portfolio} variant="outline" className="gap-1">
                 Portfolio: {portfolio}
-                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter('portfolios', portfolio)} />
+                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter("portfolios", portfolio)} />
               </Badge>
             ))}
-            {filters.applications.map(app => (
+            {filters.applications.map((app) => (
               <Badge key={app} variant="outline" className="gap-1">
                 App: {app}
-                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter('applications', app)} />
+                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter("applications", app)} />
               </Badge>
             ))}
-            {filters.zones.map(zone => (
+            {filters.zones.map((zone) => (
               <Badge key={zone} variant="outline" className="gap-1">
                 Zone: {zone}
-                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter('zones', zone)} />
+                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter("zones", zone)} />
               </Badge>
             ))}
             {filters.environment && (
               <Badge variant="outline" className="gap-1">
                 Environment: {filters.environment}
-                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter('environment')} />
+                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter("environment")} />
               </Badge>
             )}
             {filters.deploymentStatus && (
               <Badge variant="outline" className="gap-1">
                 Status: {filters.deploymentStatus}
-                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter('deploymentStatus')} />
+                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter("deploymentStatus")} />
               </Badge>
             )}
             {filters.dateRange.from && (
               <Badge variant="outline" className="gap-1">
                 Date: {format(filters.dateRange.from, "MMM dd")}
                 {filters.dateRange.to && ` - ${format(filters.dateRange.to, "MMM dd")}`}
-                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter('dateRange')} />
+                <X className="h-3 w-3 cursor-pointer" onClick={() => removeFilter("dateRange")} />
               </Badge>
             )}
           </div>
@@ -255,9 +309,7 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-start">
-                    {filters.portfolios.length > 0 
-                      ? `${filters.portfolios.length} selected` 
-                      : "Select portfolios"}
+                    {filters.portfolios.length > 0 ? `${filters.portfolios.length} selected` : "Select portfolios"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-64 p-0">
@@ -266,22 +318,26 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
                     <CommandList>
                       <CommandEmpty>No portfolios found.</CommandEmpty>
                       <CommandGroup>
-                        {clientPortfolios.map((portfolio) => (
-                          <CommandItem key={portfolio.id}>
-                            <Checkbox
-                              checked={filters.portfolios.includes(portfolio.name)}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  updateFilters({ portfolios: [...filters.portfolios, portfolio.name] });
-                                } else {
-                                  updateFilters({ portfolios: filters.portfolios.filter(p => p !== portfolio.name) });
-                                }
-                              }}
-                              className="mr-2"
-                            />
-                            {portfolio.name} ({portfolio.code})
-                          </CommandItem>
-                        ))}
+                        {clientPortfolios.map((p) => {
+                          const label = portfolioLabel(p);
+                          const value = portfolioValue(p);
+                          return (
+                            <CommandItem key={`p:${value}`}>
+                              <Checkbox
+                                checked={filters.portfolios.includes(value)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    updateFilters({ portfolios: [...filters.portfolios, value] });
+                                  } else {
+                                    updateFilters({ portfolios: filters.portfolios.filter((x) => x !== value) });
+                                  }
+                                }}
+                                className="mr-2"
+                              />
+                              {label}
+                            </CommandItem>
+                          );
+                        })}
                       </CommandGroup>
                     </CommandList>
                   </Command>
@@ -295,9 +351,7 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-start">
-                    {filters.applications.length > 0 
-                      ? `${filters.applications.length} selected` 
-                      : "Select applications"}
+                    {filters.applications.length > 0 ? `${filters.applications.length} selected` : "Select applications"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-64 p-0">
@@ -306,22 +360,26 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
                     <CommandList>
                       <CommandEmpty>No applications found.</CommandEmpty>
                       <CommandGroup>
-                        {clientApplications.map((app) => (
-                          <CommandItem key={app.id}>
-                            <Checkbox
-                              checked={filters.applications.includes(app.name)}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  updateFilters({ applications: [...filters.applications, app.name] });
-                                } else {
-                                  updateFilters({ applications: filters.applications.filter(a => a !== app.name) });
-                                }
-                              }}
-                              className="mr-2"
-                            />
-                            {app.name}
-                          </CommandItem>
-                        ))}
+                        {clientApplications.map((a) => {
+                          const label = applicationLabel(a);
+                          const value = applicationValue(a);
+                          return (
+                            <CommandItem key={`a:${value}`}>
+                              <Checkbox
+                                checked={filters.applications.includes(value)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    updateFilters({ applications: [...filters.applications, value] });
+                                  } else {
+                                    updateFilters({ applications: filters.applications.filter((x) => x !== value) });
+                                  }
+                                }}
+                                className="mr-2"
+                              />
+                              {label}
+                            </CommandItem>
+                          );
+                        })}
                       </CommandGroup>
                     </CommandList>
                   </Command>
@@ -335,9 +393,7 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-start">
-                    {filters.zones.length > 0 
-                      ? `${filters.zones.length} selected` 
-                      : "Select zones"}
+                    {filters.zones.length > 0 ? `${filters.zones.length} selected` : "Select zones"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-64 p-0">
@@ -346,22 +402,27 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
                     <CommandList>
                       <CommandEmpty>No zones found.</CommandEmpty>
                       <CommandGroup>
-                        {clientZones.map((zone) => (
-                          <CommandItem key={zone.id}>
-                            <Checkbox
-                              checked={filters.zones.includes(zone.name)}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  updateFilters({ zones: [...filters.zones, zone.name] });
-                                } else {
-                                  updateFilters({ zones: filters.zones.filter(z => z !== zone.name) });
-                                }
-                              }}
-                              className="mr-2"
-                            />
-                            {zone.name} ({zone.environment})
-                          </CommandItem>
-                        ))}
+                        {clientZones.map((z) => {
+                          const label = zoneLabel(z);
+                          const value = zoneValue(z);
+                          const env = z.account_facts?.environment;
+                          return (
+                            <CommandItem key={`z:${z.client}/${value}`}>
+                              <Checkbox
+                                checked={filters.zones.includes(value)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    updateFilters({ zones: [...filters.zones, value] });
+                                  } else {
+                                    updateFilters({ zones: filters.zones.filter((x) => x !== value) });
+                                  }
+                                }}
+                                className="mr-2"
+                              />
+                              {label} {env ? `(${env})` : ""}
+                            </CommandItem>
+                          );
+                        })}
                       </CommandGroup>
                     </CommandList>
                   </Command>
@@ -379,8 +440,7 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
                     {filters.dateRange.from ? (
                       filters.dateRange.to ? (
                         <>
-                          {format(filters.dateRange.from, "LLL dd")} -{" "}
-                          {format(filters.dateRange.to, "LLL dd")}
+                          {format(filters.dateRange.from, "LLL dd")} - {format(filters.dateRange.to, "LLL dd")}
                         </>
                       ) : (
                         format(filters.dateRange.from, "LLL dd")
@@ -399,11 +459,11 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
                       to: filters.dateRange.to,
                     }}
                     onSelect={(range) => {
-                      updateFilters({ 
-                        dateRange: { 
-                          from: range?.from, 
-                          to: range?.to 
-                        } 
+                      updateFilters({
+                        dateRange: {
+                          from: range?.from,
+                          to: range?.to,
+                        },
                       });
                     }}
                     numberOfMonths={2}
@@ -433,14 +493,17 @@ export default function DashboardFilters({ onFiltersChange, clientId }: Dashboar
             {/* Deployment Status Filter */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Deployment Status</label>
-              <Select value={filters.deploymentStatus} onValueChange={(value) => updateFilters({ deploymentStatus: value })}>
+              <Select
+                value={filters.deploymentStatus}
+                onValueChange={(value) => updateFilters({ deploymentStatus: value })}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>
                   {deploymentStatuses.map((status) => (
                     <SelectItem key={status} value={status}>
-                      {status.replace('-', ' ')}
+                      {status.replace("-", " ")}
                     </SelectItem>
                   ))}
                 </SelectContent>

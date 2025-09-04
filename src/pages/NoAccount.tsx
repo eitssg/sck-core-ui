@@ -1,105 +1,191 @@
-import { useNavigate, useLocation } from "react-router-dom";
-import { useEffect } from "react"; 
-import { UserPlus, Mail, ArrowRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useSelector } from "react-redux";
+import type { RootState } from "@/store";
+import { selectIsAuthenticated } from "@/store/slices/authSlice";
+import { buildApiUrl, getAuthHeaders } from "@/lib/api-config";
+import { useTheme } from "@/hooks/useTheme";
+import { useToast } from "@/hooks/use-toast";
+
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+
+import { Mail, UserPlus, LogIn, ArrowLeft, AlertTriangle, Sparkles } from "lucide-react";
+
+type RouteState = {
+  email?: string;
+  from?: string; // e.g., "login-401", "password-reset"
+  reason?: string;
+};
+
+function isValidEmail(v: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+}
 
 export default function NoAccount() {
-    const navigate = useNavigate();
-    const location = useLocation();
-    const { email, from } = location.state || {};
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { isDark } = useTheme();
+  const { toast } = useToast();
 
-    useEffect(() => {
-        // If no state or didn't come from password-reset flow, redirect to login
-        if (!location.state || from !== 'password-reset') {
-            navigate('/login', { replace: true });
-        }
-    }, [location.state, from, navigate]);
+  // Auth guard: if already authenticated, bounce to dashboard
+  const isAuthenticated = useSelector((s: RootState) => s.auth?.isAuthenticated) ?? false;
+  useEffect(() => {
+    if (isAuthenticated) navigate("/dashboard", { replace: true });
+  }, [isAuthenticated, navigate]);
 
-    const handleCreateAccount = () => {
-        // Navigate to signup with pre-filled email
-        navigate("/signup", {
-            state: {
-                email: email,
-                from: from || 'no-account'
-            }
+  // Derive route state
+  const routeState = (location.state || {}) as RouteState;
+  const initialEmail = useMemo(() => routeState.email || "", [routeState.email]);
+  const from = routeState.from || "login-401";
+
+  // Local state
+  const [email, setEmail] = useState(initialEmail);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fire-and-forget telemetry so we can analyze 401 flows and missing accounts
+  useEffect(() => {
+    const send = async () => {
+      try {
+        const url = buildApiUrl("/api/v1/telemetry/no-account");
+        await fetch(url, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            email: initialEmail || null,
+            source: from,
+            path: location.pathname + (location.search || ""),
+            referrer: document.referrer || null,
+            ts: new Date().toISOString(),
+            userAgent: navigator.userAgent,
+          }),
         });
+      } catch {
+        // Ignore telemetry errors
+      }
     };
+    send();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    return (
-        <div className="min-h-screen bg-gradient-to-br from-dashboard-bg to-primary/5 flex items-center justify-center p-4">
-            <div className="w-full max-w-md">
-                <Card className="shadow-large animate-fade-in">
-                    <CardHeader className="text-center space-y-4">
-                        <div className="mx-auto w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-medium">
-                            <UserPlus className="h-8 w-8 text-white" />
-                        </div>
-                        <div>
-                            <CardTitle className="text-2xl font-bold">Account Not Found</CardTitle>
-                            <p className="text-muted-foreground">
-                                No account exists for this email address
-                            </p>
-                        </div>
-                    </CardHeader>
+  const canProceed = isValidEmail(email);
 
-                    <CardContent className="space-y-6">
-                        <div className="text-center space-y-4">
-                            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                <div className="flex items-center justify-center gap-2 mb-2">
-                                    <Mail className="h-4 w-4 text-blue-600" />
-                                    <span className="text-sm font-medium text-blue-800">Email Address</span>
-                                </div>
-                                <p className="text-blue-700 font-mono text-sm break-all">
-                                    {email || 'your email address'}
-                                </p>
-                            </div>
+  const goSignup = async () => {
+    if (!canProceed) {
+      toast({ title: "Invalid email", description: "Please enter a valid email address.", variant: "destructive" });
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      navigate("/signup", {
+        state: { email, from: "no-account" },
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-                            <div className="space-y-3">
-                                <p className="text-sm text-muted-foreground">
-                                    We see that you do not have an account for this email address.
-                                </p>
-                                <p className="text-sm text-muted-foreground">
-                                    To access the system, you will need to create a new account.
-                                </p>
-                            </div>
-                        </div>
+  const goLogin = async () => {
+    if (!canProceed) {
+      // It's fine to allow visiting login without email, but this helps UX
+      toast({ title: "Optional: prefill email", description: "Enter an email to prefill on login.", variant: "default" });
+    }
+    setIsSubmitting(true);
+    try {
+      navigate("/login", {
+        state: { email, from: "no-account" },
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-                        <div className="space-y-3">
-                            <Button
-                                onClick={handleCreateAccount}
-                                size="lg"
-                                className="w-full"
-                                variant="gradient"
-                            >
-                                <UserPlus className="h-4 w-4 mr-2" />
-                                Create New Account
-                                <ArrowRight className="h-4 w-4 ml-2" />
-                            </Button>
+  const backHome = () => navigate(-1);
 
-                            <Button
-                                onClick={() => navigate("/login")}
-                                size="lg"
-                                variant="outline"
-                                className="w-full"
-                            >
-                                Back to Login
-                            </Button>
-                        </div>
+  return (
+    <div className="relative min-h-screen">
+      {/* Ambient gradient backdrop */}
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-primary/15 blur-3xl" />
+        <div className="absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-accent/20 blur-3xl" />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 h-40 w-[40rem] rounded-[999px] bg-gradient-to-r from-primary/10 to-primary-light/10 blur-2xl" />
+      </div>
 
-                        <div className="text-center pt-4 border-t">
-                            <p className="text-xs text-muted-foreground">
-                                Already have an account with a different email?{" "}
-                                <button
-                                    onClick={() => navigate("/login")}
-                                    className="text-primary hover:underline font-medium"
-                                >
-                                    Sign in here
-                                </button>
-                            </p>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
+      <div className="mx-auto flex max-w-4xl flex-col items-center px-4 py-16">
+        {/* Header */}
+        <div className="mb-8 flex w-full items-center justify-between">
+          <Button variant="ghost" onClick={backHome} className="gap-2">
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+          <Badge variant="secondary" className="uppercase">No account</Badge>
         </div>
-    );
+
+        <Card className="w-full shadow-large animate-fade-in">
+          <CardHeader className="space-y-2 text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-light text-primary-foreground shadow-medium">
+              <Sparkles className="h-8 w-8" />
+            </div>
+            <CardTitle className="text-2xl">We couldn’t find an account for that email</CardTitle>
+            <CardDescription>
+              {from === "login-401"
+                ? "Your email or password didn’t match an existing account. You can try logging in again or create a new account."
+                : "No account exists for this email. You can sign up or go back to login."}
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email address</Label>
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              We’ll only use this to prefill the next screen.
+            </div>
+
+            <Separator />
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Button
+                onClick={goSignup}
+                disabled={isSubmitting || !canProceed}
+                variant={isDark ? "secondary" : "gradient"}
+                className="gap-2"
+              >
+                <UserPlus className="h-4 w-4" />
+                Create a new account
+              </Button>
+              <Button onClick={goLogin} disabled={isSubmitting} variant="outline" className="gap-2">
+                <LogIn className="h-4 w-4" />
+                Try login again
+              </Button>
+            </div>
+
+            <div className="text-center text-xs text-muted-foreground">
+              Already have an account under a different email?{" "}
+              <Link to="/login" className="text-primary hover:underline">
+                Sign in
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
 }

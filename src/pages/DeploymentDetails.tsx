@@ -1,121 +1,407 @@
-import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Edit, Save, X, AlertTriangle, Clock, CheckCircle, XCircle, Activity, GitBranch } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { useSelector } from "react-redux";
+import type { RootState } from "@/store";
+import { selectIsAuthenticated } from "@/store/slices/authSlice";
+import { buildApiUrl, getAuthHeaders, API_CONFIG } from "@/lib/api-config";
+import { useReduxData } from "@/hooks/useReduxData";
+import { useTheme } from "@/hooks/useTheme";
+import { useToast } from "@/hooks/use-toast";
+
+import {
+  ArrowLeft,
+  Activity,
+  GitBranch,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Globe,
+  Tag as TagIcon,
+  RefreshCcw,
+  Sparkles,
+} from "lucide-react";
+
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
+  AlertDialogTrigger,
   AlertDialogContent,
+  AlertDialogHeader,
   AlertDialogDescription,
   AlertDialogFooter,
-  AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialogCancel,
+  AlertDialogAction,
 } from "@/components/ui/alert-dialog";
-import { useAppSelector } from '@/store';
-import { useToast } from '@/hooks/use-toast';
+
+type Deployment = {
+  id: string;
+  prn?: string;
+  client?: string;
+  portfolio?: string;
+  application?: string;
+  environment?: string;
+  region?: string;
+  status?: "released" | "not-released" | "failed" | "release-in-progress" | "teardown-in-progress" | string;
+  tag?: string;
+  description?: string;
+  created_at?: string;
+  last_activity?: string;
+  // Optional fields that may exist in your backend
+  branch?: string;
+  build?: string;
+  deployed_by?: string;
+  deployed_at?: string;
+};
+
+type DeploymentEvent = {
+  id: string;
+  deploymentId?: string;
+  type: string; // e.g., deploy|test|release|rollback|error
+  status: "pending" | "success" | "failed" | string;
+  message: string;
+  timestamp: string;
+};
+
+type ApiResponse<T> = {
+  data: T[] | T;
+  metadata?: Record<string, any>;
+  message?: string;
+  status?: string;
+};
+
+function toArray<T>(v: T[] | T | undefined | null): T[] {
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
+}
+
+function formatDateTime(v?: string) {
+  if (!v) return "—";
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? "—" : `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+}
+
+function statusVariant(s?: string): "default" | "secondary" | "destructive" | "outline" {
+  switch (s) {
+    case "released":
+      return "default";
+    case "failed":
+      return "destructive";
+    case "release-in-progress":
+    case "teardown-in-progress":
+      return "secondary";
+    case "not-released":
+      return "outline";
+    default:
+      return "outline";
+  }
+}
+
+function statusIcon(s?: string) {
+  switch (s) {
+    case "released":
+      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+    case "failed":
+      return <XCircle className="h-4 w-4 text-red-500" />;
+    case "release-in-progress":
+    case "teardown-in-progress":
+      return <RefreshCcw className="h-4 w-4 text-blue-500 animate-spin" />;
+    default:
+      return <Activity className="h-4 w-4 text-muted-foreground" />;
+  }
+}
+
+function eventIcon(type: string, status: string) {
+  if (status === "failed") return <XCircle className="h-4 w-4 text-red-500" />;
+  if (status === "pending") return <Clock className="h-4 w-4 text-yellow-500" />;
+  switch (type) {
+    case "deploy":
+      return <GitBranch className="h-4 w-4 text-blue-500" />;
+    case "test":
+      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+    case "release":
+      return <Sparkles className="h-4 w-4 text-purple-500" />;
+    case "rollback":
+      return <AlertTriangle className="h-4 w-4 text-orange-500" />;
+    default:
+      return <Activity className="h-4 w-4 text-muted-foreground" />;
+  }
+}
 
 export default function DeploymentDetails() {
-  const { id } = useParams();
   const navigate = useNavigate();
-  const deployments = useAppSelector(state => state.deployments.deployments);
-  const events = useAppSelector(state => state.deployments.events);
   const { toast } = useToast();
-  
-  // Find deployment from Redux store
-  const deployment = deployments.find(dep => dep.id === id);
-  const deploymentEvents = events.filter(event => event.deploymentId === id);
-  
-  // Handle case where deployment is not found
-  if (!deployment) {
+  const { isDark } = useTheme();
+  const isAuthenticated = useSelector((s: RootState) => selectIsAuthenticated(s));
+  const { selectedClient } = useReduxData();
+
+  const { id } = useParams<{ id: string }>();
+  const [deployment, setDeployment] = useState<Deployment | null>(null);
+  const [events, setEvents] = useState<DeploymentEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingEvents, setLoadingEvents] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+
+  // Auth guard
+  useEffect(() => {
+    if (!isAuthenticated) navigate("/login", { replace: true });
+  }, [isAuthenticated, navigate]);
+
+  const idOrPrn = useMemo(() => id ?? "", [id]);
+  const clientSlug = useMemo(() => (typeof selectedClient === "string" ? selectedClient : null), [selectedClient]);
+
+  const detailsUrl = useMemo(() => {
+    if (!idOrPrn) return null;
+    const base = buildApiUrl(`${API_CONFIG.ENDPOINTS.API.DEPLOYMENTS}/${encodeURIComponent(idOrPrn)}`);
+    return clientSlug ? `${base}?client=${encodeURIComponent(clientSlug)}` : base;
+  }, [idOrPrn, clientSlug]);
+
+  const eventsUrl = useMemo(() => {
+    if (!idOrPrn) return null;
+    const base = buildApiUrl(`${API_CONFIG.ENDPOINTS.API.DEPLOYMENTS}/${encodeURIComponent(idOrPrn)}/events`);
+    return clientSlug ? `${base}?client=${encodeURIComponent(clientSlug)}` : base;
+  }, [idOrPrn, clientSlug]);
+
+  const fetchDetails = useCallback(async () => {
+    if (!detailsUrl) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(detailsUrl, {
+        method: "GET",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        let msg = `Failed to load deployment (HTTP ${res.status})`;
+        try {
+          const j = await res.json();
+          msg = j?.message || msg;
+        } catch {
+          // ignore
+        }
+        throw new Error(msg);
+      }
+      const json = (await res.json()) as ApiResponse<Deployment>;
+      const item = toArray(json.data)[0] || null;
+      setDeployment(item);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+      setDeployment(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [detailsUrl]);
+
+  const fetchEvents = useCallback(async () => {
+    if (!eventsUrl) return;
+    setLoadingEvents(true);
+    try {
+      const res = await fetch(eventsUrl, {
+        method: "GET",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        // Events are optional; show toast but don’t block page
+        try {
+          const j = await res.json();
+          toast({
+            title: "Could not load events",
+            description: j?.message || `HTTP ${res.status}`,
+            variant: "destructive",
+          });
+        } catch {
+          // ignore
+        }
+        setEvents([]);
+        return;
+      }
+      const json = (await res.json()) as ApiResponse<DeploymentEvent>;
+      setEvents(toArray(json.data));
+    } catch {
+      setEvents([]);
+    } finally {
+      setLoadingEvents(false);
+    }
+  }, [eventsUrl, toast]);
+
+  useEffect(() => {
+    if (!idOrPrn || !isAuthenticated) return;
+    fetchDetails();
+    fetchEvents();
+  }, [idOrPrn, isAuthenticated, fetchDetails, fetchEvents]);
+
+  const canPromote = deployment?.status === "not-released";
+  const promoteUrl = useMemo(() => {
+    if (!idOrPrn) return null;
+    const base = buildApiUrl(`${API_CONFIG.ENDPOINTS.API.DEPLOYMENTS}/${encodeURIComponent(idOrPrn)}/release`);
+    return clientSlug ? `${base}?client=${encodeURIComponent(clientSlug)}` : base;
+  }, [idOrPrn, clientSlug]);
+
+  const teardownUrl = useMemo(() => {
+    if (!idOrPrn) return null;
+    const base = buildApiUrl(`${API_CONFIG.ENDPOINTS.API.DEPLOYMENTS}/${encodeURIComponent(idOrPrn)}/teardown`);
+    return clientSlug ? `${base}?client=${encodeURIComponent(clientSlug)}` : base;
+  }, [idOrPrn, clientSlug]);
+
+  const handlePromote = async () => {
+    if (!promoteUrl) return;
+    setActionBusy(true);
+    try {
+      const res = await fetch(promoteUrl, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        let msg = `Failed to promote (HTTP ${res.status})`;
+        try {
+          const j = await res.json();
+          msg = j?.message || msg;
+        } catch {
+          // ignore
+        }
+        throw new Error(msg);
+      }
+      toast({ title: "Promotion started", description: "Release is in progress." });
+      await fetchDetails();
+      await fetchEvents();
+    } catch (err) {
+      toast({
+        title: "Promotion failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleTeardown = async () => {
+    if (!teardownUrl) return;
+    setActionBusy(true);
+    try {
+      const res = await fetch(teardownUrl, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        let msg = `Failed to start teardown (HTTP ${res.status})`;
+        try {
+          const j = await res.json();
+          msg = j?.message || msg;
+        } catch {
+          // ignore
+        }
+        throw new Error(msg);
+      }
+      toast({ title: "Teardown started", description: "Tearing down deployment." });
+      await fetchDetails();
+      await fetchEvents();
+    } catch (err) {
+      toast({
+        title: "Teardown failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  if (!isAuthenticated) return null;
+
+  if (loading) {
     return (
       <div className="space-y-6 animate-fade-in">
-        <Card>
-          <CardContent className="p-12 text-center">
-            <h3 className="text-lg font-semibold mb-2">Deployment Not Found</h3>
-            <p className="text-muted-foreground mb-6">The requested deployment could not be found.</p>
-            <Button onClick={() => navigate('/deployments')}>Return to Deployments</Button>
+        <div className="flex items-center justify-between">
+          <Button variant="ghost" size="icon" onClick={() => navigate("/deployments")}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        </div>
+        <Card className="shadow-soft">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <GitBranch className="h-5 w-5 text-primary" />
+              Loading deployment…
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Skeleton className="h-6 w-1/3" />
+            <Skeleton className="h-4 w-2/3" />
+            <Separator />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {[...Array(6)].map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "released":
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
-      case "not-released":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300";
-      case "release-in-progress":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
-      case "teardown-in-progress":
-        return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300";
-      case "failed":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300";
-    }
-  };
+  if (error || !deployment) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex items-center justify-between">
+          <Button variant="ghost" size="icon" onClick={() => navigate("/deployments")}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        </div>
+        <Card className="shadow-soft">
+          <CardContent className="p-12 text-center">
+            <h3 className="text-lg font-semibold mb-2">Deployment Not Found</h3>
+            <p className="text-muted-foreground mb-6">{error || "The requested deployment could not be found."}</p>
+            <Button asChild>
+              <Link to="/deployments">Return to Deployments</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
-  const getEventIcon = (type: string, status: string) => {
-    if (status === 'failed') return <XCircle className="h-4 w-4 text-red-500" />;
-    if (status === 'pending') return <Clock className="h-4 w-4 text-yellow-500" />;
-    
-    switch (type) {
-      case 'deploy': return <GitBranch className="h-4 w-4 text-blue-500" />;
-      case 'test': return <CheckCircle className="h-4 w-4 text-green-500" />;
-      case 'release': return <Activity className="h-4 w-4 text-purple-500" />;
-      case 'rollback': return <AlertTriangle className="h-4 w-4 text-orange-500" />;
-      case 'error': return <XCircle className="h-4 w-4 text-red-500" />;
-      default: return <Activity className="h-4 w-4 text-gray-500" />;
-    }
-  };
-
-  const formatTimestamp = (timestamp: string) => {
-    return new Date(timestamp).toLocaleString();
-  };
-
-  const handleTeardownDeployment = () => {
-    toast({
-      title: "Teardown initiated",
-      description: "The deployment teardown process has been started.",
-    });
-  };
-
-  const handlePromoteToRelease = () => {
-    toast({
-      title: "Promoting to release",
-      description: "The deployment is being promoted to release status.",
-    });
-  };
+  const title = deployment.prn || deployment.id;
+  const subtitle = [deployment.application, deployment.portfolio].filter(Boolean).join(" • ");
 
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/deployments")}
-          >
+          <Button variant="ghost" size="icon" onClick={() => navigate("/deployments")} aria-label="Back to Deployments">
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Deployment Details</h1>
-            <p className="text-muted-foreground">View deployment information and event logs</p>
+            <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
+              <GitBranch className="h-7 w-7 text-primary" />
+              {title}
+              <Badge variant={statusVariant(deployment.status)} className="ml-2 gap-1">
+                {statusIcon(deployment.status)}
+                <span className="capitalize">{(deployment.status || "unknown").replace(/-/g, " ")}</span>
+              </Badge>
+            </h1>
+            <p className="text-muted-foreground">{subtitle || "Deployment details and event logs"}</p>
           </div>
         </div>
-        
-        <div className="flex gap-2">
+
+        <div className="flex items-center gap-2">
+          {canPromote && (
+            <Button onClick={handlePromote} disabled={actionBusy} className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              Promote to Release
+            </Button>
+          )}
+
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="destructive">
+              <Button variant="destructive" disabled={actionBusy} className="gap-2">
+                <AlertTriangle className="h-4 w-4" />
                 Teardown Deployment
               </Button>
             </AlertDialogTrigger>
@@ -123,27 +409,25 @@ export default function DeploymentDetails() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Teardown Deployment</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Are you sure you want to teardown this deployment? This action will stop all running services and cannot be undone.
+                  Are you sure you want to teardown this deployment? This will stop all running services and cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleTeardownDeployment} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                <AlertDialogAction
+                  onClick={handleTeardown}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
                   Teardown
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          
-          {deployment.status === 'not-released' && (
-            <Button onClick={handlePromoteToRelease} variant="default">
-              Promote to Release
-            </Button>
-          )}
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
+        {/* Left: Details and Events */}
         <div className="lg:col-span-2 space-y-6">
           {/* Deployment Information */}
           <Card className="shadow-soft">
@@ -152,64 +436,48 @@ export default function DeploymentDetails() {
                 <GitBranch className="h-5 w-5 text-primary" />
                 Deployment Information
               </CardTitle>
+              <CardDescription>Core attributes and metadata</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-start justify-between">
-                <div className="space-y-2">
-                  <h2 className="text-2xl font-bold text-foreground">{deployment.prn}</h2>
-                  <div className="flex items-center gap-2">
-                    <Badge className={getStatusColor(deployment.status)} variant="secondary">
-                      {deployment.status.replace('-', ' ')}
-                    </Badge>
-                    <span className="text-sm text-muted-foreground">
-                      {deployment.environment}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <p className="text-foreground">{deployment.description}</p>
-
+              {deployment.description && <p className="text-foreground">{deployment.description}</p>}
               <Separator />
-
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground">Application ID</h4>
-                  <p className="text-sm">{deployment.applicationId}</p>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground">Tag</h4>
-                  <p className="text-sm font-mono">{deployment.tag}</p>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground">Region</h4>
-                  <p className="text-sm">{deployment.region}</p>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground">Branch</h4>
-                  <p className="text-sm font-mono">{deployment.branch}</p>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground">Build</h4>
-                  <p className="text-sm font-mono">{deployment.build}</p>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground">Deployed By</h4>
-                  <p className="text-sm">{deployment.deployedBy}</p>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground">Deployed At</h4>
-                  <p className="text-sm">{formatTimestamp(deployment.deployedAt)}</p>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground">Last Activity</h4>
-                  <p className="text-sm">{deployment.lastActivity || 'N/A'}</p>
-                </div>
+                <Info label="Client" value={deployment.client || "—"} />
+                <Info label="Application" value={deployment.application || "—"} />
+                <Info label="Portfolio" value={deployment.portfolio || "—"} />
+                <Info
+                  label="Environment"
+                  value={
+                    deployment.environment ? (
+                      <Badge variant={deployment.environment === "production" ? "destructive" : "secondary"} className="gap-1">
+                        <Globe className="h-3 w-3" />
+                        {deployment.environment}
+                      </Badge>
+                    ) : (
+                      "—"
+                    )
+                  }
+                />
+                <Info label="Region" value={deployment.region || "—"} />
+                <Info
+                  label="Tag"
+                  value={
+                    deployment.tag ? (
+                      <Badge variant="outline" className="gap-1">
+                        <TagIcon className="h-3 w-3" />
+                        {deployment.tag}
+                      </Badge>
+                    ) : (
+                      "—"
+                    )
+                  }
+                />
+                <Info label="Branch" value={deployment.branch || "—"} mono />
+                <Info label="Build" value={deployment.build || "—"} mono />
+                <Info label="Deployed By" value={deployment.deployed_by || "—"} />
+                <Info label="Created" value={formatDateTime(deployment.created_at)} />
+                <Info label="Deployed At" value={formatDateTime(deployment.deployed_at)} />
+                <Info label="Last Activity" value={formatDateTime(deployment.last_activity)} />
               </div>
             </CardContent>
           </Card>
@@ -221,94 +489,104 @@ export default function DeploymentDetails() {
                 <Activity className="h-5 w-5 text-primary" />
                 Event Log
               </CardTitle>
+              <CardDescription>Build, test, release, and lifecycle events</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {deploymentEvents.length > 0 ? (
-                  deploymentEvents.map((event) => (
-                    <div key={event.id} className="flex items-start gap-3 p-3 border rounded-lg">
-                      {getEventIcon(event.type, event.status)}
+              {loadingEvents ? (
+                <div className="space-y-3">
+                  {[...Array(5)].map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : events.length > 0 ? (
+                <div className="space-y-3">
+                  {events.map((evt) => (
+                    <div key={evt.id} className="flex items-start gap-3 p-3 border rounded-lg bg-card/60">
+                      {eventIcon(evt.type, evt.status)}
                       <div className="flex-1 space-y-1">
                         <div className="flex items-center justify-between">
-                          <p className="text-sm font-medium text-foreground">
-                            {event.message}
-                          </p>
+                          <p className="text-sm font-medium text-foreground">{evt.message}</p>
                           <Badge variant="outline" className="text-xs">
-                            {event.type}
+                            {evt.type}
                           </Badge>
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          {formatTimestamp(event.timestamp)}
-                        </p>
+                        <p className="text-xs text-muted-foreground">{formatDateTime(evt.timestamp)}</p>
                       </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8">
-                    <Activity className="mx-auto h-12 w-12 text-muted-foreground" />
-                    <h3 className="mt-2 text-sm font-medium text-foreground">No Events</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      No deployment events have been logged yet.
-                    </p>
-                  </div>
-                )}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-10">
+                  <Activity className="mx-auto h-10 w-10 text-muted-foreground" />
+                  <h3 className="mt-2 text-sm font-medium text-foreground">No Events</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">No deployment events have been logged yet.</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Sidebar */}
+        {/* Right: Quick Actions and Summary */}
         <div className="space-y-6">
           <Card className="shadow-soft">
             <CardHeader>
               <CardTitle>Quick Actions</CardTitle>
+              <CardDescription>Navigate and troubleshoot</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start">
-                <Activity className="mr-2 h-4 w-4" />
-                View Application
+              <Button asChild variant={isDark ? "secondary" : "outline"} className="w-full justify-start gap-2">
+                <Link to="/applications">
+                  <Activity className="h-4 w-4" />
+                  View Application
+                </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start">
-                <GitBranch className="mr-2 h-4 w-4" />
-                View All Deployments
+              <Button asChild variant={isDark ? "secondary" : "outline"} className="w-full justify-start gap-2">
+                <Link to="/deployments">
+                  <GitBranch className="h-4 w-4" />
+                  View All Deployments
+                </Link>
               </Button>
-              <Button variant="outline" className="w-full justify-start">
-                <AlertTriangle className="mr-2 h-4 w-4" />
-                View Logs
+              <Button variant={isDark ? "secondary" : "outline"} className="w-full justify-start gap-2" onClick={fetchEvents}>
+                <RefreshCcw className="h-4 w-4" />
+                Refresh Events
               </Button>
             </CardContent>
           </Card>
 
           <Card className="shadow-soft">
             <CardHeader>
-              <CardTitle>Deployment Timeline</CardTitle>
+              <CardTitle>Deployment Snapshot</CardTitle>
+              <CardDescription>At-a-glance stats</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {deploymentEvents.slice(0, 3).map((event, index) => (
-                  <div key={event.id} className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full ${
-                      event.status === 'success' ? 'bg-green-500' :
-                      event.status === 'failed' ? 'bg-red-500' : 'bg-yellow-500'
-                    }`} />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{event.type}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatTimestamp(event.timestamp)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {deploymentEvents.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No timeline events
-                  </p>
-                )}
+              <div className="grid grid-cols-2 gap-4">
+                <Stat label="Status" value={(deployment.status || "unknown").replace(/-/g, " ")} />
+                <Stat label="Environment" value={deployment.environment || "—"} />
+                <Stat label="Region" value={deployment.region || "—"} />
+                <Stat label="Events" value={String(events.length)} />
               </div>
             </CardContent>
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Info({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  return (
+    <div>
+      <div className="text-sm font-medium text-muted-foreground">{label}</div>
+      <div className={`text-sm ${mono ? "font-mono" : ""}`}>{value}</div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border p-3 bg-card/60">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-lg font-semibold">{value}</div>
     </div>
   );
 }

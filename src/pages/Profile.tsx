@@ -1,374 +1,336 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useAppDispatch, useAppSelector } from "@/store";
+import {
+  selectUser,
+  selectIsAuthenticated,
+  selectIsLoading,
+  selectAuthError,
+} from "@/store/slices/authSlice";
 import { useNavigate } from "react-router-dom";
-import { User, Save, Edit, Camera, Briefcase, Calendar, Building2, Palette, ChevronDown } from "lucide-react";
+import { User as UserIcon, Save, Edit, Camera, Calendar, Building2, Palette } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useAppSelector, useAppDispatch } from "@/store";
-import { 
-  selectUser, 
-  selectUserProfiles, 
-  selectCurrentProfile, 
-  fetchUserProfile,
-  switchToProfile
-} from "@/store/slices/profileSlice";
-import { useReduxData } from "@/hooks/useReduxData";
-import { ThemeSelector } from "@/components/ThemeSelector";
+import ThemeSelector from "@/components/ThemeSelector";
 import { useTheme } from "@/hooks/useTheme";
+import { useToast } from "@/hooks/use-toast";
+import { buildApiUrl, getAuthHeaders, API_CONFIG } from "@/lib/api-config";
+
+// Form model (supports both legacy and auth-types fields)
+type EditableProfile = {
+  display_name: string;
+  name: string; // kept in sync with display_name for auth-types
+  email: string;
+  first_name: string;
+  last_name: string;
+  profile_description: string;
+  timezone: string;
+  language: string;
+  preferred_region: string;
+  avatar_url: string;
+};
 
 export default function Profile() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const { selectedClient, portfolios } = useReduxData();
-  const { theme, themeConfig } = useTheme();
-  
-  // Get Redux profile data
-  const user = useAppSelector(selectUser);
-  const userProfiles = useAppSelector(selectUserProfiles);
-  const currentProfile = useAppSelector(selectCurrentProfile);
-  
-  // Local state for editing
-  const [isEditing, setIsEditing] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [editData, setEditData] = useState({
-    display_name: '',
-    email: '',
-    first_name: '',
-    last_name: '',
-    profile_description: '',
-    timezone: '',
-    language: '',
-    preferred_region: '',
-    avatar_url: '',
-  });
+  const { toast } = useToast();
+  const { isDark } = useTheme();
 
-  // Initialize edit data when user data changes
+  const user = useAppSelector(selectUser);
+  const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const isLoading = useAppSelector(selectIsLoading);
+  const authError = useAppSelector(selectAuthError);
+
+  // Redirect unauthenticated users
   useEffect(() => {
-    if (user) {
-      setEditData({
-        display_name: user.display_name || '',
-        email: user.email || '',
-        first_name: user.first_name || '',
-        last_name: user.last_name || '',
-        profile_description: user.profile_description || '',
-        timezone: user.timezone || 'UTC',
-        language: user.language || 'en-US',
-        preferred_region: user.preferred_region || 'us-east-1',
-        avatar_url: user.avatar_url || '',
-      });
-    }
+    if (!isLoading && !isAuthenticated) navigate("/login");
+  }, [isLoading, isAuthenticated, navigate]);
+
+  // Build initial form state from user (auth-types vs extended)
+  const initialForm: EditableProfile = useMemo(() => {
+    const u: any = user || {};
+    // Map auth-types name -> display_name if needed
+    const displayName = u.display_name || u.name || "";
+    return {
+      display_name: displayName,
+      name: displayName,
+      email: u.email || "",
+      first_name: u.first_name || "",
+      last_name: u.last_name || "",
+      profile_description: u.profile_description || "",
+      timezone: u.timezone || "UTC",
+      language: u.language || "en-US",
+      preferred_region: u.preferred_region || "us-east-1",
+      avatar_url: u.avatar_url || u.avatar || "",
+    };
   }, [user]);
 
-  const userPortfolios = selectedClient ? portfolios.filter(p => p.clientId === selectedClient.id) : [];
+  const [editData, setEditData] = useState<EditableProfile>(initialForm);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = async () => {
-    setIsLoading(true);
-    
+  // Keep form in sync when user changes (e.g., after login)
+  useEffect(() => {
+    setEditData(initialForm);
+  }, [initialForm]);
+
+  // Helpers
+  const fullName = useMemo(() => {
+    if (editData.display_name) return editData.display_name;
+    const first = editData.first_name?.trim();
+    const last = editData.last_name?.trim();
+    return [first, last].filter(Boolean).join(" ") || "Unknown User";
+  }, [editData.display_name, editData.first_name, editData.last_name]);
+
+  const initials = useMemo(() => {
+    if (editData.display_name) {
+      return editData.display_name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase();
+    }
+    const f = (editData.first_name || "").charAt(0);
+    const l = (editData.last_name || "").charAt(0);
+    return `${f}${l}`.toUpperCase() || "U";
+  }, [editData.display_name, editData.first_name, editData.last_name]);
+
+  const formatDate = (v?: string) => {
+    if (!v) return "—";
     try {
-      // TODO: Implement profile update API call
-      // const result = await authAPI.updateProfile(editData);
-      // if (result.error) {
-      //   setError(result.error);
-      //   return;
-      // }
-      
-      // For now, just simulate the save
-      setTimeout(() => {
-        setIsLoading(false);
-        setIsEditing(false);
-        // TODO: Update Redux state with new profile data
-      }, 1000);
-    } catch (error) {
-      console.error('Save profile failed:', error);
-      setIsLoading(false);
+      const d = new Date(v);
+      return isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
+    } catch {
+      return "—";
     }
   };
 
-  const handleInputChange = (field: string, value: string) => {
-    setEditData(prev => ({ ...prev, [field]: value }));
+  // Compute JSON patch (only changed fields)
+  const toPatch = (current: EditableProfile, original: EditableProfile) => {
+    const diff: Record<string, any> = {};
+    (Object.keys(current) as (keyof EditableProfile)[]).forEach((k) => {
+      if (current[k] !== original[k]) {
+        diff[k] = current[k];
+      }
+    });
+    // Keep auth-types "name" and extended "display_name" consistent
+    if ("display_name" in diff && !("name" in diff)) diff.name = diff.display_name;
+    if ("name" in diff && !("display_name" in diff)) diff.display_name = diff.name;
+    return diff;
   };
 
-  const handleProfileSwitch = (profileName: string) => {
-    // Switch to cached profile immediately (no API call needed)
-    dispatch(switchToProfile({ 
-      profileName: profileName,
-      context: 'auth'
-    }));
-  };
+  // Save handler: PATCH /auth/v1/me
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const payload = toPatch(editData, initialForm);
+      if (Object.keys(payload).length === 0) {
+        setEditing(false);
+        setSaving(false);
+        return;
+      }
 
-  // Format full name from first/last name
-  const getFullName = () => {
-    if (!user) return 'Unknown User';
-    if (user.display_name) return user.display_name;
-    
-    const firstName = user.first_name || '';
-    const lastName = user.last_name || '';
-    return `${firstName} ${lastName}`.trim() || 'Unknown User';
-  };
+      const res = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.ME), {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload),
+      });
 
-  // Get user initials for avatar
-  const getUserInitials = () => {
-    if (!user) return 'U';
-    if (user.display_name) {
-      return user.display_name.split(' ').map(n => n[0]).join('').toUpperCase();
+      if (!res.ok) {
+        let msg = "Failed to save profile";
+        try {
+          const data = await res.json();
+          msg = data?.message || data?.error || msg;
+        } catch {
+          // ignore parse errors
+        }
+        toast({ title: "Save failed", description: msg, variant: "destructive" });
+        setSaving(false);
+        return;
+      }
+
+      // Optional: attempt to read updated profile (no slice setter in authSlice)
+      // We optimistically keep editData as the source of truth in view mode.
+      toast({ title: "Profile updated", description: "Your settings were saved." });
+      setEditing(false);
+    } catch (err) {
+      toast({
+        title: "Save error",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
     }
-    
-    const firstName = user.first_name || '';
-    const lastName = user.last_name || '';
-    return `${firstName[0] || ''}${lastName[0] || ''}`.toUpperCase() || 'U';
   };
 
-  // Format date for display
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return 'Not available';
-    return new Date(dateString).toLocaleDateString();
-  };
-
-  // Show loading if no user data
   if (!user) {
+    // Loading state or unauthenticated
     return (
       <div className="flex items-center justify-center min-h-96">
         <div className="text-center">
-          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading profile...</p>
+          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
+          <p className="text-muted-foreground">{isLoading ? "Loading profile..." : "No profile found"}</p>
+          {authError && <p className="text-sm text-destructive mt-2">{authError}</p>}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-fade-in bg-background text-foreground">
-      {/* Page Header */}
+    <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Profile</h1>
           <p className="text-muted-foreground">Manage your account settings and preferences</p>
         </div>
-        
-        <div className="flex items-center gap-4">
-          {/* Profile Selector */}
-          {userProfiles && userProfiles.length > 1 && (
-            <Select 
-              value={currentProfile || user?.profile_name || ''} 
-              onValueChange={handleProfileSwitch}
-            >
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Select profile" />
-              </SelectTrigger>
-              <SelectContent>
-                {userProfiles.map((profile) => (
-                  <SelectItem key={profile.profile_name} value={profile.profile_name}>
-                    {profile.display_name || profile.profile_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          
-          {/* Edit/Save Buttons */}
-          {!isEditing ? (
-            <Button onClick={() => setIsEditing(true)} className="gap-2">
+        <div className="flex gap-2">
+          {!editing ? (
+            <Button onClick={() => setEditing(true)} className="gap-2">
               <Edit className="h-4 w-4" />
               Edit Profile
             </Button>
           ) : (
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setIsEditing(false)}>
+            <>
+              <Button variant="outline" onClick={() => { setEditData(initialForm); setEditing(false); }}>
                 Cancel
               </Button>
-              <Button onClick={handleSave} disabled={isLoading} className="gap-2">
+              <Button onClick={handleSave} disabled={saving} className="gap-2">
                 <Save className="h-4 w-4" />
-                {isLoading ? "Saving..." : "Save Changes"}
+                {saving ? "Saving..." : "Save Changes"}
               </Button>
-            </div>
+            </>
           )}
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
+        {/* Main column */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Profile Information */}
-          <Card className="shadow-medium">
+          {/* Profile info */}
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5 text-primary" />
+                <UserIcon className="h-5 w-5 text-primary" />
                 Personal Information
               </CardTitle>
+              <CardDescription>Update your basic details and preferences</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Avatar Section */}
+              {/* Avatar */}
               <div className="flex items-center gap-4">
                 <Avatar className="h-20 w-20">
-                  <AvatarImage src={user.avatar_url} alt={getFullName()} />
-                  <AvatarFallback className="text-lg">
-                    {getUserInitials()}
-                  </AvatarFallback>
+                  <AvatarImage src={editData.avatar_url} alt={fullName} />
+                  <AvatarFallback className="text-lg">{initials}</AvatarFallback>
                 </Avatar>
-                {isEditing && (
-                  <Button variant="outline" size="sm" className="gap-2">
+                {editing && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => {
+                      // Simple UX: focus input below
+                      const el = document.getElementById("avatar_url");
+                      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      (el as HTMLInputElement | null)?.focus();
+                    }}
+                  >
                     <Camera className="h-4 w-4" />
-                    Change Photo
+                    Change Photo URL
                   </Button>
                 )}
               </div>
 
-              {!isEditing ? (
+              {!editing ? (
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-sm font-medium text-muted-foreground">Display Name</Label>
-                      <p className="mt-1">{user.display_name || 'Not set'}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-muted-foreground">Email</Label>
-                      <p className="mt-1">{user.email || 'Not set'}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-muted-foreground">First Name</Label>
-                      <p className="mt-1">{user.first_name || 'Not set'}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-muted-foreground">Last Name</Label>
-                      <p className="mt-1">{user.last_name || 'Not set'}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-muted-foreground">Timezone</Label>
-                      <p className="mt-1">{user.timezone || 'UTC'}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-muted-foreground">Language</Label>
-                      <p className="mt-1">{user.language || 'en-US'}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-muted-foreground">Preferred Region</Label>
-                      <p className="mt-1">{user.preferred_region || 'us-east-1'}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-muted-foreground">Profile</Label>
-                      <Badge variant="secondary">{user.profile_name || 'default'}</Badge>
-                    </div>
+                    <FieldView label="Display Name" value={editData.display_name || "—"} />
+                    <FieldView label="Email" value={editData.email || "—"} />
+                    <FieldView label="First Name" value={editData.first_name || "—"} />
+                    <FieldView label="Last Name" value={editData.last_name || "—"} />
+                    <FieldView label="Timezone" value={editData.timezone || "UTC"} />
+                    <FieldView label="Language" value={editData.language || "en-US"} />
+                    <FieldView label="Preferred Region" value={editData.preferred_region || "us-east-1"} />
                   </div>
-                  
                   <Separator />
-                  
-                  <div>
-                    <Label className="text-sm font-medium text-muted-foreground">Profile Description</Label>
-                    <p className="mt-1">{user.profile_description || 'No description available'}</p>
-                  </div>
+                  <FieldView label="Profile Description" value={editData.profile_description || "No description"} />
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="display_name">Display Name</Label>
-                      <Input
-                        id="display_name"
-                        value={editData.display_name}
-                        onChange={(e) => handleInputChange('display_name', e.target.value)}
-                        placeholder="How you want your name to appear"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={editData.email}
-                        onChange={(e) => handleInputChange('email', e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="first_name">First Name</Label>
-                      <Input
-                        id="first_name"
-                        value={editData.first_name}
-                        onChange={(e) => handleInputChange('first_name', e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="last_name">Last Name</Label>
-                      <Input
-                        id="last_name"
-                        value={editData.last_name}
-                        onChange={(e) => handleInputChange('last_name', e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="timezone">Timezone</Label>
-                      <Select value={editData.timezone} onValueChange={(value) => handleInputChange('timezone', value)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select timezone" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="UTC">UTC</SelectItem>
-                          <SelectItem value="America/New_York">Eastern Time</SelectItem>
-                          <SelectItem value="America/Chicago">Central Time</SelectItem>
-                          <SelectItem value="America/Denver">Mountain Time</SelectItem>
-                          <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
-                          <SelectItem value="Europe/London">London</SelectItem>
-                          <SelectItem value="Europe/Paris">Paris</SelectItem>
-                          <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="language">Language</Label>
-                      <Select value={editData.language} onValueChange={(value) => handleInputChange('language', value)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select language" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="en-US">English (US)</SelectItem>
-                          <SelectItem value="en-GB">English (UK)</SelectItem>
-                          <SelectItem value="es-ES">Spanish</SelectItem>
-                          <SelectItem value="fr-FR">French</SelectItem>
-                          <SelectItem value="de-DE">German</SelectItem>
-                          <SelectItem value="ja-JP">Japanese</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="preferred_region">Preferred AWS Region</Label>
-                      <Select value={editData.preferred_region} onValueChange={(value) => handleInputChange('preferred_region', value)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select region" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="us-east-1">US East (N. Virginia)</SelectItem>
-                          <SelectItem value="us-east-2">US East (Ohio)</SelectItem>
-                          <SelectItem value="us-west-1">US West (N. California)</SelectItem>
-                          <SelectItem value="us-west-2">US West (Oregon)</SelectItem>
-                          <SelectItem value="eu-west-1">Europe (Ireland)</SelectItem>
-                          <SelectItem value="eu-central-1">Europe (Frankfurt)</SelectItem>
-                          <SelectItem value="ap-southeast-1">Asia Pacific (Singapore)</SelectItem>
-                          <SelectItem value="ap-northeast-1">Asia Pacific (Tokyo)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="avatar_url">Avatar URL</Label>
-                      <Input
-                        id="avatar_url"
-                        value={editData.avatar_url}
-                        onChange={(e) => handleInputChange('avatar_url', e.target.value)}
-                        placeholder="https://example.com/avatar.jpg"
-                      />
-                    </div>
+                    <FieldEdit
+                      id="display_name"
+                      label="Display Name"
+                      value={editData.display_name}
+                      onChange={(v) => setEditData((s) => ({ ...s, display_name: v, name: v }))}
+                      placeholder="How your name appears"
+                    />
+                    <FieldEdit
+                      id="email"
+                      label="Email"
+                      type="email"
+                      value={editData.email}
+                      onChange={(v) => setEditData((s) => ({ ...s, email: v }))}
+                      placeholder="you@company.com"
+                    />
+                    <FieldEdit
+                      id="first_name"
+                      label="First Name"
+                      value={editData.first_name}
+                      onChange={(v) => setEditData((s) => ({ ...s, first_name: v }))}
+                    />
+                    <FieldEdit
+                      id="last_name"
+                      label="Last Name"
+                      value={editData.last_name}
+                      onChange={(v) => setEditData((s) => ({ ...s, last_name: v }))}
+                    />
+                    <FieldEdit
+                      id="timezone"
+                      label="Timezone"
+                      value={editData.timezone}
+                      onChange={(v) => setEditData((s) => ({ ...s, timezone: v }))}
+                      placeholder="UTC, America/New_York, ..."
+                    />
+                    <FieldEdit
+                      id="language"
+                      label="Language"
+                      value={editData.language}
+                      onChange={(v) => setEditData((s) => ({ ...s, language: v }))}
+                      placeholder="en-US, en-GB, ..."
+                    />
+                    <FieldEdit
+                      id="preferred_region"
+                      label="Preferred Region"
+                      value={editData.preferred_region}
+                      onChange={(v) => setEditData((s) => ({ ...s, preferred_region: v }))}
+                      placeholder="us-east-1"
+                    />
+                    <FieldEdit
+                      id="avatar_url"
+                      label="Avatar URL"
+                      value={editData.avatar_url}
+                      onChange={(v) => setEditData((s) => ({ ...s, avatar_url: v }))}
+                      placeholder="https://example.com/avatar.jpg"
+                    />
                   </div>
-                  
                   <div className="space-y-2">
                     <Label htmlFor="profile_description">Profile Description</Label>
                     <Textarea
                       id="profile_description"
-                      value={editData.profile_description}
-                      onChange={(e) => handleInputChange('profile_description', e.target.value)}
                       rows={3}
+                      value={editData.profile_description}
+                      onChange={(e) =>
+                        setEditData((s) => ({ ...s, profile_description: e.target.value }))
+                      }
                       placeholder="Describe your role or this profile's purpose"
                     />
                   </div>
@@ -377,140 +339,112 @@ export default function Profile() {
             </CardContent>
           </Card>
 
-          {/* Theme Settings */}
-          <Card className="shadow-medium">
+          {/* Theme settings */}
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Palette className="h-5 w-5 text-primary" />
                 Theme Settings
               </CardTitle>
+              <CardDescription>
+                Choose a theme. Your saved profile theme takes precedence, otherwise the system theme is used.
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <ThemeSelector />
+              <ThemeSelector variant="panel" />
             </CardContent>
           </Card>
         </div>
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Account Stats */}
-          <Card className="shadow-medium">
+          <Card>
             <CardHeader>
               <CardTitle>Account Info</CardTitle>
+              <CardDescription>Metadata and usage</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <Row label="Created" icon={<Calendar className="h-4 w-4 text-muted-foreground" />}>
+                {formatDate((user as any)?.created_at)}
+              </Row>
+              <Row label="Last Login" icon={<Calendar className="h-4 w-4 text-muted-foreground" />}>
+                {formatDate((user as any)?.last_login)}
+              </Row>
+              <Row label="AWS Account" icon={<Building2 className="h-4 w-4 text-muted-foreground" />}>
+                {(user as any)?.aws_account_id || "—"}
+              </Row>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">Created</span>
-                </div>
-                <span className="text-sm font-medium">{formatDate(user.created_at)}</span>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">Last Login</span>
-                </div>
-                <span className="text-sm font-medium">{formatDate(user.last_login)}</span>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">AWS Account</span>
-                </div>
-                <span className="text-sm font-medium">{user.aws_account_id || 'Not set'}</span>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Briefcase className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">Portfolios</span>
-                </div>
-                <span className="text-sm font-medium">{userPortfolios.length}</span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <User className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">Sessions</span>
-                </div>
-                <span className="text-sm font-medium">{user.session_count || 0}</span>
-              </div>
-
-              {/* Current Profile Indicator */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <User className="h-4 w-4 text-muted-foreground" />
+                  <UserIcon className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm">Current Profile</span>
                 </div>
-                <Badge variant={user.is_active ? "default" : "secondary"} className="text-xs">
-                  {currentProfile || user.profile_name}
+                <Badge variant="secondary" className="text-xs">
+                  {(user as any)?.profile_name || "default"}
                 </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* AWS Information */}
-          {user.aws_user_arn && (
-            <Card className="shadow-medium">
-              <CardHeader>
-                <CardTitle>AWS Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <Label className="text-xs font-medium text-muted-foreground">User ARN</Label>
-                  <p className="text-xs font-mono break-all">{user.aws_user_arn}</p>
-                </div>
-                
-                {user.access_key_prefix && (
-                  <div>
-                    <Label className="text-xs font-medium text-muted-foreground">Access Key</Label>
-                    <p className="text-xs font-mono">{user.access_key_prefix}********</p>
-                  </div>
-                )}
-                
-                <div>
-                  <Label className="text-xs font-medium text-muted-foreground">Preferred Region</Label>
-                  <p className="text-xs">{user.preferred_region || 'us-east-1'}</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Recent Portfolios */}
-          <Card className="shadow-medium">
-            <CardHeader>
-              <CardTitle>Your Portfolios</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {userPortfolios.slice(0, 3).map((portfolio) => (
-                  <div 
-                    key={portfolio.id} 
-                    className="flex items-center justify-between p-3 border border-border rounded-lg hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
-                    onClick={() => navigate(`/portfolios/${portfolio.id}`)}
-                  >
-                    <div>
-                      <p className="font-medium">{portfolio.name}</p>
-                      <p className="text-xs text-muted-foreground">{portfolio.code}</p>
-                    </div>
-                    <Badge variant="secondary" className="text-xs">
-                      {portfolio.status}
-                    </Badge>
-                  </div>
-                ))}
-                {userPortfolios.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No portfolios available
-                  </p>
-                )}
               </div>
             </CardContent>
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* Small presentational helpers */
+function FieldView({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <Label className="text-sm font-medium text-muted-foreground">{label}</Label>
+      <p className="mt-1 text-sm">{value || "—"}</p>
+    </div>
+  );
+}
+
+function FieldEdit({
+  id,
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
+function Row({
+  label,
+  children,
+  icon,
+}: {
+  label: string;
+  children: React.ReactNode;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        {icon}
+        <span className="text-sm">{label}</span>
+      </div>
+      <span className="text-sm font-medium">{children}</span>
     </div>
   );
 }

@@ -1,174 +1,108 @@
-import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
-
-export interface Zone {
-  id: string;
-  clientId: string;
-  name: string;
-  organizationalUnit: string;
-  orgId: string;
-  awsAccountId: string;
-  accountName: string;
-  environment: string;
-  namespace?: string;
-  kmsKeys: string[];
-  vpcAliases: string[];
-  subnetAliases: string[];
-  tags: Record<string, string>;
-}
+import {
+  createSlice,
+  type PayloadAction,
+  createAsyncThunk,
+  createSelector,
+} from '@reduxjs/toolkit';
+import type { RootState } from '@/store';
+import type { Zone, AccountFacts, RegionFacts } from '@/store/types';
 
 interface ZonesState {
   zones: Zone[];
-  selectedZoneId: string | null;
+  selectedKey: { client: string; zone: string } | null; // composite key selection
+  searchKeywords: string;
   loading: boolean;
   error: string | null;
 }
 
+// Prefer env var, fallback to /api
+const API_BASE = (import.meta as any)?.env?.VITE_API_BASE_URL || '/api';
+
+// ---------- CRUD Thunks (adjust endpoints to match your backend) ----------
+export const fetchZones = createAsyncThunk<
+  Zone[],
+  { client?: string } | void,
+  { rejectValue: string }
+>('zones/fetchZones', async (args, { rejectWithValue }) => {
+  try {
+    const q = args && args.client ? `?client=${encodeURIComponent(args.client)}` : '';
+    const res = await fetch(`${API_BASE}/zones${q}`, {
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return (await res.json()) as Zone[];
+  } catch (err: any) {
+    return rejectWithValue(err.message ?? 'Failed to fetch zones');
+  }
+});
+
+export const createZone = createAsyncThunk<Zone, Zone, { rejectValue: string }>(
+  'zones/createZone',
+  async (zone, { rejectWithValue }) => {
+    try {
+      const res = await fetch(`${API_BASE}/zones`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(zone),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as Zone;
+    } catch (err: any) {
+      return rejectWithValue(err.message ?? 'Failed to create zone');
+    }
+  }
+);
+
+export const updateZoneRemote = createAsyncThunk<Zone, Zone, { rejectValue: string }>(
+  'zones/updateZoneRemote',
+  async (zone, { rejectWithValue }) => {
+    try {
+      const res = await fetch(
+        `${API_BASE}/zones/${encodeURIComponent(zone.client)}/${encodeURIComponent(zone.zone)}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(zone),
+        }
+      );
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as Zone;
+    } catch (err: any) {
+      return rejectWithValue(err.message ?? 'Failed to update zone');
+    }
+  }
+);
+
+export const deleteZoneRemote = createAsyncThunk<
+  { client: string; zone: string },
+  { client: string; zone: string },
+  { rejectValue: string }
+>('zones/deleteZoneRemote', async ({ client, zone }, { rejectWithValue }) => {
+  try {
+    const res = await fetch(
+      `${API_BASE}/zones/${encodeURIComponent(client)}/${encodeURIComponent(zone)}`,
+      { method: 'DELETE', credentials: 'include' }
+    );
+    if (!res.ok) throw new Error(await res.text());
+    return { client, zone };
+  } catch (err: any) {
+    return rejectWithValue(err.message ?? 'Failed to delete zone');
+  }
+});
+
+// ---------- State ----------
 const initialState: ZonesState = {
-  zones: [
-    // Acme Corporation zones
-    {
-      id: 'zone-1',
-      clientId: 'client-1',
-      name: 'Acme Production',
-      organizationalUnit: 'Engineering',
-      orgId: 'org-12345',
-      awsAccountId: '123456789012',
-      accountName: 'acme-production',
-      environment: 'production',
-      namespace: 'acme-prod',
-      kmsKeys: ['arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012'],
-      vpcAliases: ['prod-vpc', 'backup-vpc'],
-      subnetAliases: ['prod-private-1a', 'prod-private-1b', 'prod-public-1a'],
-      tags: { 'Environment': 'production', 'Team': 'platform', 'Client': 'acme' },
-    },
-    {
-      id: 'zone-2',
-      clientId: 'client-1',
-      name: 'Acme Testing',
-      organizationalUnit: 'Engineering',
-      orgId: 'org-12345',
-      awsAccountId: '123456789013',
-      accountName: 'acme-testing',
-      environment: 'testing',
-      namespace: 'acme-test',
-      kmsKeys: ['arn:aws:kms:us-east-1:123456789013:key/87654321-4321-4321-4321-210987654321'],
-      vpcAliases: ['test-vpc'],
-      subnetAliases: ['test-private-1a', 'test-private-1b'],
-      tags: { 'Environment': 'testing', 'Team': 'platform', 'Client': 'acme' },
-    },
-    {
-      id: 'zone-3',
-      clientId: 'client-1',
-      name: 'Acme Development',
-      organizationalUnit: 'Engineering',
-      orgId: 'org-12345',
-      awsAccountId: '123456789014',
-      accountName: 'acme-development',
-      environment: 'development',
-      namespace: 'acme-dev',
-      kmsKeys: ['arn:aws:kms:us-east-1:123456789014:key/11111111-1111-1111-1111-111111111111'],
-      vpcAliases: ['dev-vpc'],
-      subnetAliases: ['dev-private-1a', 'dev-public-1a'],
-      tags: { 'Environment': 'development', 'Team': 'platform', 'Client': 'acme' },
-    },
-    // Global Tech Solutions zones
-    {
-      id: 'zone-4',
-      clientId: 'client-2',
-      name: 'GlobalTech Production',
-      organizationalUnit: 'Operations',
-      orgId: 'org-67890',
-      awsAccountId: '234567890123',
-      accountName: 'globaltech-production',
-      environment: 'production',
-      namespace: 'gt-prod',
-      kmsKeys: ['arn:aws:kms:us-west-2:234567890123:key/abcdefgh-abcd-abcd-abcd-abcdefghijkl'],
-      vpcAliases: ['gt-prod-vpc'],
-      subnetAliases: ['gt-prod-private-2a', 'gt-prod-private-2b', 'gt-prod-public-2a'],
-      tags: { 'Environment': 'production', 'Team': 'ops', 'Client': 'globaltech' },
-    },
-    {
-      id: 'zone-5',
-      clientId: 'client-2',
-      name: 'GlobalTech Testing',
-      organizationalUnit: 'Operations',
-      orgId: 'org-67890',
-      awsAccountId: '234567890124',
-      accountName: 'globaltech-testing',
-      environment: 'testing',
-      namespace: 'gt-test',
-      kmsKeys: ['arn:aws:kms:us-west-2:234567890124:key/22222222-2222-2222-2222-222222222222'],
-      vpcAliases: ['gt-test-vpc'],
-      subnetAliases: ['gt-test-private-2a', 'gt-test-private-2b'],
-      tags: { 'Environment': 'testing', 'Team': 'ops', 'Client': 'globaltech' },
-    },
-    {
-      id: 'zone-6',
-      clientId: 'client-2',
-      name: 'GlobalTech Development',
-      organizationalUnit: 'Operations',
-      orgId: 'org-67890',
-      awsAccountId: '234567890125',
-      accountName: 'globaltech-development',
-      environment: 'development',
-      namespace: 'gt-dev',
-      kmsKeys: ['arn:aws:kms:us-west-2:234567890125:key/33333333-3333-3333-3333-333333333333'],
-      vpcAliases: ['gt-dev-vpc'],
-      subnetAliases: ['gt-dev-private-2a'],
-      tags: { 'Environment': 'development', 'Team': 'ops', 'Client': 'globaltech' },
-    },
-    // Innovation Labs zones
-    {
-      id: 'zone-7',
-      clientId: 'client-3',
-      name: 'InnovationLabs Production',
-      organizationalUnit: 'Research',
-      orgId: 'org-11111',
-      awsAccountId: '345678901234',
-      accountName: 'innovationlabs-production',
-      environment: 'production',
-      namespace: 'il-prod',
-      kmsKeys: ['arn:aws:kms:eu-west-1:345678901234:key/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'],
-      vpcAliases: ['il-prod-vpc'],
-      subnetAliases: ['il-prod-private-1a', 'il-prod-private-1b', 'il-prod-public-1a'],
-      tags: { 'Environment': 'production', 'Team': 'research', 'Client': 'innovationlabs' },
-    },
-    {
-      id: 'zone-8',
-      clientId: 'client-3',
-      name: 'InnovationLabs Testing',
-      organizationalUnit: 'Research',
-      orgId: 'org-11111',
-      awsAccountId: '345678901235',
-      accountName: 'innovationlabs-testing',
-      environment: 'testing',
-      namespace: 'il-test',
-      kmsKeys: ['arn:aws:kms:eu-west-1:345678901235:key/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'],
-      vpcAliases: ['il-test-vpc'],
-      subnetAliases: ['il-test-private-1a', 'il-test-private-1b'],
-      tags: { 'Environment': 'testing', 'Team': 'research', 'Client': 'innovationlabs' },
-    },
-    {
-      id: 'zone-9',
-      clientId: 'client-3',
-      name: 'InnovationLabs Development',
-      organizationalUnit: 'Research',
-      orgId: 'org-11111',
-      awsAccountId: '345678901236',
-      accountName: 'innovationlabs-development',
-      environment: 'development',
-      namespace: 'il-dev',
-      kmsKeys: ['arn:aws:kms:eu-west-1:345678901236:key/cccccccc-cccc-cccc-cccc-cccccccccccc'],
-      vpcAliases: ['il-dev-vpc'],
-      subnetAliases: ['il-dev-private-1a'],
-      tags: { 'Environment': 'development', 'Team': 'research', 'Client': 'innovationlabs' },
-    },
-  ],
-  selectedZoneId: null,
+  zones: [],
+  selectedKey: null,
+  searchKeywords: '',
   loading: false,
   error: null,
 };
 
+// ---------- Slice ----------
 const zonesSlice = createSlice({
   name: 'zones',
   initialState,
@@ -180,23 +114,87 @@ const zonesSlice = createSlice({
       state.zones.push(action.payload);
     },
     updateZone: (state, action: PayloadAction<Zone>) => {
-      const index = state.zones.findIndex(zone => zone.id === action.payload.id);
-      if (index !== -1) {
-        state.zones[index] = action.payload;
-      }
+      const z = action.payload;
+      const idx = state.zones.findIndex(
+        (zone) => zone.client === z.client && zone.zone === z.zone
+      );
+      if (idx !== -1) state.zones[idx] = z;
+      else state.zones.push(z);
     },
-    removeZone: (state, action: PayloadAction<string>) => {
-      state.zones = state.zones.filter(zone => zone.id !== action.payload);
+    removeZone: (state, action: PayloadAction<{ client: string; zone: string }>) => {
+      const { client, zone } = action.payload;
+      state.zones = state.zones.filter((z) => !(z.client === client && z.zone === zone));
     },
-    setSelectedZone: (state, action: PayloadAction<string | null>) => {
-      state.selectedZoneId = action.payload;
+    setSelectedZoneKey: (state, action: PayloadAction<{ client: string; zone: string } | null>) => {
+      state.selectedKey = action.payload;
     },
-    setLoading: (state, action: PayloadAction<boolean>) => {
-      state.loading = action.payload;
+    setSearchKeywords: (state, action: PayloadAction<string>) => {
+      state.searchKeywords = action.payload;
     },
-    setError: (state, action: PayloadAction<string | null>) => {
-      state.error = action.payload;
+    clearError: (state) => {
+      state.error = null;
     },
+  },
+  extraReducers: (builder) => {
+    builder
+      // fetchZones
+      .addCase(fetchZones.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchZones.fulfilled, (state, action) => {
+        state.loading = false;
+        state.zones = action.payload;
+      })
+      .addCase(fetchZones.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload ?? 'Failed to fetch zones';
+      })
+      // createZone
+      .addCase(createZone.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(createZone.fulfilled, (state, action) => {
+        state.loading = false;
+        state.zones.push(action.payload);
+      })
+      .addCase(createZone.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload ?? 'Failed to create zone';
+      })
+      // updateZoneRemote
+      .addCase(updateZoneRemote.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(updateZoneRemote.fulfilled, (state, action) => {
+        state.loading = false;
+        const z = action.payload;
+        const idx = state.zones.findIndex(
+          (zone) => zone.client === z.client && zone.zone === z.zone
+        );
+        if (idx !== -1) state.zones[idx] = z;
+        else state.zones.push(z);
+      })
+      .addCase(updateZoneRemote.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload ?? 'Failed to update zone';
+      })
+      // deleteZoneRemote
+      .addCase(deleteZoneRemote.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(deleteZoneRemote.fulfilled, (state, action) => {
+        state.loading = false;
+        const { client, zone } = action.payload;
+        state.zones = state.zones.filter((z) => !(z.client === client && z.zone === zone));
+      })
+      .addCase(deleteZoneRemote.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload ?? 'Failed to delete zone';
+      });
   },
 });
 
@@ -205,9 +203,100 @@ export const {
   addZone,
   updateZone,
   removeZone,
-  setSelectedZone,
-  setLoading,
-  setError,
+  setSelectedZoneKey,
+  setSearchKeywords,
+  clearError,
 } = zonesSlice.actions;
+
+// ---------- Selectors ----------
+export const selectZonesState = (state: RootState) => state.zones as ZonesState;
+export const selectZones = (state: RootState) => selectZonesState(state).zones;
+export const selectZonesLoading = (state: RootState) => selectZonesState(state).loading;
+export const selectZonesError = (state: RootState) => selectZonesState(state).error;
+export const selectSelectedZoneKey = (state: RootState) => selectZonesState(state).selectedKey;
+export const selectSearchKeywords = (state: RootState) => selectZonesState(state).searchKeywords;
+
+const valueToStrings = (v: unknown): string[] => {
+  if (v == null) return [];
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return [String(v)];
+  if (Array.isArray(v)) return v.flatMap(valueToStrings);
+  if (typeof v === 'object')
+    return Object.entries(v as Record<string, unknown>).flatMap(([k, val]) => [k, ...valueToStrings(val)]);
+  return [];
+};
+
+const zoneSearchCorpus = (z: Zone): string[] => {
+  const corpus: string[] = [];
+  corpus.push(z.client, z.zone);
+
+  const af: AccountFacts | undefined = z.account_facts;
+  if (af) {
+    corpus.push(
+      af.aws_account_id,
+      af.account_name ?? '',
+      af.environment ?? '',
+      af.organizational_unit ?? '',
+      af.resource_namespace ?? '',
+      af.network_name ?? ''
+    );
+    corpus.push(...(af.vpc_aliases ?? []));
+    corpus.push(...(af.subnet_aliases ?? []));
+    corpus.push(...valueToStrings(af.tags));
+    if (af.kms) {
+      corpus.push(af.kms.aws_account_id, af.kms.kms_key ?? '', af.kms.kms_key_arn ?? '');
+      corpus.push(...(af.kms.delegate_aws_account_ids ?? []));
+    }
+  }
+
+  if (z.tags) corpus.push(...valueToStrings(z.tags));
+
+  // Regions
+  const rfacts: Record<string, RegionFacts> = z.region_facts || {};
+  for (const [regionKey, rf] of Object.entries(rfacts)) {
+    corpus.push(regionKey);
+    corpus.push(rf.aws_region);
+    if (rf.proxy_host) corpus.push(String(rf.proxy_host));
+    if (rf.proxy_url) corpus.push(String(rf.proxy_url));
+    if (rf.no_proxy) corpus.push(String(rf.no_proxy));
+    if (rf.name_servers) corpus.push(...rf.name_servers.map(String));
+    if (rf.security_group_aliases)
+      corpus.push(...Object.keys(rf.security_group_aliases), ...Object.values(rf.security_group_aliases));
+    if (rf.security_aliases) {
+      for (const [k, list] of Object.entries(rf.security_aliases)) {
+        corpus.push(k);
+        corpus.push(...list.flatMap((a) => [a.type, a.value, a.description ?? '']));
+      }
+    }
+    if (rf.image_aliases) corpus.push(...Object.keys(rf.image_aliases), ...Object.values(rf.image_aliases));
+    if (rf.tags) corpus.push(...valueToStrings(rf.tags));
+  }
+
+  return corpus
+    .filter(Boolean)
+    .map((s) => String(s).toLowerCase());
+};
+
+const tokenMatch = (z: Zone, token: string): boolean => {
+  const corpus = zoneSearchCorpus(z);
+  return corpus.some((s) => s.includes(token));
+};
+
+// AND-match across all tokens in searchKeywords
+export const selectFilteredZones = createSelector(
+  [selectZones, selectSearchKeywords],
+  (zones, keywords) => {
+    const q = (keywords || '').trim().toLowerCase();
+    if (!q) return zones;
+    const tokens = q.split(/\s+/);
+    return zones.filter((z) => tokens.every((t) => tokenMatch(z, t)));
+  }
+);
+
+// Convenience selectors
+export const makeSelectZonesByClient = (client: string) =>
+  createSelector([selectFilteredZones], (zones) => zones.filter((z) => z.client === client));
+
+export const makeSelectZoneByKey = (client: string, zone: string) =>
+  createSelector([selectZones], (zones) => zones.find((z) => z.client === client && z.zone === zone) || null);
 
 export default zonesSlice.reducer;
