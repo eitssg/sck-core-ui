@@ -14,7 +14,7 @@ export default function EnterCode() {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Get token and email from navigation state
-  const { email, token } = location.state || {};
+  const { email, token, tokenType: initialTokenType } = location.state || {};
 
   // Redirect if no token
   useEffect(() => {
@@ -89,13 +89,13 @@ export default function EnterCode() {
       if (result.error) {
         setError(result.error);
       } else {
-        // If we get here, verification was successful (200 response)
-        // Navigate to new password page with the SAME token (no new token returned)
+        const nextToken = result.token || token;
+        const nextTokenType = result.token_type || initialTokenType || 'Bearer';
         navigate("/new-password", { 
           state: { 
-            token: token,  // Use the same token we already have
-            tokenType: 'Bearer',
-            email: email  // Pass email along too
+            token: nextToken,
+            tokenType: nextTokenType,
+            email
           } 
         });
       }

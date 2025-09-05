@@ -24,15 +24,20 @@ export default function ForgotPassword() {
       if (result.error) {
         setError(result.error);
       } else {
-        console.log('Forgot password result:', result); // Debug log
-        
-        // Navigate to code entry with email and token
-        navigate("/enter-code", { 
-          state: { 
-            email, 
-            token: result.data.token || result.data // Extract token from data object
-          } 
-        });
+        const token = result?.data?.token || null;
+        const tokenType = result?.data?.token_type || 'Bearer';
+        if (!token) {
+          setError('No reset token returned. Please try again.');
+        } else {
+          navigate("/enter-code", { 
+            state: { 
+              email, 
+              token,
+              tokenType,
+              raw: result.data?.raw,
+            } 
+          });
+        }
       }
     } catch (error) {
       console.error('Forgot password failed:', error);

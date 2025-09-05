@@ -52,6 +52,14 @@ function mapOAuthErrorToUserMessage(error: string, statusCode?: number): string 
   return 'Login failed. Please try again or contact support if the problem persists.';
 }
 
+function extractTokenPayload(json: any): { token: string | null; token_type: string } {
+  // Try a few common shapes: { data: { token } }, { data: { reset_token } }, { token }, { reset_token }
+  const d = json?.data ?? json ?? {};
+  const token = d.token || d.reset_token || json?.token || json?.reset_token || null;
+  const token_type = d.token_type || json?.token_type || 'Bearer';
+  return { token, token_type };
+}
+
 export const authAPI = {
 
   // Standard email/password login - now handles OAuth session token flow
@@ -411,23 +419,26 @@ export const authAPI = {
     window.location.href = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.GITHUB_LOGIN);
   },
 
-  // Update forgot password to include client_id
+  // Update forgot password to include client_id and normalize response shape
   forgotPassword: async (email: string) => {
     try {
-      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.FORGOT_PASSWORD), {
+      const res = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.FORGOT_PASSWORD), {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: { 'Content-Type': 'application/json' }, // no auth required
         body: JSON.stringify({
           email,
-          client_id: API_CONFIG.OAUTH.CLIENT_ID  // Add client_id for password reset
+          client_id: API_CONFIG.OAUTH.CLIENT_ID,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to send reset code');
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = json?.message || 'Failed to start password reset';
+        return { error: msg };
       }
 
-      return await response.json();
+      const { token, token_type } = extractTokenPayload(json);
+      return { data: { token, token_type, raw: json } };
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Unknown error' };
     }
@@ -435,35 +446,24 @@ export const authAPI = {
 
   verifyResetCode: async (code: string, token: string) => {
     try {
-      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.VERIFY_SECRET), {
+      const res = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.VERIFY_SECRET), {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`, // Use the token as Bearer auth
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ code }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-
-        // Handle different error status codes
-        switch (response.status) {
-          case 401:
-            throw new Error('Unauthorized - token may be invalid or expired');
-          case 400:
-            throw new Error('Verification code has already been used');
-          case 404:
-            throw new Error('Verification code not found in database');
-          default:
-            throw new Error(errorData.message || 'Invalid or expired verification code');
-        }
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = json?.message || 'Invalid or expired code';
+        return { error: msg };
       }
 
-      // 200 response - verification successful
-      const data = await response.json();
-      return { message: data.message || 'Token verified' };
-
+      // Some backends rotate the token after verify
+      const { token: nextToken, token_type } = extractTokenPayload(json);
+      return { message: json?.message || 'Verified', token: nextToken || token, token_type };
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Unknown error' };
     }
@@ -471,34 +471,21 @@ export const authAPI = {
 
   updatePassword: async (token: string, tokenType: string, newPassword: string) => {
     try {
-      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.UPDATE_PASSWORD), {
+      const res = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.UPDATE_PASSWORD), {
         method: 'PUT',
         headers: {
-          'Authorization': `${tokenType} ${token}`,
+          'Authorization': `${tokenType || 'Bearer'} ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          password: newPassword
-        }),
+        body: JSON.stringify({ password: newPassword }),
       });
 
-      if (!response.ok) {
-        // Get the specific error message from the server
-        const errorData = await response.json();
-
-        // For 404, add context that this is likely a missing user profile
-        if (response.status === 404) {
-          return {
-            error: errorData.message || 'User profile not found',
-            statusCode: 404
-          };
-        }
-
-        throw new Error(errorData.message || 'Failed to update password');
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = json?.message || 'Failed to update password';
+        return { error: msg };
       }
-
-      // 200 response - success
-      return await response.json();
+      return json;
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Unknown error' };
     }

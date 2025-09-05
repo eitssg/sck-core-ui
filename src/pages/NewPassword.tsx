@@ -22,9 +22,11 @@ export default function NewPassword() {
   // Get token from URL params OR state (for direct email links vs navigation)
   const urlCode = searchParams.get('code');
   const urlToken = searchParams.get('token');
-  const { token: stateToken, tokenType, email } = location.state || {};
-  
+  const urlTokenType = searchParams.get('token_type');
+  const { token: stateToken, tokenType: stateTokenType, email } = location.state || {};
+
   const finalToken = urlToken || stateToken;
+  const finalTokenType = urlTokenType || stateTokenType || 'Bearer';
   const finalEmail = email || searchParams.get('email');
 
   // Auto-verify code if coming from email link
@@ -110,7 +112,7 @@ export default function NewPassword() {
     
     try {
       // Use the final token (from URL or state)
-      const result = await authAPI.updatePassword(finalToken, 'Bearer', password);
+      const result = await authAPI.updatePassword(finalToken, finalTokenType, password);
       
       if (result.error) {
         // Check if it's a 404 (user profile not found)
