@@ -1,4 +1,6 @@
 import { Toaster } from "@/components/ui/toaster";
+import { useEffect } from "react";
+import { useToast } from "@/hooks/use-toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -10,6 +12,7 @@ import { useAuth } from "@/contexts/useAuth";
 import { lazy, Suspense } from "react";
 import { createProtectedRoute, createPublicRoute } from '@/utils/routeHelpers';
 import { PageLoader } from '@/components/PageLoader';
+import PermissionIssues from '@/components/PermissionIssues';
 
 // Lazy load all pages
 const Login = lazy(() => import("./pages/Login"));
@@ -63,6 +66,21 @@ const Landing = () => {
   }
 
   return <Navigate to="/login" replace />;
+};
+
+// Global toast bridge: listens for window 'sck:toast' events and shows a toast (with dedupe handled by notify)
+const ToastBridge = () => {
+  const { toast } = useToast();
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ev = e as CustomEvent<{ level: string; title: string; description?: string }>;
+      const { level, title, description } = ev.detail || ({} as any);
+      toast({ title, description, variant: level === 'error' ? 'destructive' : undefined });
+    };
+    window.addEventListener('sck:toast', handler as EventListener);
+    return () => window.removeEventListener('sck:toast', handler as EventListener);
+  }, [toast]);
+  return null;
 };
 
 // Routes component
@@ -126,9 +144,11 @@ const App = () => (
   <Provider store={store}>
     <QueryClientProvider client={queryClient}>
       <AppTheme>
-        <BrowserRouter basename={import.meta.env.VITE_BASE_PATH || '/'}>
+  <BrowserRouter basename={import.meta.env.DEV ? undefined : (import.meta.env.VITE_BASE_PATH || undefined)}>
           <AuthProvider>
             <TooltipProvider>
+              <ToastBridge />
+              <PermissionIssues />
               <AppRoutes />
               <Toaster />
             </TooltipProvider>

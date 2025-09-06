@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { useSelector } from "react-redux";
-import type { RootState } from "@/store";
-import { selectIsAuthenticated } from "@/store/slices/authSlice";
+import { Link } from "react-router-dom";
 
 import { useReduxData } from "@/hooks/useReduxData";
 import { useTheme } from "@/hooks/useTheme";
@@ -12,7 +9,8 @@ import DashboardLayout from "@/components/DashboardLayout";
 import DeploymentChart from "@/components/DeploymentChart";
 import LatestDeployments from "@/components/LatestDeployments";
 
-import { buildApiUrl, getAuthHeaders, API_CONFIG } from "@/lib/api-config";
+import { buildApiUrl, API_CONFIG } from "@/lib/api-config";
+import { apiFetch } from "@/lib/api-fetch";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,15 +57,8 @@ type Deployment = {
 };
 
 export default function Dashboard() {
-  const navigate = useNavigate();
   const { isDark } = useTheme();
   const { toast } = useToast();
-
-  // Auth guard
-  const isAuthenticated = useSelector((s: RootState) => selectIsAuthenticated(s));
-  useEffect(() => {
-    if (!isAuthenticated) navigate("/login", { replace: true });
-  }, [isAuthenticated, navigate]);
 
   // Redux-backed data
   const { clients, portfolios, actions, selectedClient } = useReduxData();
@@ -113,7 +104,11 @@ export default function Dashboard() {
       const appsUrl = new URL(buildApiUrl(API_CONFIG.ENDPOINTS.API.APPLICATIONS));
       appsUrl.searchParams.set("client", currentClient);
       appsUrl.searchParams.set("limit", "1");
-      const appsRes = await fetch(appsUrl.toString(), { headers: getAuthHeaders() });
+      const appsRes = await apiFetch(appsUrl.toString(), {
+        cookieFirst: true,
+        notify401: true,
+        contextLabel: "Applications",
+      });
       if (appsRes.ok) {
         const appsJson = (await appsRes.json()) as ApiResponse<any>;
         setAppTotal(appsJson.metadata?.total ?? toArray(appsJson.data).length);
@@ -126,7 +121,11 @@ export default function Dashboard() {
       depUrl.searchParams.set("client", currentClient);
       depUrl.searchParams.set("limit", "5");
       depUrl.searchParams.set("order", "desc");
-      const depRes = await fetch(depUrl.toString(), { headers: getAuthHeaders() });
+      const depRes = await apiFetch(depUrl.toString(), {
+        cookieFirst: true,
+        notify401: true,
+        contextLabel: "Deployments",
+      });
       if (depRes.ok) {
         const depJson = (await depRes.json()) as ApiResponse<Deployment>;
         const rows = toArray(depJson.data);
@@ -155,11 +154,9 @@ export default function Dashboard() {
   }, [currentClient, toast]);
 
   useEffect(() => {
-    if (!currentClient || !isAuthenticated) return;
+    if (!currentClient) return;
     fetchDashboardStats();
-  }, [currentClient, isAuthenticated, fetchDashboardStats]);
-
-  if (!isAuthenticated) return null;
+  }, [currentClient, fetchDashboardStats]);
 
   // Derived stat cards (clients/portfolios from store)
   const totalClients = clients.items?.length || 0;

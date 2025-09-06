@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, PropsWithChildren } from 'react'
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuth as useAuthRedux } from '@/hooks/useAuth'
+import { useAuth as useAuthContext } from '@/contexts/useAuth'
 import {
   Home,
   User,
@@ -39,7 +40,9 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const { logout } = useAuth()
+  // Use both auth systems: Redux (tokens) + Context (session flag/user)
+  const { logout: logoutRedux } = useAuthRedux()
+  const { logout: logoutCtx } = useAuthContext()
 
   // Redux-backed data/hooks
   const { clients: clientsState, selectedClient, selectClient } = useReduxData()
@@ -72,8 +75,17 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
 
   const handleLogout = async () => {
     try {
-      await logout()
-      navigate('/login')
+      // Clear session flags immediately for guards
+      try {
+        localStorage.removeItem('sck_logged_in')
+        sessionStorage.removeItem('sck_logged_in')
+      } catch {
+        // ignore storage cleanup errors
+      }
+      // Invoke both logout mechanisms
+      await Promise.resolve(logoutRedux())
+      await Promise.resolve(logoutCtx())
+      navigate('/login', { replace: true })
     } catch (err) {
       console.error('Logout failed:', err)
     }
@@ -90,7 +102,7 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
           <div className="flex items-center justify-between px-4 py-4">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary-light rounded-lg flex items-center justify-center">
+                <div className="w-8 h-8 bg-theme-gradient rounded-lg flex items-center justify-center">
                   <Cloud className="h-5 w-5 text-primary-foreground" />
                 </div>
                 <h1 className="text-xl font-bold text-foreground">Core Automation Portal</h1>

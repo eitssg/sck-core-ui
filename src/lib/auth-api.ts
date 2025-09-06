@@ -1,5 +1,21 @@
 // Custom authentication API service
 import { API_CONFIG, buildApiUrl, buildOAuthAuthorizeUrl, getAuthHeaders, getRedirectUri } from './api-config';
+// Enable debug logs if VITE_DEBUG=true for the active mode
+declare const __BUILD_MODE__: string | undefined;
+const DEBUG_AUTH = Boolean((import.meta as any)?.env?.VITE_DEBUG);
+// Surface Vite env diagnostics early
+try {
+  const envObj = ((import.meta as any)?.env ?? {}) as Record<string, any>;
+  const keys = Object.keys(envObj).filter((k) => k === 'MODE' || k.startsWith('VITE_'));
+  const modeFromVite = envObj.MODE || (envObj.DEV ? 'development' : envObj.PROD ? 'production' : undefined);
+  const modeFromDefine = typeof __BUILD_MODE__ !== 'undefined' ? __BUILD_MODE__ : undefined;
+  const modeFromNode = typeof process !== 'undefined' ? (process.env?.NODE_ENV as string | undefined) : undefined;
+  const resolvedMode = modeFromVite || modeFromDefine || modeFromNode || 'unknown';
+  console.log('[authAPI] Vite env keys present:', keys);
+  console.log('[authAPI] Mode:', resolvedMode);
+} catch {
+  // ignore env diagnostics errors
+}
 import type {
   SignupRequest,
   OAuthTokenResponse,
@@ -63,6 +79,46 @@ function extractTokenPayload(json: any): { token: string | null; token_type: str
 }
 
 export const authAPI = {
+  // Resolve client secret from multiple sources in a consistent order
+  _resolveClientSecret(): string | undefined {
+    const configSecret = (API_CONFIG as any)?.OAUTH?.CLIENT_SECRET as string | undefined;
+    const viteEnvSecret = (import.meta as any)?.env?.VITE_OAUTH_CLIENT_SECRET as string | undefined;
+    const winSecret = (globalThis as any)?.__SCK_ENV__?.VITE_OAUTH_CLIENT_SECRET as string | undefined;
+    const lsSecret = (typeof localStorage !== 'undefined') ? (localStorage.getItem('VITE_OAUTH_CLIENT_SECRET') || undefined) : undefined;
+    return configSecret || viteEnvSecret || winSecret || lsSecret;
+  },
+
+  // Build HTTP Basic header for confidential clients, if secret is provided
+  _getBasicAuthHeader(): string | undefined {
+    const clientId = API_CONFIG.OAUTH.CLIENT_ID;
+    // Prefer API_CONFIG (build-time), then Vite env, then window.__SCK_ENV__, then localStorage
+    const configSecret = (API_CONFIG as any)?.OAUTH?.CLIENT_SECRET as string | undefined;
+    const viteEnvSecret = (import.meta as any)?.env?.VITE_OAUTH_CLIENT_SECRET as string | undefined;
+    const winSecret = (globalThis as any)?.__SCK_ENV__?.VITE_OAUTH_CLIENT_SECRET as string | undefined;
+    const lsSecret = (typeof localStorage !== 'undefined') ? (localStorage.getItem('VITE_OAUTH_CLIENT_SECRET') || undefined) : undefined;
+    const clientSecret = this._resolveClientSecret();
+    if (!clientId || !clientSecret) {
+      if (DEBUG_AUTH) {
+        console.log('[authAPI] Basic auth not set: clientId?', Boolean(clientId), 'secret?', Boolean(clientSecret));
+        console.log('[authAPI] Secret sources -> config:', Boolean(configSecret), 'viteEnv:', Boolean(viteEnvSecret), 'window.__SCK_ENV__:', Boolean(winSecret), 'localStorage:', Boolean(lsSecret));
+      }
+      return undefined;
+    }
+    try {
+      const raw = `${clientId}:${clientSecret}`;
+      // Robust base64 for arbitrary unicode
+      const utf8 = new TextEncoder().encode(raw);
+      let binary = '';
+      for (let i = 0; i < utf8.length; i++) binary += String.fromCharCode(utf8[i]);
+      const enc = btoa(binary);
+      return `Basic ${enc}`;
+    } catch {
+      if (DEBUG_AUTH) {
+        console.log('[authAPI] Failed to build Basic auth header');
+      }
+      return undefined;
+    }
+  },
 
   // Standard email/password login - returns session credential response
   async login(email: string, password: string): Promise<LoginResponse | OAuthErrorResponse> {
@@ -75,6 +131,7 @@ export const authAPI = {
           password,
           client_id: API_CONFIG.OAUTH.CLIENT_ID
         }),
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -96,6 +153,10 @@ export const authAPI = {
   async handleOAuthCallback(code: string): Promise<OAuthTokenResponse | OAuthErrorResponse> {
     try {
       console.log('Step 3: Exchanging authorization code for access token');
+      console.log('[authAPI] Checks before /token:', {
+        hasClientId: Boolean(API_CONFIG.OAUTH.CLIENT_ID),
+  hasSecret: Boolean(this._resolveClientSecret()),
+      });
 
       // STANDARD OAUTH: application/x-www-form-urlencoded
       const tokenRequest = new URLSearchParams({
@@ -112,13 +173,51 @@ export const authAPI = {
         redirect_uri: API_CONFIG.OAUTH.REDIRECT_URI,
       });
 
-      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
+      const tokenHeaders: Record<string, string> = {
+        'Content-Type': 'application/x-www-form-urlencoded',  // STANDARD OAUTH
+      };
+      const basic = this._getBasicAuthHeader();
+  if (basic) tokenHeaders['Authorization'] = basic;
+  console.log('[authAPI] Will send Authorization header?', Boolean(tokenHeaders['Authorization']));
+      if (DEBUG_AUTH) {
+        console.log('[authAPI] /token headers (form):', {
+          hasAuthorization: Boolean(tokenHeaders['Authorization']),
+          authScheme: tokenHeaders['Authorization']?.split(' ')[0] || null,
+          contentType: tokenHeaders['Content-Type']
+        });
+        console.log('[authAPI] Env hints:', {
+          hasClientId: Boolean(API_CONFIG.OAUTH.CLIENT_ID),
+          hasSecret: Boolean(this._resolveClientSecret()),
+          baseUrl: API_CONFIG.BASE_URL,
+        });
+      }
+
+      let response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',  // STANDARD OAUTH
-        },
+        headers: tokenHeaders,
         body: tokenRequest.toString(),  // STANDARD OAUTH format
+        credentials: 'include',
       });
+
+      // Fallback: if 401 unauthorized and we didn't send Authorization, retry with client_secret in body
+      if (response.status === 401 && !tokenHeaders['Authorization']) {
+        const fallbackSecret = this._resolveClientSecret();
+        if (fallbackSecret) {
+        try {
+          const retryForm = new URLSearchParams(tokenRequest);
+          retryForm.set('client_secret', fallbackSecret);
+          console.log('[authAPI] Retrying /token with client_secret in body (no Basic header)');
+          response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: retryForm.toString(),
+            credentials: 'include',
+          });
+        } catch (e) {
+          console.warn('[authAPI] Retry with client_secret failed to send', e);
+        }
+        }
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -154,6 +253,44 @@ export const authAPI = {
     window.location.href = authorizeUrl;
   },
 
+  // Alternate Step 1: Call /authorize with Bearer session token and follow 302 manually
+  async authorizeWithSession(sessionToken: string, tokenType: string = 'Bearer', state?: string): Promise<void> {
+    const authorizeUrl = buildOAuthAuthorizeUrl(state);
+    try {
+      if (DEBUG_AUTH) {
+        console.log('Step 2: Calling /authorize with session token (Bearer) ...');
+      }
+
+      const resp = await fetch(authorizeUrl, {
+        method: 'GET',
+        headers: {
+          Authorization: `${tokenType || 'Bearer'} ${sessionToken}`,
+        },
+        // So we can get Location header and redirect explicitly
+        redirect: 'manual' as RequestRedirect,
+        credentials: 'include',
+      });
+
+      const location = (resp.headers && (resp.headers.get('Location') || resp.headers.get('location'))) || '';
+      if (DEBUG_AUTH) {
+        console.log('Authorize response:', resp.status, location);
+      }
+
+      if (resp.status >= 300 && resp.status < 400 && location) {
+        window.location.href = location;
+        return;
+      }
+
+      // Fallback: navigate directly (cookies may suffice)
+      window.location.href = authorizeUrl;
+    } catch (err) {
+      if (DEBUG_AUTH) {
+        console.error('Authorize with session failed, falling back to direct redirect', err);
+      }
+      window.location.href = authorizeUrl;
+    }
+  },
+
   // OAuth Authorization Code Flow - Step 2: Exchange code for tokens
   async exchangeCodeForTokens(code: string, state?: string): Promise<OAuthTokenResponse | OAuthErrorResponse> {
     try {
@@ -165,13 +302,30 @@ export const authAPI = {
       };
 
       console.log('Token exchange request:', { ...tokenRequest, code: code.substring(0, 10) + '...' });
+      console.log('[authAPI] Checks before /token (json):', {
+        hasClientId: Boolean(API_CONFIG.OAUTH.CLIENT_ID),
+        hasSecret: Boolean((import.meta as any)?.env?.VITE_OAUTH_CLIENT_SECRET),
+      });
+
+      const tokenHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      const basic = this._getBasicAuthHeader();
+  if (basic) tokenHeaders['Authorization'] = basic;
+  console.log('[authAPI] Will send Authorization header (json)?', Boolean(tokenHeaders['Authorization']));
+      if (DEBUG_AUTH) {
+        console.log('[authAPI] /token headers (json):', {
+          hasAuthorization: Boolean(tokenHeaders['Authorization']),
+          authScheme: tokenHeaders['Authorization']?.split(' ')[0] || null,
+          contentType: tokenHeaders['Content-Type']
+        });
+      }
 
       const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: tokenHeaders,
         body: JSON.stringify(tokenRequest),
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -212,18 +366,33 @@ export const authAPI = {
         client_id: API_CONFIG.OAUTH.CLIENT_ID,
       };
 
+      const tokenHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      const basic = this._getBasicAuthHeader();
+  if (basic) tokenHeaders['Authorization'] = basic;
+  console.log('[authAPI] Will send Authorization header (refresh)?', Boolean(tokenHeaders['Authorization']));
+      if (DEBUG_AUTH) {
+        console.log('[authAPI] /token headers (refresh):', {
+          hasAuthorization: Boolean(tokenHeaders['Authorization']),
+          authScheme: tokenHeaders['Authorization']?.split(' ')[0] || null,
+          contentType: tokenHeaders['Content-Type']
+        });
+      }
+
       const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: tokenHeaders,
         body: JSON.stringify(tokenRequest),
+        credentials: 'include',
       });
 
       if (!response.ok) {
-        // Refresh token is invalid, clear storage
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+        // Only clear tokens on 401/invalid refresh; keep user logged in on transient errors
+        if (response.status === 401) {
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+        }
         return null;
       }
 
@@ -301,8 +470,9 @@ export const authAPI = {
 
   async getCurrentUser(): Promise<import('./auth-types').UserProfile | OAuthErrorResponse> {
     try {
-      const token = localStorage.getItem('access_token');
-      if (!token) {
+  const token = localStorage.getItem('access_token');
+  const refresh = localStorage.getItem('refresh_token');
+  if (!token || !refresh) {
         return { error: 'not_authenticated', error_description: 'User is not authenticated' } as OAuthErrorResponse;
       }
 
@@ -410,6 +580,7 @@ export const authAPI = {
 
       const response = await fetch(url, {
         headers: getAuthHeaders(),
+  credentials: 'include',
       });
 
       if (!response.ok) {

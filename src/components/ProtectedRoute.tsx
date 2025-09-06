@@ -9,6 +9,18 @@ interface ProtectedRouteProps {
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
+  const hasSession = (() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      // Treat session cookie as source of truth; we can't read it directly, so use a session flag set at login
+      const flag = localStorage.getItem('sck_logged_in') || sessionStorage.getItem('sck_logged_in');
+      if (flag === '1') return true;
+      // Back-compat: if tokens exist, also allow
+      return Boolean(localStorage.getItem('access_token') || localStorage.getItem('token'));
+    } catch {
+      return false;
+    }
+  })();
 
   if (loading) {
     return (
@@ -20,6 +32,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
         </div>
       </div>
     );
+  }
+
+  // If we have a session (cookie likely set) but user isn't hydrated yet due to
+  // a transient /me error, allow access and let downstream components recover.
+  if (!user && hasSession) {
+    return <>{children}</>;
   }
 
   if (!user) {

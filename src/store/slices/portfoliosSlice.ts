@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { API_CONFIG, buildApiUrl, getAuthHeaders } from '@/lib/api-config';
+import { apiFetch } from '@/lib/api-fetch';
 import type { RootState, AppDispatch } from '@/store';
 import type { ApiResponse } from '../shared';
 import { toArray } from '../shared';
@@ -187,9 +188,7 @@ export const fetchPortfolios = createAsyncThunk<
     url.searchParams.set('limit', String(limit));
     if (cursor) url.searchParams.set('cursor', cursor);
 
-    const response = await fetch(url.toString(), {
-      headers: getAuthHeaders(),
-    });
+  const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: `portfolios-${client}-401`, contextLabel: 'Portfolios' });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -233,8 +232,8 @@ export const fetchPortfolio = createAsyncThunk<
   'portfolios/fetchSingle',
   async ({ client, portfolio }) => {
     try {
-      const response = await fetch(buildApiUrl(`/api/v1/registry/${client}/portfolio/${portfolio}`), {
-        headers: getAuthHeaders(),
+      const response = await apiFetch(buildApiUrl(`/api/v1/registry/${client}/portfolio/${portfolio}`), {
+        contextLabel: 'Portfolios',
       });
 
       if (!response.ok) {
@@ -275,10 +274,11 @@ export const updatePortfolio = createAsyncThunk(
     portfolioData: Portfolio 
   }, thunkAPI) => {
     try {
-      const response = await fetch(buildApiUrl(`/api/v1/registry/${client}/portfolio/${portfolio}`), {
+      const response = await apiFetch(buildApiUrl(`/api/v1/registry/${client}/portfolio/${portfolio}`), {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify(portfolioData),
+        contextLabel: 'Portfolios',
       });
 
       if (!response.ok) {
@@ -304,10 +304,11 @@ export const patchPortfolio = createAsyncThunk(
     portfolioData: Partial<Portfolio> 
   }, thunkAPI) => {
     try {
-      const response = await fetch(buildApiUrl(`/api/v1/registry/${client}/portfolio/${portfolio}`), {
+      const response = await apiFetch(buildApiUrl(`/api/v1/registry/${client}/portfolio/${portfolio}`), {
         method: 'PATCH',
         headers: getAuthHeaders(),
         body: JSON.stringify(portfolioData),
+        contextLabel: 'Portfolios',
       });
 
       if (!response.ok) {
@@ -328,9 +329,9 @@ export const deletePortfolio = createAsyncThunk(
   'portfolios/delete',
   async ({ client, portfolio }: { client: string; portfolio: string }, thunkAPI) => {
     try {
-      const response = await fetch(buildApiUrl(`/api/v1/registry/${client}/portfolio/${portfolio}`), {
+      const response = await apiFetch(buildApiUrl(`/api/v1/registry/${client}/portfolio/${portfolio}`), {
         method: 'DELETE',
-        headers: getAuthHeaders(),
+        contextLabel: 'Portfolios',
       });
 
       if (!response.ok) {

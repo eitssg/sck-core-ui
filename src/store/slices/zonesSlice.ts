@@ -5,6 +5,7 @@ import {
   createSelector,
 } from '@reduxjs/toolkit';
 import type { RootState } from '@/store';
+import { apiFetch } from '@/lib/api-fetch';
 import type { Zone, AccountFacts, RegionFacts } from '@/store/types';
 
 interface ZonesState {
@@ -26,9 +27,10 @@ export const fetchZones = createAsyncThunk<
 >('zones/fetchZones', async (args, { rejectWithValue }) => {
   try {
     const q = args && args.client ? `?client=${encodeURIComponent(args.client)}` : '';
-    const res = await fetch(`${API_BASE}/zones${q}`, {
+    const res = await apiFetch(`${API_BASE}/zones${q}`, {
+      cookieFirst: true,
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
+      contextLabel: 'Zones',
     });
     if (!res.ok) throw new Error(await res.text());
     return (await res.json()) as Zone[];
@@ -41,11 +43,12 @@ export const createZone = createAsyncThunk<Zone, Zone, { rejectValue: string }>(
   'zones/createZone',
   async (zone, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE}/zones`, {
+      const res = await apiFetch(`${API_BASE}/zones`, {
         method: 'POST',
+        cookieFirst: true,
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify(zone),
+        contextLabel: 'Zones',
       });
       if (!res.ok) throw new Error(await res.text());
       return (await res.json()) as Zone;
@@ -59,13 +62,14 @@ export const updateZoneRemote = createAsyncThunk<Zone, Zone, { rejectValue: stri
   'zones/updateZoneRemote',
   async (zone, { rejectWithValue }) => {
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/zones/${encodeURIComponent(zone.client)}/${encodeURIComponent(zone.zone)}`,
         {
           method: 'PUT',
+          cookieFirst: true,
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify(zone),
+          contextLabel: 'Zones',
         }
       );
       if (!res.ok) throw new Error(await res.text());
@@ -82,9 +86,9 @@ export const deleteZoneRemote = createAsyncThunk<
   { rejectValue: string }
 >('zones/deleteZoneRemote', async ({ client, zone }, { rejectWithValue }) => {
   try {
-    const res = await fetch(
+    const res = await apiFetch(
       `${API_BASE}/zones/${encodeURIComponent(client)}/${encodeURIComponent(zone)}`,
-      { method: 'DELETE', credentials: 'include' }
+      { method: 'DELETE', cookieFirst: true, contextLabel: 'Zones' }
     );
     if (!res.ok) throw new Error(await res.text());
     return { client, zone };

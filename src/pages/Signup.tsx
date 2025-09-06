@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/hooks/use-toast";
 import { buildApiUrl } from "@/lib/api-config";
+import { apiFetch } from "@/lib/api-fetch";
 import type { UserProfile } from "@/store/types";
 
 type SignUpForm = Pick<UserProfile, "first_name" | "last_name" | "email"> & {
@@ -75,11 +76,11 @@ export default function Signup() {
         organization: formData.organization || undefined,
       };
 
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: "POST",
+        cookieFirst: true,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-        credentials: "include",
       });
 
       if (res.ok) {
@@ -109,7 +110,7 @@ export default function Signup() {
     <div className="min-h-screen bg-gradient-to-br from-dashboard-bg to-primary/5 flex items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-large animate-fade-in">
         <CardHeader className="text-center space-y-4">
-          <div className="mx-auto w-16 h-16 bg-gradient-to-br from-primary to-primary-light rounded-full flex items-center justify-center shadow-medium">
+          <div className="mx-auto w-16 h-16 bg-theme-gradient rounded-full flex items-center justify-center shadow-medium">
             <Building className="h-8 w-8 text-primary-foreground" />
           </div>
           <div>
@@ -143,6 +144,7 @@ export default function Signup() {
                   <Input
                     id="first_name"
                     type="text"
+                    autoComplete="given-name"
                     placeholder="John"
                     value={formData.first_name}
                     onChange={(e) => updateForm("first_name", e.target.value)}
@@ -158,6 +160,7 @@ export default function Signup() {
                   <Input
                     id="last_name"
                     type="text"
+                    autoComplete="family-name"
                     placeholder="Doe"
                     value={formData.last_name}
                     onChange={(e) => updateForm("last_name", e.target.value)}
@@ -175,6 +178,7 @@ export default function Signup() {
                 <Input
                   id="email"
                   type="email"
+                  autoComplete="email"
                   placeholder="john@company.com"
                   value={formData.email}
                   onChange={(e) => updateForm("email", e.target.value)}
@@ -199,6 +203,7 @@ export default function Signup() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
                   placeholder="Create a password (min 8 chars)"
                   value={formData.password}
                   onChange={(e) => updateForm("password", e.target.value)}
@@ -224,6 +229,7 @@ export default function Signup() {
                 <Input
                   id="confirmPassword"
                   type={showConfirmPassword ? "text" : "password"}
+                  autoComplete="new-password"
                   placeholder="Confirm your password"
                   value={formData.confirmPassword}
                   onChange={(e) => updateForm("confirmPassword", e.target.value)}

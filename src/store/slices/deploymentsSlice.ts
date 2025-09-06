@@ -1,5 +1,6 @@
 import { createSlice, type PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
 import { buildApiUrl, getAuthHeaders } from '@/lib/api-config';
+import { apiFetch } from '@/lib/api-fetch';
 import type { AppDeploymentBuild } from '@/store/types';
 
 type ApiResponse<T> = {
@@ -78,9 +79,9 @@ export const fetchBuilds = createAsyncThunk<
     // optional: order desc by created_at if backend supports; otherwise comment out
     // url.searchParams.set('order', 'desc');
 
-    const res = await fetch(url.toString(), {
+    const res = await apiFetch(url.toString(), {
       method: 'GET',
-      headers: getAuthHeaders(),
+      contextLabel: 'Deployments',
     });
     if (!res.ok) {
       let msg = `Failed to load builds (HTTP ${res.status})`;

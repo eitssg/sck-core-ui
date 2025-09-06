@@ -7,27 +7,27 @@ export const PageLoader = ({ type = 'default' }: PageLoaderProps) => {
   const content = {
     dashboard: (
       <div className="p-6 space-y-4">
-        <div className="h-8 bg-gray-200 rounded animate-pulse" />
+        <div className="h-8 bg-muted rounded animate-pulse" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-32 bg-gray-200 rounded animate-pulse" />
+            <div key={i} className="h-32 bg-muted rounded animate-pulse" />
           ))}
         </div>
       </div>
     ),
     form: (
       <div className="max-w-2xl mx-auto p-6 space-y-4">
-        <div className="h-8 bg-gray-200 rounded animate-pulse" />
+        <div className="h-8 bg-muted rounded animate-pulse" />
         {[...Array(5)].map((_, i) => (
-          <div key={i} className="h-12 bg-gray-200 rounded animate-pulse" />
+          <div key={i} className="h-12 bg-muted rounded animate-pulse" />
         ))}
       </div>
     ),
     list: (
       <div className="p-6 space-y-4">
-        <div className="h-8 bg-gray-200 rounded animate-pulse" />
+        <div className="h-8 bg-muted rounded animate-pulse" />
         {[...Array(8)].map((_, i) => (
-          <div key={i} className="h-16 bg-gray-200 rounded animate-pulse" />
+          <div key={i} className="h-16 bg-muted rounded animate-pulse" />
         ))}
       </div>
     ),

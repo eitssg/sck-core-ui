@@ -10,6 +10,7 @@ export const API_CONFIG = {
     CLIENT_ID: import.meta.env.VITE_OAUTH_CLIENT_ID || '',
     REDIRECT_URI: import.meta.env.VITE_OAUTH_REDIRECT_URI || 'http://localhost:8080/authorized',
     SCOPE: import.meta.env.VITE_OAUTH_SCOPE || 'read:profile write:profile',
+  CLIENT_SECRET: (import.meta as any)?.env?.VITE_OAUTH_CLIENT_SECRET || '',
   },
 
   // API Endpoints
@@ -46,6 +47,11 @@ export const API_CONFIG = {
 
 // Helper function to build full URL
 export const buildApiUrl = (endpoint: string): string => {
+  // In development, route through same-origin at root so Vite proxy handles CORS.
+  const isDev = (import.meta as any)?.env?.DEV || (import.meta as any)?.env?.MODE === 'development';
+  if (isDev && (endpoint.startsWith('/api') || endpoint.startsWith('/auth'))) {
+    return `${window.location.origin}${endpoint}`;
+  }
   return `${API_CONFIG.BASE_URL}${endpoint}`;
 };
 

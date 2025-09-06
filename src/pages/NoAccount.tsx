@@ -3,8 +3,7 @@ import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 import type { RootState } from "@/store";
 import { selectIsAuthenticated } from "@/store/slices/authSlice";
-import { buildApiUrl, getAuthHeaders } from "@/lib/api-config";
-import { useTheme } from "@/hooks/useTheme";
+import { apiFetch } from "@/lib/api-fetch";
 import { useToast } from "@/hooks/use-toast";
 
 import { Button } from "@/components/ui/button";
@@ -29,7 +28,6 @@ function isValidEmail(v: string) {
 export default function NoAccount() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isDark } = useTheme();
   const { toast } = useToast();
 
   // Auth guard: if already authenticated, bounce to dashboard
@@ -51,10 +49,13 @@ export default function NoAccount() {
   useEffect(() => {
     const send = async () => {
       try {
-        const url = buildApiUrl("/api/v1/telemetry/no-account");
-        await fetch(url, {
+        await apiFetch("/api/v1/telemetry/no-account", {
           method: "POST",
-          headers: getAuthHeaders(),
+          cookieFirst: true,
+          notify401: false,
+          noToast401: true,
+          contextLabel: "Telemetry",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             email: initialEmail || null,
             source: from,
@@ -112,7 +113,7 @@ export default function NoAccount() {
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
         <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-primary/15 blur-3xl" />
         <div className="absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-accent/20 blur-3xl" />
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 h-40 w-[40rem] rounded-[999px] bg-gradient-to-r from-primary/10 to-primary-light/10 blur-2xl" />
+  <div className="absolute top-1/3 left-1/2 -translate-x-1/2 h-40 w-[40rem] rounded-[999px] bg-gradient-to-r from-primary/10 to-primary/20 blur-2xl" />
       </div>
 
       <div className="mx-auto flex max-w-4xl flex-col items-center px-4 py-16">
@@ -127,7 +128,7 @@ export default function NoAccount() {
 
         <Card className="w-full shadow-large animate-fade-in">
           <CardHeader className="space-y-2 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-light text-primary-foreground shadow-medium">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-theme-gradient text-primary-foreground shadow-medium">
               <Sparkles className="h-8 w-8" />
             </div>
             <CardTitle className="text-2xl">We couldn’t find an account for that email</CardTitle>
@@ -146,6 +147,7 @@ export default function NoAccount() {
                 <Input
                   id="email"
                   type="email"
+                  autoComplete="email"
                   placeholder="you@company.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -165,7 +167,7 @@ export default function NoAccount() {
               <Button
                 onClick={goSignup}
                 disabled={isSubmitting || !canProceed}
-                variant={isDark ? "secondary" : "gradient"}
+                variant="gradient"
                 className="gap-2"
               >
                 <UserPlus className="h-4 w-4" />

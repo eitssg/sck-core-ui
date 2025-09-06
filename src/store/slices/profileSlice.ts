@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
 import { API_CONFIG, buildApiUrl, getAuthHeaders } from '@/lib/api-config'
+import { apiFetch } from '@/lib/api-fetch'
 import type { RootState } from '@/store'
 
 /**
@@ -16,32 +17,32 @@ import type { RootState } from '@/store'
 
 // Update the UserProfile interface to match your model
 export interface UserProfile {
-  user_id: string
-  profile_name: string
-  credentials?: Record<string, any>
-  identity?: Record<string, any>
-  email?: string
-  display_name?: string
-  first_name?: string
-  last_name?: string
-  avatar_url?: string
-  profile_description?: string
-  timezone?: string
-  language?: string
-  theme?: string
-  notifications_enabled?: boolean
-  last_login?: string
-  created_at?: string
-  updated_at?: string
-  aws_account_id?: string
-  aws_user_arn?: string
-  access_key_prefix?: string
-  preferred_region?: string
-  permissions?: Record<string, any>
-  preferences?: Record<string, any>
-  session_count?: number
-  is_active?: boolean
-  
+  UserId: string
+  ProfileName: string
+  Credentials?: Record<string, any>
+  Identity?: Record<string, any>
+  Email?: string
+  DisplayName?: string
+  FirstName?: string
+  LastName?: string
+  AvatarUrl?: string
+  ProfileDescription?: string
+  Timezone?: string
+  Language?: string
+  Theme?: string
+  NotificationsEnabled?: boolean
+  LastLogin?: string
+  CreatedAt?: string
+  UpdatedAt?: string
+  AwsAccountId?: string
+  AwsUserArn?: string
+  AccessKeyPrefix?: string
+  PreferredRegion?: string
+  Permissions?: Record<string, any>
+  Preferences?: Record<string, any>
+  SessionCount?: number
+  IsActive?: boolean
+
   // Cache metadata
   _cacheKey?: string // client/portfolio context
   _lastFetched?: number // individual profile cache timestamp
@@ -61,7 +62,51 @@ export interface ProfileState {
   contextCache: Record<string, number> // client/portfolio -> timestamp
 }
 
-const initialState: ProfileState = {
+const PERSIST_KEY = 'profile_cache_v1';
+const PERSIST_TTL_MS = 10 * 60 * 1000; // 10 minutes across reloads
+
+function hydrateInitialState(): ProfileState | null {
+  try {
+    const raw = sessionStorage.getItem(PERSIST_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (!cached?.ts || (Date.now() - cached.ts) > PERSIST_TTL_MS) return null;
+    const state: ProfileState = {
+      user: cached.user ?? null,
+      userProfiles: cached.userProfiles ?? [],
+      currentProfile: cached.currentProfile ?? null,
+      isLoading: false,
+      error: null,
+      lastFetched: cached.lastFetched ?? null,
+      currentContext: cached.currentContext ?? null,
+      individualProfileCache: cached.individualProfileCache ?? {},
+      contextCache: cached.contextCache ?? {},
+    };
+    return state;
+  } catch {
+    return null;
+  }
+}
+
+function persistState(state: ProfileState) {
+  try {
+    const payload = {
+      ts: Date.now(),
+      user: state.user,
+      userProfiles: state.userProfiles,
+      currentProfile: state.currentProfile,
+      lastFetched: state.lastFetched,
+      currentContext: state.currentContext,
+      individualProfileCache: state.individualProfileCache,
+      contextCache: state.contextCache,
+    };
+    sessionStorage.setItem(PERSIST_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+const initialState: ProfileState = hydrateInitialState() ?? {
   user: null,
   userProfiles: [],
   currentProfile: null,
@@ -71,6 +116,65 @@ const initialState: ProfileState = {
   currentContext: null,
   individualProfileCache: {},
   contextCache: {},
+}
+
+// Normalize server payload (handles alias keys like UserId/ProfileName and snake_case)
+const pick = (obj: any, ...keys: string[]) => keys.find((k) => obj?.[k] !== undefined) ? obj[keys.find((k) => obj?.[k] !== undefined)!] : undefined;
+function normalizeUserProfile(raw: any): UserProfile {
+  const src = raw?.data ?? raw ?? {};
+  const UserId = pick(src, 'UserId', 'user_id');
+  const ProfileName = pick(src, 'ProfileName', 'profile_name') ?? 'default';
+  const Credentials = pick(src, 'Credentials', 'credentials');
+  const Identity = pick(src, 'Identity', 'identity');
+  const Email = pick(src, 'Email', 'email');
+  const DisplayName = pick(src, 'DisplayName', 'display_name');
+  const FirstName = pick(src, 'FirstName', 'first_name');
+  const LastName = pick(src, 'LastName', 'last_name');
+  const AvatarUrl = pick(src, 'AvatarUrl', 'avatar_url');
+  const ProfileDescription = pick(src, 'ProfileDescription', 'profile_description');
+  const Timezone = pick(src, 'Timezone', 'timezone');
+  const Language = pick(src, 'Language', 'language');
+  const Theme = pick(src, 'Theme', 'theme');
+  const NotificationsEnabled = pick(src, 'NotificationsEnabled', 'notifications_enabled');
+  const LastLogin = pick(src, 'LastLogin', 'last_login');
+  const CreatedAt = pick(src, 'CreatedAt', 'created_at');
+  const UpdatedAt = pick(src, 'UpdatedAt', 'updated_at');
+  const AwsAccountId = pick(src, 'AwsAccountId', 'aws_account_id');
+  const AwsUserArn = pick(src, 'AwsUserArn', 'aws_user_arn');
+  const AccessKeyPrefix = pick(src, 'AccessKeyPrefix', 'access_key_prefix');
+  const PreferredRegion = pick(src, 'PreferredRegion', 'preferred_region');
+  const Permissions = pick(src, 'Permissions', 'permissions');
+  const Preferences = pick(src, 'Preferences', 'preferences');
+  const SessionCount = pick(src, 'SessionCount', 'session_count');
+  const IsActive = pick(src, 'IsActive', 'is_active');
+
+  return {
+    UserId,
+    ProfileName,
+    Credentials,
+    Identity,
+    Email,
+    DisplayName,
+    FirstName,
+    LastName,
+    AvatarUrl,
+    ProfileDescription,
+    Timezone,
+    Language,
+    Theme,
+    NotificationsEnabled,
+    LastLogin,
+    CreatedAt,
+    UpdatedAt,
+    AwsAccountId,
+    AwsUserArn,
+    AccessKeyPrefix,
+    PreferredRegion,
+    Permissions,
+    Preferences,
+    SessionCount,
+    IsActive,
+  } as UserProfile;
 }
 
 // Helper function to build profile API URL
@@ -89,14 +193,14 @@ const findCachedProfile = (profileState: ProfileState, profileName: string, cont
   // First try to find in specific context if provided
   if (context) {
     const contextProfile = profileState.userProfiles.find(p => 
-      p.profile_name === profileName && p._cacheKey === context
+    p.ProfileName === profileName && p._cacheKey === context
     );
     if (contextProfile) return contextProfile;
   }
   
   // If not found in specific context, look across all contexts
   // This allows reusing profiles across different client/portfolio combinations
-  return profileState.userProfiles.find(p => p.profile_name === profileName) || null;
+  return profileState.userProfiles.find(p => p.ProfileName === profileName) || null;
 };
 
 // CRUD Operations with Aggressive Caching
@@ -113,6 +217,7 @@ export const createUserProfile = createAsyncThunk(
       const response = await fetch(buildProfileApiUrl(client, portfolio), {
         method: 'POST',
         headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify(profileData),
       });
       
@@ -121,8 +226,8 @@ export const createUserProfile = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to create profile');
       }
       
-      const result = await response.json();
-      const profile = result.data || result;
+  const result = await response.json();
+  const profile = normalizeUserProfile(result);
       
       return {
         profile: {
@@ -163,16 +268,14 @@ export const fetchUserProfile = createAsyncThunk<
           : buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.ME);
       }
         
-      const response = await fetch(url, {
-        headers: getAuthHeaders(),
-      });
+  const response = await apiFetch(url, { cookieFirst: true, contextLabel: 'Profile' });
       
       if (!response.ok) {
         throw new Error('Failed to fetch profile');
       }
       
       const result = await response.json();
-      const profile = result.data || result;
+      const profile = normalizeUserProfile(result);
       
       return {
         profile: {
@@ -209,7 +312,7 @@ export const fetchUserProfile = createAsyncThunk<
       } else {
         // Check if we have current user cached for this context
         if (state.profile.user && state.profile.user._cacheKey === context) {
-          const timestamp = state.profile.individualProfileCache[state.profile.user.profile_name];
+          const timestamp = state.profile.individualProfileCache[state.profile.user.ProfileName];
           if (timestamp) {
             const ttlMs = 30 * 60 * 1000; // 30 minutes
             const fresh = Date.now() - timestamp < ttlMs;
@@ -234,20 +337,22 @@ export const fetchUserProfiles = createAsyncThunk<
     try {
       const context = generateContextKey(client, portfolio);
       
-      const response = await fetch(buildProfileApiUrl(client, portfolio, 'apps'), {
-        headers: getAuthHeaders(),
-      });
+  const response = await apiFetch(buildProfileApiUrl(client, portfolio, 'apps'), { cookieFirst: true, contextLabel: 'Profile' });
       
       if (!response.ok) {
         throw new Error('Failed to fetch profiles');
       }
       
       const result = await response.json();
-      const profiles = (result.data || result || []).map((profile: UserProfile) => ({
-        ...profile,
-        _cacheKey: context,
-        _lastFetched: Date.now()
-      }));
+      const rawList = result.data || result || [];
+  const profiles = rawList.map((p: any) => {
+        const np = normalizeUserProfile(p);
+        return {
+          ...np,
+          _cacheKey: context,
+          _lastFetched: Date.now(),
+        } as UserProfile;
+      });
       
       return { profiles, context };
     } catch (error) {
@@ -290,6 +395,7 @@ export const updateUserProfile = createAsyncThunk(
       const response = await fetch(buildProfileApiUrl(client, portfolio), {
         method: 'PUT',
         headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify(profileData),
       });
       
@@ -298,8 +404,8 @@ export const updateUserProfile = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to update profile');
       }
       
-      const result = await response.json();
-      const profile = result.data || result;
+  const result = await response.json();
+  const profile = normalizeUserProfile(result);
       
       return {
         profile: {
@@ -327,6 +433,7 @@ export const patchUserProfile = createAsyncThunk(
       const response = await fetch(buildProfileApiUrl(client, portfolio), {
         method: 'PATCH',
         headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify(profileData),
       });
       
@@ -335,8 +442,8 @@ export const patchUserProfile = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to patch profile');
       }
       
-      const result = await response.json();
-      const profile = result.data || result;
+  const result = await response.json();
+  const profile = normalizeUserProfile(result);
       
       return {
         profile: {
@@ -369,6 +476,7 @@ export const deleteUserProfile = createAsyncThunk(
       const response = await fetch(url, {
         method: 'DELETE',
         headers: getAuthHeaders(),
+        credentials: 'include',
       });
       
       if (!response.ok) {
@@ -404,6 +512,7 @@ export const updateUserTheme = createAsyncThunk<
       const response = await fetch(url, {
         method: 'PATCH',
         headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ theme }),
       });
       
@@ -422,7 +531,7 @@ export const updateUserTheme = createAsyncThunk<
       
       const state = getState();
       // Don't make server call if theme is already set to this value
-      if (state.profile?.user?.theme === theme) {
+  if (state.profile?.user?.Theme === theme) {
         return false;
       }
       
@@ -459,7 +568,7 @@ const profileSlice = createSlice({
     setCurrentProfile: (state, action: PayloadAction<string>) => {
       state.currentProfile = action.payload
       // Update current user if profile exists in list
-      const profile = state.userProfiles.find(p => p.profile_name === action.payload);
+      const profile = state.userProfiles.find(p => p.ProfileName === action.payload);
       if (profile) {
         state.user = profile;
       }
@@ -472,11 +581,11 @@ const profileSlice = createSlice({
       };
       
       state.user = profile
-      state.currentProfile = profile.profile_name
+      state.currentProfile = profile.ProfileName
       
       // Add to profiles list if not already there
       const existingIndex = state.userProfiles.findIndex(p => 
-        p.profile_name === profile.profile_name && p._cacheKey === 'auth'
+        p.ProfileName === profile.ProfileName && p._cacheKey === 'auth'
       );
       if (existingIndex >= 0) {
         state.userProfiles[existingIndex] = profile;
@@ -485,18 +594,18 @@ const profileSlice = createSlice({
       }
       
       // Update cache timestamps
-      state.individualProfileCache[profile.profile_name] = Date.now();
+      state.individualProfileCache[profile.ProfileName] = Date.now();
       state.contextCache['auth'] = Date.now();
     },
     setLocalTheme: (state, action: PayloadAction<string>) => {
       if (state.user) {
-        state.user.theme = action.payload
+        state.user.Theme = action.payload
         // Update in profiles list as well
         const existingIndex = state.userProfiles.findIndex(p => 
-          p.profile_name === state.user!.profile_name
+          p.ProfileName === state.user!.ProfileName
         );
         if (existingIndex >= 0) {
-          state.userProfiles[existingIndex].theme = action.payload;
+          state.userProfiles[existingIndex].Theme = action.payload;
         }
       }
     },
@@ -514,7 +623,7 @@ const profileSlice = createSlice({
         
         // Update or add profile
         const existingIndex = state.userProfiles.findIndex(p => 
-          p.profile_name === profile.profile_name && p._cacheKey === context
+          p.ProfileName === profile.ProfileName && p._cacheKey === context
         );
         
         if (existingIndex >= 0) {
@@ -524,7 +633,7 @@ const profileSlice = createSlice({
         }
         
         // Update cache timestamp
-        state.individualProfileCache[profile.profile_name] = timestamp;
+        state.individualProfileCache[profile.ProfileName] = timestamp;
       });
       
       state.contextCache[context] = timestamp;
@@ -549,7 +658,7 @@ const profileSlice = createSlice({
       
       // Update all instances of this profile across different contexts
       state.userProfiles = state.userProfiles.map(profile => {
-        if (profile.profile_name === profile_name) {
+        if (profile.ProfileName === profile_name) {
           return {
             ...profile,
             ...updates,
@@ -560,7 +669,7 @@ const profileSlice = createSlice({
       });
       
       // Update current user if it's the same profile
-      if (state.user && state.user.profile_name === profile_name) {
+      if (state.user && state.user.ProfileName === profile_name) {
         state.user = {
           ...state.user,
           ...updates,
@@ -577,7 +686,7 @@ const profileSlice = createSlice({
       
       // Remove profiles older than max age
       state.userProfiles = state.userProfiles.filter(profile => {
-        const timestamp = state.individualProfileCache[profile.profile_name];
+        const timestamp = state.individualProfileCache[profile.ProfileName];
         return timestamp && (now - timestamp) < maxAge;
       });
       
@@ -613,11 +722,11 @@ const profileSlice = createSlice({
         // Set as current if first profile
         if (!state.user) {
           state.user = action.payload.profile
-          state.currentProfile = action.payload.profile.profile_name
+          state.currentProfile = action.payload.profile.ProfileName
         }
         
         // Update cache timestamps
-        state.individualProfileCache[action.payload.profile.profile_name] = Date.now();
+        state.individualProfileCache[action.payload.profile.ProfileName] = Date.now();
         state.contextCache[action.payload.context] = Date.now();
       })
       .addCase(createUserProfile.rejected, (state, action) => {
@@ -633,12 +742,12 @@ const profileSlice = createSlice({
       .addCase(fetchUserProfile.fulfilled, (state, action) => {
         state.isLoading = false
         state.user = action.payload.profile
-        state.currentProfile = action.payload.profile.profile_name
+        state.currentProfile = action.payload.profile.ProfileName
         state.currentContext = action.payload.context
         
         // Update in profiles list
         const existingIndex = state.userProfiles.findIndex(p => 
-          p.profile_name === action.payload.profile.profile_name && 
+          p.ProfileName === action.payload.profile.ProfileName && 
           p._cacheKey === action.payload.context
         );
         if (existingIndex >= 0) {
@@ -648,8 +757,9 @@ const profileSlice = createSlice({
         }
         
         // Update cache timestamps
-        state.individualProfileCache[action.payload.profile.profile_name] = Date.now();
+        state.individualProfileCache[action.payload.profile.ProfileName] = Date.now();
         state.contextCache[action.payload.context] = Date.now();
+  persistState(state);
       })
       .addCase(fetchUserProfile.rejected, (state, action) => {
         state.isLoading = false
@@ -672,15 +782,16 @@ const profileSlice = createSlice({
         // Set current user to first profile if none selected
         if (!state.user && action.payload.profiles.length > 0) {
           state.user = action.payload.profiles[0]
-          state.currentProfile = action.payload.profiles[0].profile_name
+          state.currentProfile = action.payload.profiles[0].ProfileName
         }
         
         // Update cache timestamps
         action.payload.profiles.forEach(profile => {
-          state.individualProfileCache[profile.profile_name] = Date.now();
+          state.individualProfileCache[profile.ProfileName] = Date.now();
         });
         state.contextCache[action.payload.context] = Date.now();
         state.lastFetched = Date.now();
+  persistState(state);
       })
       .addCase(fetchUserProfiles.rejected, (state, action) => {
         state.isLoading = false
@@ -696,13 +807,13 @@ const profileSlice = createSlice({
         state.isLoading = false
         
         // Update current user if it's the same profile
-        if (state.user?.profile_name === action.payload.profile.profile_name) {
+        if (state.user?.ProfileName === action.payload.profile.ProfileName) {
           state.user = action.payload.profile
         }
         
         // Update in profiles list
         const index = state.userProfiles.findIndex(p => 
-          p.profile_name === action.payload.profile.profile_name &&
+          p.ProfileName === action.payload.profile.ProfileName &&
           p._cacheKey === action.payload.context
         );
         if (index >= 0) {
@@ -710,8 +821,9 @@ const profileSlice = createSlice({
         }
         
         // Update cache timestamps
-        state.individualProfileCache[action.payload.profile.profile_name] = Date.now();
+        state.individualProfileCache[action.payload.profile.ProfileName] = Date.now();
         state.contextCache[action.payload.context] = Date.now();
+  persistState(state);
       })
       .addCase(updateUserProfile.rejected, (state, action) => {
         state.isLoading = false
@@ -727,13 +839,13 @@ const profileSlice = createSlice({
         state.isLoading = false
         
         // Update current user if it's the same profile
-        if (state.user?.profile_name === action.payload.profile.profile_name) {
+        if (state.user?.ProfileName === action.payload.profile.ProfileName) {
           state.user = action.payload.profile
         }
         
         // Update in profiles list
         const index = state.userProfiles.findIndex(p => 
-          p.profile_name === action.payload.profile.profile_name &&
+          p.ProfileName === action.payload.profile.ProfileName &&
           p._cacheKey === action.payload.context
         );
         if (index >= 0) {
@@ -741,8 +853,9 @@ const profileSlice = createSlice({
         }
         
         // Update cache timestamps
-        state.individualProfileCache[action.payload.profile.profile_name] = Date.now();
+        state.individualProfileCache[action.payload.profile.ProfileName] = Date.now();
         state.contextCache[action.payload.context] = Date.now();
+  persistState(state);
       })
       .addCase(patchUserProfile.rejected, (state, action) => {
         state.isLoading = false
@@ -759,17 +872,18 @@ const profileSlice = createSlice({
         
         // Remove from profiles list
         state.userProfiles = state.userProfiles.filter(p => 
-          !(p.profile_name === action.payload.profileName && p._cacheKey === action.payload.context)
+          !(p.ProfileName === action.payload.profileName && p._cacheKey === action.payload.context)
         );
         
         // Clear current user if it was the deleted profile
-        if (state.user?.profile_name === action.payload.profileName) {
+        if (state.user?.ProfileName === action.payload.profileName) {
           state.user = state.userProfiles.length > 0 ? state.userProfiles[0] : null;
-          state.currentProfile = state.user?.profile_name || null;
+          state.currentProfile = state.user?.ProfileName || null;
         }
         
         // Clear cache entries
         delete state.individualProfileCache[action.payload.profileName || ''];
+  persistState(state);
       })
       .addCase(deleteUserProfile.rejected, (state, action) => {
         state.isLoading = false
@@ -783,13 +897,13 @@ const profileSlice = createSlice({
       .addCase(updateUserTheme.fulfilled, (state, action) => {
         state.isLoading = false
         if (state.user) {
-          state.user.theme = action.payload
+          state.user.Theme = action.payload
           // Update in profiles list as well
           const existingIndex = state.userProfiles.findIndex(p => 
-            p.profile_name === state.user!.profile_name
+            p.ProfileName === state.user!.ProfileName
           );
           if (existingIndex >= 0) {
-            state.userProfiles[existingIndex].theme = action.payload;
+            state.userProfiles[existingIndex].Theme = action.payload;
           }
         }
       })
@@ -819,7 +933,7 @@ export default profileSlice.reducer
 export const selectUser = (state: { profile: ProfileState }) => state.profile.user
 export const selectUserProfiles = (state: { profile: ProfileState }) => state.profile.userProfiles
 export const selectCurrentProfile = (state: { profile: ProfileState }) => state.profile.currentProfile
-export const selectUserTheme = (state: { profile: ProfileState }) => state.profile.user?.theme || 'system'
+export const selectUserTheme = (state: { profile: ProfileState }) => state.profile.user?.Theme || 'system'
 export const selectProfileLoading = (state: { profile: ProfileState }) => state.profile.isLoading
 export const selectProfileError = (state: { profile: ProfileState }) => state.profile.error
 
@@ -844,17 +958,17 @@ export const selectIsContextCached = (state: { profile: ProfileState }, context:
 // Enhanced selectors for multi-profile management
 export const selectAllUserProfiles = (state: { profile: ProfileState }, userId?: string) => {
   if (userId) {
-    return state.profile.userProfiles.filter(p => p.user_id === userId);
+    return state.profile.userProfiles.filter(p => p.UserId === userId);
   }
   return state.profile.userProfiles;
 }
 
 export const selectProfileByName = (state: { profile: ProfileState }, profileName: string) => {
-  return state.profile.userProfiles.find(p => p.profile_name === profileName);
+  return state.profile.userProfiles.find(p => p.ProfileName === profileName);
 }
 
 export const selectIsProfileAnyCached = (state: { profile: ProfileState }, profileName: string) => {
-  const profile = state.profile.userProfiles.find(p => p.profile_name === profileName);
+  const profile = state.profile.userProfiles.find(p => p.ProfileName === profileName);
   if (!profile) return false;
   
   const timestamp = state.profile.individualProfileCache[profileName];
@@ -867,7 +981,7 @@ export const selectIsProfileAnyCached = (state: { profile: ProfileState }, profi
 export const selectCacheStats = (state: { profile: ProfileState }) => {
   const now = Date.now();
   const totalProfiles = state.profile.userProfiles.length;
-  const uniqueProfiles = new Set(state.profile.userProfiles.map(p => p.profile_name)).size;
+  const uniqueProfiles = new Set(state.profile.userProfiles.map(p => p.ProfileName)).size;
   const contexts = Object.keys(state.profile.contextCache).length;
   const freshProfiles = Object.values(state.profile.individualProfileCache)
     .filter(timestamp => (now - timestamp) < 30 * 60 * 1000).length;

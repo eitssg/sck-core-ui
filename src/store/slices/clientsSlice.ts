@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { API_CONFIG, buildApiUrl, getAuthHeaders } from '@/lib/api-config';
+import { apiFetch } from '@/lib/api-fetch';
 import type { OAuthTokenRequest, OAuthTokenResponse } from '@/lib/auth-types';
 import type { RootState, AppDispatch } from '@/store';
 import type { ApiResponse } from '../shared';
@@ -87,9 +88,9 @@ export const fetchClients = createAsyncThunk<
     url.searchParams.set('limit', String(limit));
     if (cursor) url.searchParams.set('cursor', cursor);
 
-    const response = await fetch(url.toString(), {
-      headers: getAuthHeaders(),
-    });
+    // Prefer cookie-based auth (no Authorization header) to avoid CORS preflight;
+    // then gracefully fall back to Bearer if the server rejects (401).
+  const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: 'clients-401', contextLabel: 'Clients' });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -129,9 +130,8 @@ export const fetchClient = createAsyncThunk<
 >(
   'clients/fetchSingle',
   async ({ clientSlug }) => {
-    const response = await fetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
-      headers: getAuthHeaders(),
-    });
+    // Same CORS-friendly approach for single-client fetch.
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), { cookieFirst: true, dedupeKey: `client-${clientSlug}-401`, contextLabel: 'Clients' });
 
     if (!response.ok) {
       throw new Error('Failed to fetch client');
@@ -287,8 +287,8 @@ export const switchToClient = createAsyncThunk<
       if (!response.ok) {
         const errorData = await response.json();
 
-        // If refresh fails, user needs to re-authenticate
-        if (response.status === 401 || response.status === 403) {
+        // Only treat 401 as session expiry
+        if (response.status === 401) {
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
           throw new Error('Session expired. Please login again.');

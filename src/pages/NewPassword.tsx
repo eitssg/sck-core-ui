@@ -167,7 +167,7 @@ export default function NewPassword() {
       <div className="w-full max-w-md">
         <Card className="shadow-large animate-fade-in">
           <CardHeader className="text-center space-y-4">
-            <div className="mx-auto w-16 h-16 bg-gradient-to-br from-primary to-primary-light rounded-full flex items-center justify-center shadow-medium">
+            <div className="mx-auto w-16 h-16 bg-theme-gradient rounded-full flex items-center justify-center shadow-medium">
               <Briefcase className="h-8 w-8 text-primary-foreground" />
             </div>
             <div>
@@ -194,6 +194,7 @@ export default function NewPassword() {
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
                     placeholder="Enter new password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -224,6 +225,7 @@ export default function NewPassword() {
                   <Input
                     id="confirmPassword"
                     type={showConfirmPassword ? "text" : "password"}
+                    autoComplete="new-password"
                     placeholder="Confirm new password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
@@ -262,13 +264,13 @@ export default function NewPassword() {
                         <Check 
                           className={`h-4 w-4 ${
                             passwordValidation[req.key as keyof typeof passwordValidation]
-                              ? 'text-green-500' 
+                              ? 'text-primary' 
                               : 'text-muted-foreground'
                           }`} 
                         />
                         <span className={
                           passwordValidation[req.key as keyof typeof passwordValidation]
-                            ? 'text-green-600' 
+                            ? 'text-primary' 
                             : 'text-muted-foreground'
                         }>
                           {req.text}
@@ -284,10 +286,10 @@ export default function NewPassword() {
                 <div className="flex items-center gap-2 text-sm">
                   <Check 
                     className={`h-4 w-4 ${
-                      passwordsMatch ? 'text-green-500' : 'text-destructive'
+                      passwordsMatch ? 'text-primary' : 'text-destructive'
                     }`} 
                   />
-                  <span className={passwordsMatch ? 'text-green-600' : 'text-destructive'}>
+                  <span className={passwordsMatch ? 'text-primary' : 'text-destructive'}>
                     {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
                   </span>
                 </div>

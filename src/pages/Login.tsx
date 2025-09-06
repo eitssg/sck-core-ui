@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { Eye, EyeOff, Mail, Lock, Briefcase } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, Briefcase, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,9 +9,30 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useTheme } from "@/hooks/useTheme";
 import { buildApiUrl, buildOAuthAuthorizeUrl, API_CONFIG } from "@/lib/api-config";
-import { clearError, setError } from "@/store/slices/authSlice";
+import { apiFetch } from "@/lib/api-fetch";
+import { authAPI } from "@/lib/auth-api";
+import { clearError, setError, logoutUser } from "@/store/slices/authSlice";
 import { useReduxData } from "@/hooks/useReduxData";
 import type { RootState } from "@/store";
+
+// Lookup table for OAuth /authorize redirect error codes -> friendly messages
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+  // Parameter validation
+  mci: "Missing client_id.",
+  mrt: "Missing response_type.",
+  urt: "Unsupported response_type.",
+  mru: "Missing redirect_uri.",
+  isf: "Invalid state format.",
+  // Rate limiting
+  rle: "Too many requests. Please wait and try again.",
+  // Session/client issues
+  cmm: "Invalid session token. Please sign in again.",
+  cmc: "Client mismatch. Please sign in again.",
+  // Registration/config issues
+  cid: "Invalid OAuth Client ID.",
+  cnm: "Client configuration mismatch.",
+  rnr: "Redirect URI not registered for this application.",
+};
 
 function mapOAuthErrorToUserMessage(error: string, statusCode?: number): string {
   const e = (error || "").toLowerCase();
@@ -29,6 +50,7 @@ function mapOAuthErrorToUserMessage(error: string, statusCode?: number): string 
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { auth, dispatch } = useReduxData();
   const { isDark } = useTheme();
 
@@ -41,12 +63,68 @@ export default function Login() {
 
   const [isLoading, setIsLoading] = useState(false);
   const errorMsg = auth?.error || "";
+  const errorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (isAuthenticated) navigate("/dashboard");
     // Clear any stale auth error when landing on login
     dispatch(clearError());
   }, [isAuthenticated, navigate, dispatch]);
+
+  // HARD LOGOUT on entering /login: clear cookie + local/session storage to avoid dangling state
+  // Skip when we're in the middle of OAuth callback processing to prevent races
+  // Also allow disabling via env flag in development to avoid disruptive loops
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (sessionStorage.getItem('oauth_processing') === '1') {
+        return;
+      }
+      // In dev, respect an opt-in flag to enable hard logout, default to off
+      const allowHardLogout = !import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_HARD_LOGOUT === 'true';
+      if (!allowHardLogout) {
+        return;
+      }
+      try {
+        // Try server-side logout to clear HttpOnly session cookie
+        // Attempt POST first; if not supported, fall back to GET
+        const logoutUrl = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGOUT);
+        try {
+          await apiFetch(logoutUrl, { method: "POST", cookieFirst: true, notify401: false, noToast401: true });
+        } catch {
+          try { await apiFetch(logoutUrl, { method: "GET", cookieFirst: true, notify401: false, noToast401: true }); } catch { /* ignore */ }
+        }
+      } finally {
+        // Revoke token + clear local storage via thunk (also calls authAPI.logout)
+        if (!cancelled) dispatch(logoutUser());
+        // Ensure local cleanup regardless
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+        localStorage.removeItem("token");
+        sessionStorage.removeItem("oauth_session_token");
+        sessionStorage.removeItem("oauth_token_type");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [dispatch]);
+
+  // Read ?err=code or ?error=code placed by the authorization server
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || "");
+    const code = params.get("err") || params.get("error");
+    if (code) {
+      const msg = AUTH_ERROR_MESSAGES[code.toLowerCase()] || "Login failed. Please try again.";
+      dispatch(setError(msg));
+    }
+    // We intentionally do not mutate the URL here; user can refresh and still see the error
+  }, [location.search, dispatch]);
+
+  // Move focus to the error for accessibility and visibility when it appears
+  useEffect(() => {
+    if (errorMsg && errorRef.current) {
+      errorRef.current.focus();
+    }
+  }, [errorMsg]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,11 +134,10 @@ export default function Login() {
     try {
       // Step 1: Login to obtain a session credential (cookie)
       const url = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGIN);
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: "POST",
+        cookieFirst: true,
         headers: { "Content-Type": "application/json" },
-        // IMPORTANT: include credentials so Set-Cookie is stored by the browser
-        credentials: "include",
         body: JSON.stringify({
           email,
           password,
@@ -81,7 +158,7 @@ export default function Login() {
         return;
       }
 
-      // Step 2: Redirect to OAuth authorize (session cookie will be sent automatically)
+  // Success: Redirect to OAuth authorize (session cookie will be sent automatically)
       const authorizeUrl = buildOAuthAuthorizeUrl();
       window.location.href = authorizeUrl;
       // No further code executes after navigation
@@ -104,44 +181,11 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-dashboard-bg to-primary/5 flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
-        {/* Marketing/Info Card */}
-        <Card className="shadow-large animate-fade-in order-2 lg:order-1">
-          <CardContent className="p-8 text-center space-y-6">
-            <div className="space-y-4">
-              <h2 className="text-2xl font-bold text-foreground">New to our platform?</h2>
-              <p className="text-muted-foreground">
-                Join administrators managing portfolios with our dashboard.
-              </p>
-              <div className="space-y-3 text-sm text-muted-foreground text-left">
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 bg-primary rounded-full"></div>
-                  <span>Manage multiple portfolios</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 bg-primary rounded-full"></div>
-                  <span>Track application performance</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 bg-primary rounded-full"></div>
-                  <span>Team collaboration tools</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 bg-primary rounded-full"></div>
-                  <span>Advanced analytics</span>
-                </div>
-              </div>
-            </div>
-            <Link to="/signup">
-              <Button variant="gradient" size="lg">Create New Account</Button>
-            </Link>
-          </CardContent>
-        </Card>
-
+      <div className="w-full max-w-lg">
         {/* Login Card */}
-        <Card className="shadow-large animate-fade-in order-1 lg:order-2">
+        <Card className="shadow-large animate-fade-in">
           <CardHeader className="text-center space-y-4">
-            <div className="mx-auto w-16 h-16 bg-gradient-to-br from-primary to-primary-light rounded-full flex items-center justify-center shadow-medium">
+            <div className="mx-auto w-16 h-16 bg-theme-gradient rounded-full flex items-center justify-center shadow-medium">
               <Briefcase className="h-8 w-8 text-primary-foreground" />
             </div>
             <div>
@@ -152,8 +196,15 @@ export default function Login() {
 
           <CardContent className="space-y-6">
             {errorMsg && (
-              <div className="p-3 text-sm text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md">
-                {errorMsg}
+              <div
+                ref={errorRef}
+                role="alert"
+                aria-live="assertive"
+                tabIndex={-1}
+                className="flex items-start gap-3 p-3.5 text-sm rounded-md border bg-destructive/20 border-destructive/40 text-destructive-foreground ring-1 ring-destructive/30 shadow-sm"
+              >
+                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                <span className="leading-5">{errorMsg}</span>
               </div>
             )}
 
@@ -227,7 +278,7 @@ export default function Login() {
                 type="submit"
                 size="lg"
                 className="w-full"
-                variant={isDark ? "secondary" : "gradient"}
+                variant="gradient"
                 disabled={isLoading || !canSubmit}
               >
                 {isLoading ? "Signing in..." : "Sign In"}

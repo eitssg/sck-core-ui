@@ -117,7 +117,7 @@ export default function EnterCode() {
       <div className="w-full max-w-md">
         <Card className="shadow-large animate-fade-in">
           <CardHeader className="text-center space-y-4">
-            <div className="mx-auto w-16 h-16 bg-gradient-to-br from-primary to-primary-light rounded-full flex items-center justify-center shadow-medium">
+            <div className="mx-auto w-16 h-16 bg-theme-gradient rounded-full flex items-center justify-center shadow-medium">
               <Briefcase className="h-8 w-8 text-primary-foreground" />
             </div>
             <div>
@@ -144,6 +144,7 @@ export default function EnterCode() {
                       key={index}
                       ref={(el) => (inputRefs.current[index] = el)}
                       type="text"
+                      autoComplete="one-time-code"
                       inputMode="numeric"
                       maxLength={1}
                       value={digit}
