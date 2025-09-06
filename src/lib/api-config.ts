@@ -35,7 +35,6 @@ export const API_CONFIG = {
 
     // API endpoints
     API: {
-      USERS: '/api/v1/users',
       PORTFOLIOS: '/api/v1/portfolios',
       APPLICATIONS: '/api/v1/applications',
       CLIENTS: '/api/v1/clients',
@@ -51,11 +50,19 @@ export const buildApiUrl = (endpoint: string): string => {
 };
 
 // Helper function to build OAuth authorize URL
+export const getRedirectUri = (): string => {
+  // Prefer configured redirect URI; otherwise derive from current origin + optional base path
+  const basePath = (import.meta as any)?.env?.VITE_BASE_PATH || '';
+  const normalizedBase = basePath ? (basePath.startsWith('/') ? basePath : `/${basePath}`) : '';
+  const derivedRedirect = `${window.location.origin}${normalizedBase}/authorized`;
+  return API_CONFIG.OAUTH.REDIRECT_URI || derivedRedirect;
+};
+
 export const buildOAuthAuthorizeUrl = (state?: string): string => {
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: API_CONFIG.OAUTH.CLIENT_ID,
-    redirect_uri: API_CONFIG.OAUTH.REDIRECT_URI,
+    redirect_uri: getRedirectUri(),
     scope: API_CONFIG.OAUTH.SCOPE,
     ...(state && { state }),
   });

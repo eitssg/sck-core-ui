@@ -1,12 +1,12 @@
 import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Provider } from "react-redux";
 import { store } from "@/store";
 import AppTheme from '@/AppTheme';
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/useAuth";
 import { lazy, Suspense } from "react";
 import { createProtectedRoute, createPublicRoute } from '@/utils/routeHelpers';
 import { PageLoader } from '@/components/PageLoader';
@@ -52,71 +52,73 @@ const queryClient = new QueryClient({
 
 // Landing component that uses auth
 const Landing = () => {
-  const { user } = useAuth();
-  
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <PageLoader type="default" />;
+  }
+
   if (user) {
     return <Navigate to="/dashboard" replace />;
   }
-  
+
   return <Navigate to="/login" replace />;
 };
 
 // Routes component
 const AppRoutes = () => (
-  <BrowserRouter>
-    <Routes>
-      {/* Public routes */}
-      <Route path="/" element={<Landing />} />
-      {createPublicRoute('/login', Login)}
-      {createPublicRoute('/signup', Signup)}
-      {createPublicRoute('/forgot-password', ForgotPassword)}
-      {createPublicRoute('/enter-code', EnterCode)}
-      {createPublicRoute('/new-password', NewPassword)}
-      {createPublicRoute('/no-account', NoAccount)}
-      {createPublicRoute('/new-password-success', NewPasswordSuccess)}
-      {createPublicRoute('/authorized', Authorized)}
+  <Routes>
+    {/* Public routes */}
+    <Route path="/" element={<Landing />} />
+    {createPublicRoute('/login', Login)}
+    {createPublicRoute('/signup', Signup)}
+    {createPublicRoute('/forgot-password', ForgotPassword)}
+    {createPublicRoute('/enter-code', EnterCode)}
+    {createPublicRoute('/new-password', NewPassword)}
+    {createPublicRoute('/no-account', NoAccount)}
+    {createPublicRoute('/new-password-success', NewPasswordSuccess)}
+    {createPublicRoute('/authorized', Authorized)}
 
-      {/* Protected routes */}
-      {createProtectedRoute('/dashboard', Dashboard, 'dashboard')}
-      {createProtectedRoute('/profile', Profile, 'form')}
-      {createProtectedRoute('/settings', Settings, 'form')}
-      
-      {/* Portfolio routes */}
-      {createProtectedRoute('/portfolios', Portfolios, 'list')}
-      {createProtectedRoute('/portfolios/create', CreatePortfolio, 'form')}
-      {createProtectedRoute('/portfolios/:id', PortfolioDetails, 'dashboard')}
-      
-      {/* Application routes */}
-      {createProtectedRoute('/applications', Applications, 'list')}
-      {createProtectedRoute('/applications/create', CreateApplication, 'form')}
-      {createProtectedRoute('/applications/:id', ApplicationDetails, 'dashboard')}
-      
-      {/* Client routes */}
-      {createProtectedRoute('/clients', Clients, 'list')}
-      {createProtectedRoute('/clients/create', CreateClient, 'form')}
-      {createProtectedRoute('/clients/:id', ClientDetails, 'dashboard')}
-      {createProtectedRoute('/clients/:id/edit', CreateClient, 'form')}
-      
-      {/* Zone routes */}
-      {createProtectedRoute('/zones', Zones, 'list')}
-      {createProtectedRoute('/zones/create', CreateZone, 'form')}
-      {createProtectedRoute('/zones/:id', ZoneDetails, 'dashboard')}
-      
-      {/* Deployment routes */}
-      {createProtectedRoute('/deployments', Deployments, 'list')}
-      {createProtectedRoute('/deployments/:id', DeploymentDetails, 'dashboard')}
-      
-      {/* Other routes */}
-      {createProtectedRoute('/docs', Docs, 'default')}
-      {createPublicRoute('/github', GoToGitHub)}
-      
-      <Route path="*" element={
-        <Suspense fallback={<PageLoader type="default" />}>
-          <NotFound />
-        </Suspense>
-      } />
-    </Routes>
-  </BrowserRouter>
+    {/* Protected routes */}
+    {createProtectedRoute('/dashboard', Dashboard, 'dashboard')}
+    {createProtectedRoute('/profile', Profile, 'form')}
+    {createProtectedRoute('/settings', Settings, 'form')}
+
+    {/* Portfolio routes */}
+    {createProtectedRoute('/portfolios', Portfolios, 'list')}
+    {createProtectedRoute('/portfolios/create', CreatePortfolio, 'form')}
+    {createProtectedRoute('/portfolios/:id', PortfolioDetails, 'dashboard')}
+
+    {/* Application routes */}
+    {createProtectedRoute('/applications', Applications, 'list')}
+    {createProtectedRoute('/applications/create', CreateApplication, 'form')}
+    {createProtectedRoute('/applications/:id', ApplicationDetails, 'dashboard')}
+
+    {/* Client routes */}
+    {createProtectedRoute('/clients', Clients, 'list')}
+    {createProtectedRoute('/clients/create', CreateClient, 'form')}
+    {createProtectedRoute('/clients/:id', ClientDetails, 'dashboard')}
+    {createProtectedRoute('/clients/:id/edit', CreateClient, 'form')}
+
+    {/* Zone routes */}
+    {createProtectedRoute('/zones', Zones, 'list')}
+    {createProtectedRoute('/zones/create', CreateZone, 'form')}
+    {createProtectedRoute('/zones/:id', ZoneDetails, 'dashboard')}
+
+    {/* Deployment routes */}
+    {createProtectedRoute('/deployments', Deployments, 'list')}
+    {createProtectedRoute('/deployments/:id', DeploymentDetails, 'dashboard')}
+
+    {/* Other routes */}
+    {createProtectedRoute('/docs', Docs, 'default')}
+    {createPublicRoute('/github', GoToGitHub)}
+
+    <Route path="*" element={
+      <Suspense fallback={<PageLoader type="default" />}>
+        <NotFound />
+      </Suspense>
+    } />
+  </Routes>
 );
 
 // Main App component with provider hierarchy
@@ -124,13 +126,14 @@ const App = () => (
   <Provider store={store}>
     <QueryClientProvider client={queryClient}>
       <AppTheme>
-        <AuthProvider>
-          <TooltipProvider>
-            <AppRoutes />
-            <Toaster />
-            <Sonner />
-          </TooltipProvider>
-        </AuthProvider>
+        <BrowserRouter basename={import.meta.env.VITE_BASE_PATH || '/'}>
+          <AuthProvider>
+            <TooltipProvider>
+              <AppRoutes />
+              <Toaster />
+            </TooltipProvider>
+          </AuthProvider>
+        </BrowserRouter>
       </AppTheme>
     </QueryClientProvider>
   </Provider>

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth } from '@/contexts/useAuth'
 import { useAppDispatch } from '@/store'
 import { clearProfile } from '@/store/slices/profileSlice'
 

@@ -52,7 +52,7 @@ export default function ApplicationDetails() {
   const portfoliosList = useMemo<Portfolio[]>(() => {
     const p: any = (portfolios as any)?.items;
     return Array.isArray(p) ? (p as Portfolio[]) : [];
-  }, [portfolios?.items]);
+  }, [portfolios]);
 
   const appsList = useMemo<Application[]>(() => {
     const a: any = (applications as any)?.items ?? applications;

@@ -24,7 +24,7 @@ const Clients = () => {
     if (actions?.clients?.fetch) {
       actions.clients.fetch({ limit: 100 });
     }
-  }, []);
+  }, [actions?.clients]);
 
   const filteredClients = useMemo<Client[]>(() => {
     const list = Array.isArray(clients.items) ? (clients.items as Client[]) : ([] as Client[]);

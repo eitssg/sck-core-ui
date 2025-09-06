@@ -151,7 +151,7 @@ export default function CreateZone() {
 
   const clientItems = useMemo<Client[]>(
     () => (Array.isArray((clients as any)?.items) ? ((clients as any).items as Client[]) : []),
-    [clients?.items]
+    [clients]
   );
 
   // Default client from selected or URL ?client=

@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
-import { themes as available } from "@/lib/themes";
+import { themes } from "@/lib/themes";
 import { ThemeName, ThemeContext, ThemeContextValue } from './ThemeContext'
 
 
@@ -53,7 +53,7 @@ export default function ThemeProvider({ children, theme = "system", onThemeChang
     onThemeChange?.(t);
   };
 
-  const allThemes = useMemo(() => Array.isArray(available) ? available : [], [available]);
+  const allThemes = useMemo(() => (Array.isArray(themes) ? themes : []), []);
   const themeConfig = useMemo(() => allThemes.find((t: any) => t.name === current), [allThemes, current]);
 
   const value: ThemeContextValue = {

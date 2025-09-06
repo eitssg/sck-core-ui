@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { authAPI } from '@/lib/auth-api';
+import { useReduxData } from '@/hooks/useReduxData';
+import { setError } from '@/store/slices/authSlice';
 
 export default function Authorized() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [error, setError] = useState<string>('');
+  const { dispatch } = useReduxData();
   const [isProcessing, setIsProcessing] = useState(true);
 
   useEffect(() => {
@@ -17,14 +19,14 @@ export default function Authorized() {
         const state = searchParams.get('state');
 
         if (error) {
-          setError(`OAuth error: ${error}`);
-          setIsProcessing(false);
+          dispatch(setError(error));
+          navigate('/login');
           return;
         }
 
         if (!code) {
-          setError('No authorization code received');
-          setIsProcessing(false);
+          dispatch(setError('No authorization code received'));
+          navigate('/login');
           return;
         }
 
@@ -33,52 +35,43 @@ export default function Authorized() {
         // Exchange code for tokens
         const result = await authAPI.handleOAuthCallback(code);
 
-        if (result.error) {
-          setError(result.error);
-        } else if (result.user) {
+        if ('error' in result) {
+          const msg = result.error_description || result.error || 'Login failed';
+          dispatch(setError(msg));
+          navigate('/login');
+          return;
+        } else if ('access_token' in result) {
           console.log('OAuth login successful, redirecting to dashboard');
           navigate('/dashboard', { replace: true });
         } else {
-          setError('Login failed - no user data received');
+          dispatch(setError('Login failed - unexpected response'));
+          navigate('/login');
+          return;
         }
 
       } catch (error) {
         console.error('OAuth callback processing error:', error);
-        setError('Failed to process OAuth callback');
+        dispatch(setError('Failed to process OAuth callback'));
+        navigate('/login');
+        return;
       } finally {
         setIsProcessing(false);
       }
     };
 
     processOAuthCallback();
-  }, [searchParams, navigate]);
+  }, [searchParams, navigate, dispatch]);
 
   if (isProcessing) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p>Completing login...</p>
+    <p>Logging in... Please wait...</p>
         </div>
       </div>
     );
   }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600 mb-4">{error}</p>
-          <button 
-            onClick={() => navigate('/login')} 
-            className="btn btn-primary"
-          >
-            Return to Login
-          </button>
-        </div>
-      </div>
-    );
-  }
-
+  // If not processing, we've navigated away already
   return null;
 }

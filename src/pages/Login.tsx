@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useTheme } from "@/hooks/useTheme";
 import { buildApiUrl, buildOAuthAuthorizeUrl, API_CONFIG } from "@/lib/api-config";
+import { clearError, setError } from "@/store/slices/authSlice";
+import { useReduxData } from "@/hooks/useReduxData";
 import type { RootState } from "@/store";
 
 function mapOAuthErrorToUserMessage(error: string, statusCode?: number): string {
@@ -27,6 +29,7 @@ function mapOAuthErrorToUserMessage(error: string, statusCode?: number): string 
 
 export default function Login() {
   const navigate = useNavigate();
+  const { auth, dispatch } = useReduxData();
   const { isDark } = useTheme();
 
   const isAuthenticated = useSelector((s: RootState) => s.auth?.isAuthenticated) ?? false;
@@ -37,16 +40,18 @@ export default function Login() {
   const canSubmit = useMemo(() => email.trim().length > 3 && password.length >= 1, [email, password]);
 
   const [isLoading, setIsLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
+  const errorMsg = auth?.error || "";
 
   useEffect(() => {
     if (isAuthenticated) navigate("/dashboard");
-  }, [isAuthenticated, navigate]);
+    // Clear any stale auth error when landing on login
+    dispatch(clearError());
+  }, [isAuthenticated, navigate, dispatch]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setErrorMsg("");
+  dispatch(clearError());
 
     try {
       // Step 1: Login to obtain a session credential (cookie)
@@ -70,8 +75,8 @@ export default function Login() {
         } catch {
           // ignore parse errors
         }
-        const msg = mapOAuthErrorToUserMessage(server.message || "Login failed", res.status);
-        setErrorMsg(msg);
+  const msg = mapOAuthErrorToUserMessage(server.message || "Login failed", res.status);
+  dispatch(setError(msg));
         setIsLoading(false);
         return;
       }
@@ -81,7 +86,7 @@ export default function Login() {
       window.location.href = authorizeUrl;
       // No further code executes after navigation
     } catch (err) {
-      setErrorMsg(mapOAuthErrorToUserMessage(err instanceof Error ? err.message : "Login failed"));
+      dispatch(setError(mapOAuthErrorToUserMessage(err instanceof Error ? err.message : "Login failed")));
       setIsLoading(false);
     }
   };
@@ -93,7 +98,7 @@ export default function Login() {
       window.location.href = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.GITHUB_LOGIN);
     } catch {
       setIsLoading(false);
-      setErrorMsg("GitHub login failed. Please try again.");
+      dispatch(setError("GitHub login failed. Please try again."));
     }
   };
 

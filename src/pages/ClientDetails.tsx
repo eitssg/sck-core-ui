@@ -115,7 +115,7 @@ export default function CreateApplication() {
   // Lists
   const portfoliosList = useMemo<Portfolio[]>(
     () => (Array.isArray((portfolios as any)?.items) ? ((portfolios as any).items as Portfolio[]) : []),
-    [portfolios?.items]
+  [portfolios]
   );
   const clientPortfolios = useMemo(
     () => (currentClient ? portfoliosList.filter((p) => p.client === currentClient) : portfoliosList),

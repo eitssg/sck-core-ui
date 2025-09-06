@@ -126,7 +126,7 @@ export default function Applications() {
     // If you have a mapping from portfolio -> portfolio_prn, calculate here.
     // For now, return an empty map; UI will show "—".
     return new Map<string, AppDeploymentBuild | undefined>();
-  }, [builds]);
+  }, []);
 
   const filteredPortfolios = useMemo<Portfolio[]>(() => {
     if (searchTerms.length === 0) return clientPortfolios;

@@ -37,8 +37,11 @@ const ZoneDetails = () => {
   // Redux data/actions
   const { zones, clients, selectedClient, removeZone } = useReduxData();
 
-  const allZones = Array.isArray(zones) ? (zones as Zone[]) : ([] as Zone[]);
-  const clientItems = Array.isArray((clients as any)?.items) ? ((clients as any).items as Client[]) : ([] as Client[]);
+  const allZones = useMemo<Zone[]>(() => (Array.isArray(zones) ? (zones as Zone[]) : ([] as Zone[])), [zones]);
+  const clientItems = useMemo<Client[]>(
+    () => (Array.isArray((clients as any)?.items) ? ((clients as any).items as Client[]) : ([] as Client[])),
+    [clients]
+  );
   const effectiveClient = clientParam ?? (typeof selectedClient === "string" ? selectedClient : null);
 
   const zone = useMemo(() => {

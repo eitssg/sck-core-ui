@@ -60,32 +60,18 @@ export const refreshAccessToken = createAsyncThunk(
 );
 
 // Async thunk for login
-export const loginUser = createAsyncThunk(
+export const loginUser = createAsyncThunk<any, { email: string; password: string }>(
   'auth/login',
-  async ({ email, password }: { email: string; password: string }, { rejectWithValue }) => {
+  async ({ email, password }, { rejectWithValue }) => {
     try {
       const result = await authAPI.login(email, password);
-      
-      if (result.error) {
-        return rejectWithValue(result.error);
+      if ('error' in result) {
+        return rejectWithValue(result.error_description || result.error);
       }
-      
-      if (!result.user || !result.tokens) {
-        return rejectWithValue('Login failed - incomplete response');
-      }
-
-      // Calculate expiration timestamp
-      const expiresAt = Date.now() + (result.tokens.expires_in * 1000);
-      
-      return {
-        user: result.user,
-        tokens: {
-          ...result.tokens,
-          expires_at: expiresAt,
-        },
-      };
+      // In this app, login initiates the OAuth redirect flow; success here only means
+      // the session credential was set. We do not fulfill tokens/user from this thunk.
+      return rejectWithValue('Redirecting to authorize...');
     } catch (error) {
-      console.error('Login error:', error);
       return rejectWithValue(error instanceof Error ? error.message : 'Login failed');
     }
   }
@@ -119,6 +105,9 @@ const authSlice = createSlice({
   reducers: {
     clearError: (state) => {
       state.error = null;
+    },
+    setError: (state, action: PayloadAction<string | null>) => {
+      state.error = action.payload ?? null;
     },
     
     updateActivity: (state) => {
@@ -221,7 +210,7 @@ const authSlice = createSlice({
   },
 });
 
-export const { clearError, updateActivity, setTokens, initializeAuth } = authSlice.actions;
+export const { clearError, setError, updateActivity, setTokens, initializeAuth } = authSlice.actions;
 
 // Selectors
 export const selectAuth = (state: { auth: AuthState }) => state.auth;

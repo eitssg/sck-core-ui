@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis } from "recharts";
@@ -21,6 +21,14 @@ type MaybeDeployment = {
   status?: string;
   created_at?: string | number | Date;
 };
+
+const STATUS_TYPES = [
+  { name: "Released", key: "released", color: "hsl(142 71% 45%)" },
+  { name: "Not Released", key: "not-released", color: "hsl(48 96% 53%)" },
+  { name: "Failed", key: "failed", color: "hsl(0 84% 60%)" },
+  { name: "Teardown in Progress", key: "teardown-in-progress", color: "hsl(0 72% 50%)" },
+  { name: "Release in Progress", key: "release-in-progress", color: "hsl(221 83% 53%)" },
+];
 
 const chartConfig = {
   successful: { label: "Successful", color: "hsl(var(--success))" },
@@ -66,7 +74,7 @@ export default function DeploymentChart({ client, filters }: DeploymentChartProp
     [zonesList, clientSlug]
   );
 
-  const matchesFilters = (dep: MaybeDeployment): boolean => {
+  const matchesFilters = useCallback((dep: MaybeDeployment): boolean => {
     // Date range
     if (filters?.dateRange?.from || filters?.dateRange?.to) {
       const d = toDate(dep.created_at) ?? new Date(0);
@@ -113,22 +121,14 @@ export default function DeploymentChart({ client, filters }: DeploymentChartProp
     }
 
     return true;
-  };
+  }, [filters]);
 
   const filteredDeployments = useMemo<MaybeDeployment[]>(
     () => clientDeployments.filter(matchesFilters),
-    [clientDeployments, filters]
+    [clientDeployments, matchesFilters]
   );
 
   // Status Distribution
-  const statusTypes = [
-    { name: "Released", key: "released", color: "hsl(142 71% 45%)" },
-    { name: "Not Released", key: "not-released", color: "hsl(48 96% 53%)" },
-    { name: "Failed", key: "failed", color: "hsl(0 84% 60%)" },
-    { name: "Teardown in Progress", key: "teardown-in-progress", color: "hsl(0 72% 50%)" },
-    { name: "Release in Progress", key: "release-in-progress", color: "hsl(221 83% 53%)" },
-  ];
-
   const statusDistribution = useMemo(
     () => {
       const counts = filteredDeployments.reduce((acc, d) => {
@@ -136,7 +136,7 @@ export default function DeploymentChart({ client, filters }: DeploymentChartProp
         acc[s] = (acc[s] || 0) + 1;
         return acc;
       }, {} as Record<string, number>);
-      return statusTypes
+  return STATUS_TYPES
         .map((s) => ({ name: s.name, value: counts[s.key] || 0, color: s.color }))
         .filter((s) => s.value > 0);
     },

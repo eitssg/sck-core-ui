@@ -1,23 +1,5 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  avatar?: string;
-  theme?: string;
-  role?: string;
-}
-
-interface AuthContextType {
-  user: User | null;
-  login: (token: string) => Promise<void>;
-  logout: () => void;
-  loading: boolean;
-  error: string | null;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+import React, { useContext, useEffect, useState } from 'react';
+import { AuthContext, type User, type AuthContextType } from './auth-context'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -85,10 +67,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+// Hook moved to ./useAuth to keep this file components-only exports

@@ -1,12 +1,14 @@
 // Custom authentication API service
-import { API_CONFIG, buildApiUrl, buildOAuthAuthorizeUrl, getAuthHeaders } from './api-config';
+import { API_CONFIG, buildApiUrl, buildOAuthAuthorizeUrl, getAuthHeaders, getRedirectUri } from './api-config';
 import type {
-  LoginResponse,
   SignupRequest,
   OAuthTokenResponse,
   OAuthTokenRequest,
-  UserProfile
+  OAuthErrorResponse,
+  LoginResponse,
 } from './auth-types';
+
+// NOTE: This module adheres strictly to types defined in auth-types.ts.
 
 function mapOAuthErrorToUserMessage(error: string, statusCode?: number): string {
   // Handle OAuth-specific errors with user-friendly messages
@@ -62,12 +64,9 @@ function extractTokenPayload(json: any): { token: string | null; token_type: str
 
 export const authAPI = {
 
-  // Standard email/password login - now handles OAuth session token flow
-  async login(email: string, password: string): Promise<LoginResponse> {
+  // Standard email/password login - returns session credential response
+  async login(email: string, password: string): Promise<LoginResponse | OAuthErrorResponse> {
     try {
-      console.log('Step 1: Getting session token from /auth/v1/login');
-
-      // Step 1: Get session token from /auth/v1/login (HTTP 200)
       const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGIN), {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -79,87 +78,22 @@ export const authAPI = {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        const userFriendlyMessage = mapOAuthErrorToUserMessage(
-          errorData.message || errorData.error || 'Login failed',
-          response.status
-        );
-        return { user: null, error: userFriendlyMessage };
+        const errorData = await response.json().catch(() => ({}));
+        const message = errorData.message || errorData.error || 'invalid_request';
+        const mapped = mapOAuthErrorToUserMessage(message, response.status);
+        return { error: message, error_description: mapped } as OAuthErrorResponse;
       }
-
-      const loginData = await response.json();
-      console.log('Login response:', loginData);
-
-      // Extract session token from response
-      const sessionToken = loginData.data?.token;
-      const tokenType = loginData.data?.token_type || 'Bearer';
-
-      if (!sessionToken) {
-        return { user: null, error: 'Login service error. Please contact support.' };
-      }
-
-      console.log('Step 2: Using session token for OAuth authorize');
-
-      // Step 2: Use the session token for /auth/v1/authorize (with redirect: 'manual')
-      const authorizeUrl = buildOAuthAuthorizeUrl();
-      const authorizeResponse = await fetch(authorizeUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `${tokenType} ${sessionToken}`,  // ✅ Use the session token!
-          'Content-Type': 'application/json',
-        },
-        redirect: 'manual'  // ✅ Handle 302 redirect manually
-      });
-
-      // Handle the 302 redirect manually
-      if (response.status === 302) {
-
-        const setCookieHeaders = response.headers.get('Set-Cookie');
-        if (setCookieHeaders) {
-          // Parse and set cookies manually
-          const cookies = setCookieHeaders.split(',').map(cookie => cookie.trim());
-
-          cookies.forEach(cookieString => {
-            // Extract cookie name=value and attributes
-            const [nameValue, ...attributes] = cookieString.split(';');
-            const [name, value] = nameValue.split('=');
-
-            if (name.trim() === 'sck_token') {
-              // Set the sck_token cookie
-              document.cookie = cookieString;
-            }
-          });
-        }
-
-        // This is correct OAuth behavior
-        const redirectUrl = response.headers.get('Location');
-        if (redirectUrl) {
-          // Handle the redirect (e.g., window.location.href = redirectUrl)
-          window.location.href = redirectUrl;
-          return;
-        }
-      } else {
-        // Only try to parse JSON for non-redirect responses
-        if (response.headers.get('content-type')?.includes('application/json')) {
-          const data = await response.json();
-          // Handle your current error format: {"status": "error", "code": 500, "message": "Unknown Exception"}
-          if (!response.ok || data.status === "error") {
-            throw new Error(data.message || `HTTP ${response.status}`);
-          }
-          return data;
-        }
-      }
+      const loginData: LoginResponse = await response.json();
+      return loginData;
     } catch (error) {
-      console.error('Login flow error:', error);
-      const userFriendlyMessage = mapOAuthErrorToUserMessage(
-        error instanceof Error ? error.message : 'Login failed'
-      );
-      return { user: null, error: userFriendlyMessage };
+      const message = error instanceof Error ? error.message : 'network_error';
+      const mapped = mapOAuthErrorToUserMessage(message);
+      return { error: message, error_description: mapped } as OAuthErrorResponse;
     }
   },
 
   // Handle OAuth callback from /authorized page - PROPER OAuth token exchange
-  async handleOAuthCallback(code: string): Promise<LoginResponse> {
+  async handleOAuthCallback(code: string): Promise<OAuthTokenResponse | OAuthErrorResponse> {
     try {
       console.log('Step 3: Exchanging authorization code for access token');
 
@@ -168,7 +102,7 @@ export const authAPI = {
         grant_type: 'authorization_code',
         code: code,
         client_id: API_CONFIG.OAUTH.CLIENT_ID,
-        redirect_uri: API_CONFIG.OAUTH.REDIRECT_URI,
+        redirect_uri: getRedirectUri(),
       });
 
       console.log('Token exchange request:', {
@@ -187,14 +121,10 @@ export const authAPI = {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Token exchange error:', errorData);
-
-        const userFriendlyMessage = mapOAuthErrorToUserMessage(
-          errorData.error_description || errorData.error || errorData.message || 'Token exchange failed',
-          response.status
-        );
-        return { user: null, error: userFriendlyMessage };
+        const errorData = await response.json().catch(() => ({}));
+        const message = errorData.error || errorData.message || 'invalid_request';
+        const mapped = mapOAuthErrorToUserMessage(errorData.error_description || message, response.status);
+        return { error: message, error_description: mapped } as OAuthErrorResponse;
       }
 
       const tokens: OAuthTokenResponse = await response.json();
@@ -210,19 +140,11 @@ export const authAPI = {
       sessionStorage.removeItem('oauth_session_token');
       sessionStorage.removeItem('oauth_token_type');
 
-      // Fetch user profile with new token
-      const userResponse = await this.fetchUserProfile();
-      if (userResponse.error) {
-        return { user: null, error: 'Failed to load user profile. Please try logging in again.' };
-      }
-
-      return { user: userResponse, tokens };
+      return tokens;
     } catch (error) {
-      console.error('Token exchange error:', error);
-      const userFriendlyMessage = mapOAuthErrorToUserMessage(
-        error instanceof Error ? error.message : 'Token exchange failed'
-      );
-      return { user: null, error: userFriendlyMessage };
+      const message = error instanceof Error ? error.message : 'network_error';
+      const mapped = mapOAuthErrorToUserMessage(message);
+      return { error: message, error_description: mapped } as OAuthErrorResponse;
     }
   },
 
@@ -233,13 +155,13 @@ export const authAPI = {
   },
 
   // OAuth Authorization Code Flow - Step 2: Exchange code for tokens
-  async exchangeCodeForTokens(code: string, state?: string): Promise<LoginResponse> {
+  async exchangeCodeForTokens(code: string, state?: string): Promise<OAuthTokenResponse | OAuthErrorResponse> {
     try {
       const tokenRequest: OAuthTokenRequest = {
         grant_type: 'authorization_code',
         code,
         client_id: API_CONFIG.OAUTH.CLIENT_ID,
-        redirect_uri: API_CONFIG.OAUTH.REDIRECT_URI,
+  redirect_uri: getRedirectUri(),
       };
 
       console.log('Token exchange request:', { ...tokenRequest, code: code.substring(0, 10) + '...' });
@@ -253,14 +175,10 @@ export const authAPI = {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Token exchange error:', errorData);
-
-        const userFriendlyMessage = mapOAuthErrorToUserMessage(
-          errorData.error_description || errorData.error || errorData.message || 'Token exchange failed',
-          response.status
-        );
-        return { user: null, error: userFriendlyMessage };
+        const errorData = await response.json().catch(() => ({}));
+        const message = errorData.error || errorData.message || 'invalid_request';
+        const mapped = mapOAuthErrorToUserMessage(errorData.error_description || message, response.status);
+        return { error: message, error_description: mapped } as OAuthErrorResponse;
       }
 
       const tokens: OAuthTokenResponse = await response.json();
@@ -272,19 +190,11 @@ export const authAPI = {
         localStorage.setItem('refresh_token', tokens.refresh_token);
       }
 
-      // Fetch user profile with new token
-      const userResponse = await this.fetchUserProfile();
-      if (userResponse.error) {
-        return { user: null, error: 'Failed to load user profile. Please try logging in again.' };
-      }
-
-      return { user: userResponse, tokens };
+      return tokens;
     } catch (error) {
-      console.error('Token exchange error:', error);
-      const userFriendlyMessage = mapOAuthErrorToUserMessage(
-        error instanceof Error ? error.message : 'Token exchange failed'
-      );
-      return { user: null, error: userFriendlyMessage };
+      const message = error instanceof Error ? error.message : 'network_error';
+      const mapped = mapOAuthErrorToUserMessage(message);
+      return { error: message, error_description: mapped } as OAuthErrorResponse;
     }
   },
 
@@ -335,7 +245,7 @@ export const authAPI = {
   },
 
   // Update signup to include client_id
-  async signup(userData: SignupRequest): Promise<LoginResponse> {
+  async signup(userData: SignupRequest): Promise<OAuthTokenResponse | OAuthErrorResponse> {
     try {
       const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGIN), {
         method: 'POST',
@@ -347,11 +257,12 @@ export const authAPI = {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        return { user: null, error: errorData.message || 'Signup failed' };
+        const errorData = await response.json().catch(() => ({}));
+        const message = errorData.error || errorData.message || 'invalid_request';
+        return { error: message, error_description: mapOAuthErrorToUserMessage(message, response.status) } as OAuthErrorResponse;
       }
 
-      const data = await response.json();
+      const data: OAuthTokenResponse = await response.json();
 
       // Store tokens if provided
       if (data.access_token) {
@@ -361,10 +272,10 @@ export const authAPI = {
         }
       }
 
-      return { user: data.user, tokens: data };
+      return data;
     } catch (error) {
-      console.error('Signup error:', error);
-      return { user: null, error: 'Network error occurred' };
+      const message = error instanceof Error ? error.message : 'network_error';
+      return { error: message, error_description: mapOAuthErrorToUserMessage(message) } as OAuthErrorResponse;
     }
   },
 
@@ -388,29 +299,29 @@ export const authAPI = {
     }
   },
 
-  async getCurrentUser(): Promise<LoginResponse> {
+  async getCurrentUser(): Promise<import('./auth-types').UserProfile | OAuthErrorResponse> {
     try {
       const token = localStorage.getItem('access_token');
       if (!token) {
-        return { user: null };
+        return { error: 'not_authenticated', error_description: 'User is not authenticated' } as OAuthErrorResponse;
       }
 
       const user = await this.fetchUserProfile();
-      if (user.error) {
+      if ((user as any)?.error) {
         // Try to refresh token
         const newTokens = await this.refreshToken();
         if (newTokens) {
           // Retry with new token
           const retryUser = await this.fetchUserProfile();
-          return { user: retryUser.error ? null : retryUser };
+          return (retryUser as any)?.error ? ({ error: 'profile_fetch_failed' } as OAuthErrorResponse) : retryUser;
         }
-        return { user: null };
+        return { error: 'profile_fetch_failed' } as OAuthErrorResponse;
       }
 
-      return { user };
+      return user;
     } catch (error) {
       console.error('Get current user error:', error);
-      return { user: null };
+      return { error: 'unknown_error' } as OAuthErrorResponse;
     }
   },
 
