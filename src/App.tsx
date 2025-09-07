@@ -8,6 +8,7 @@ import { Provider } from "react-redux";
 import { store } from "@/store";
 import AppTheme from '@/AppTheme';
 import { AuthProvider } from "@/contexts/AuthContext";
+import SessionManager from '@/components/SessionManager';
 import { useAuth } from "@/contexts/useAuth";
 import { lazy, Suspense } from "react";
 import { createProtectedRoute, createPublicRoute } from '@/utils/routeHelpers';
@@ -36,6 +37,7 @@ const ApplicationDetails = lazy(() => import("./pages/ApplicationDetails"));
 const Clients = lazy(() => import("./pages/Clients"));
 const ClientDetails = lazy(() => import("./pages/ClientDetails"));
 const CreateClient = lazy(() => import("./pages/CreateClient"));
+const RegisterClient = lazy(() => import("./pages/RegisterClient"));
 const Zones = lazy(() => import("./pages/Zones"));
 const ZoneDetails = lazy(() => import("./pages/ZoneDetails"));
 const CreateZone = lazy(() => import("./pages/CreateZone"));
@@ -43,6 +45,8 @@ const Deployments = lazy(() => import("./pages/Deployments"));
 const DeploymentDetails = lazy(() => import("./pages/DeploymentDetails"));
 const GoToGitHub = lazy(() => import("./pages/GoToGitHub"));
 const Docs = lazy(() => import("./pages/Docs"));
+const VerifyEmail = lazy(() => import("./pages/VerifyEmail"));
+const Welcome = lazy(() => import("./pages/Welcome"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -95,6 +99,8 @@ const AppRoutes = () => (
     {createPublicRoute('/new-password', NewPassword)}
     {createPublicRoute('/no-account', NoAccount)}
     {createPublicRoute('/new-password-success', NewPasswordSuccess)}
+    {createPublicRoute('/verify-email', VerifyEmail)}
+    {createPublicRoute('/welcome', Welcome)}
     {createPublicRoute('/authorized', Authorized)}
 
     {/* Protected routes */}
@@ -117,6 +123,7 @@ const AppRoutes = () => (
     {createProtectedRoute('/clients/create', CreateClient, 'form')}
     {createProtectedRoute('/clients/:id', ClientDetails, 'dashboard')}
     {createProtectedRoute('/clients/:id/edit', CreateClient, 'form')}
+    {createProtectedRoute('/register-client', RegisterClient, 'form')}
 
     {/* Zone routes */}
     {createProtectedRoute('/zones', Zones, 'list')}
@@ -144,9 +151,10 @@ const App = () => (
   <Provider store={store}>
     <QueryClientProvider client={queryClient}>
       <AppTheme>
-  <BrowserRouter basename={import.meta.env.DEV ? undefined : (import.meta.env.VITE_BASE_PATH || undefined)}>
+        <BrowserRouter basename={import.meta.env.DEV ? undefined : (import.meta.env.VITE_BASE_PATH || undefined)}>
           <AuthProvider>
             <TooltipProvider>
+              <SessionManager />
               <ToastBridge />
               <PermissionIssues />
               <AppRoutes />

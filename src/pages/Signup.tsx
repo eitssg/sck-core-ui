@@ -6,24 +6,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import OrganizationSearch from "@/components/OrganizationSearch";
 import { useAuth } from "@/hooks/useAuth";
-import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/hooks/use-toast";
-import { buildApiUrl } from "@/lib/api-config";
+import { buildApiUrl, API_CONFIG } from "@/lib/api-config";
 import { apiFetch } from "@/lib/api-fetch";
 import type { UserProfile } from "@/store/types";
 
 type SignUpForm = Pick<UserProfile, "first_name" | "last_name" | "email"> & {
   password: string;
   confirmPassword: string;
-  organization?: string;
 };
 
 export default function Signup() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { isDark } = useTheme();
   const { toast } = useToast();
 
   const [showPassword, setShowPassword] = useState(false);
@@ -32,7 +28,6 @@ export default function Signup() {
     first_name: "",
     last_name: "",
     email: "",
-    organization: "",
     password: "",
     confirmPassword: "",
   });
@@ -73,7 +68,7 @@ export default function Signup() {
         password: formData.password,
         first_name: formData.first_name,
         last_name: formData.last_name,
-        organization: formData.organization || undefined,
+  client_id: API_CONFIG.OAUTH.CLIENT_ID,
       };
 
       const res = await apiFetch(url, {
@@ -84,8 +79,8 @@ export default function Signup() {
       });
 
       if (res.ok) {
-        toast({ title: "Account created", description: "You can now sign in." });
-        navigate("/login");
+        toast({ title: "Account created", description: "Please sign in to continue." });
+        navigate("/welcome", { state: { email: formData.email } });
         return;
       }
 
@@ -188,13 +183,7 @@ export default function Signup() {
               </div>
             </div>
 
-            <OrganizationSearch
-              value={formData.organization || ""}
-              onChange={(value) => updateForm("organization", value)}
-              onOrganizationSelect={(organization) => {
-                updateForm("organization", organization.name);
-              }}
-            />
+            {/* Organization field removed for pre-login signup; profile editing comes post-login. */}
 
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
@@ -216,6 +205,7 @@ export default function Signup() {
                   size="icon"
                   className="absolute right-1 top-1 h-8 w-8"
                   onClick={() => setShowPassword((s) => !s)}
+                  tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
@@ -242,6 +232,7 @@ export default function Signup() {
                   size="icon"
                   className="absolute right-1 top-1 h-8 w-8"
                   onClick={() => setShowConfirmPassword((s) => !s)}
+                  tabIndex={-1}
                 >
                   {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
@@ -250,8 +241,9 @@ export default function Signup() {
 
             <Button
               type="submit"
-              className="w-full h-12"
-              variant={isDark ? "secondary" : "gradient"}
+              size="lg"
+              className="w-full"
+              variant="gradient"
               disabled={isLoading || !canSubmit}
             >
               {isLoading ? "Creating account..." : "Create Account"}

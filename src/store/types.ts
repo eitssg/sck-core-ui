@@ -1,5 +1,104 @@
 import { string } from "zod";
 
+// ==========================
+// OAuth 2.0 / OIDC Types
+// ==========================
+export interface OAuthTokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  refresh_token: string;
+  scope?: string;
+}
+
+export interface OAuthErrorResponse {
+  error: string;
+  error_description?: string;
+  error_uri?: string;
+  state?: string;
+}
+
+export interface OAuthIntrospectResponse {
+  active: boolean;
+  client_id: string;
+  username: string;
+  scope: string[];
+  exp: number;
+  iat: number;
+  sub: string;
+  aud: string;
+  iss: string;
+  [key: string]: any;
+}
+
+export interface OAuthUserInfoResponse {
+  sub: string;
+  email: string;
+  name: string;
+  given_name: string;
+  family_name: string;
+  preferred_username: string;
+  updated_at: number;
+}
+
+export interface OAuthJWKSResponse {
+  keys: Array<{
+    kty: string;
+    use: string;
+    kid: string;
+    alg: string;
+    n: string;
+    e: string;
+    [key: string]: any;
+  }>;
+}
+
+export interface OAuthLogoutResponse {
+  messge: string; // note: matches backend spelling if any
+  user?: string;
+}
+
+export type OAuthResponse =
+  | OAuthTokenResponse
+  | OAuthIntrospectResponse
+  | OAuthErrorResponse
+  | OAuthUserInfoResponse
+  | OAuthJWKSResponse
+  | OAuthLogoutResponse;
+
+export interface OAuthAuthorizeParams {
+  response_type: "code";
+  client_id: string;
+  redirect_uri: string;
+  scope?: string;
+  state?: string;
+}
+
+export interface OAuthTokenRequest {
+  grant_type: "authorization_code" | "refresh_token";
+  code?: string;
+  refresh_token?: string;
+  client_id: string;
+  client_secret?: string;
+  redirect_uri?: string;
+  state?: string;
+}
+
+// ==========================
+// Shared API envelope types
+// ==========================
+export interface ApiResponse<T> {
+  data: T | T[];
+  message?: string;
+  metadata?: { cursor?: string | null };
+}
+
+export interface ApiError {
+  status: number;
+  message?: string;
+  data?: unknown;
+}
+
 // Base state interface for all slices
 export interface BaseState {
   loading: boolean;
@@ -131,6 +230,9 @@ export interface UserProfile {
   session_count?: number;
   is_active?: boolean;
 }
+
+// Client-side cached variant with metadata
+
 
 // Nested types matching core_db/registry/portfolio/models.py (PortfolioFact)
 export interface PortfolioContact {

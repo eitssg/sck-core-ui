@@ -192,32 +192,12 @@ export const authAPI = {
         });
       }
 
-      let response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
+  const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
         method: 'POST',
         headers: tokenHeaders,
         body: tokenRequest.toString(),  // STANDARD OAUTH format
         credentials: 'include',
       });
-
-      // Fallback: if 401 unauthorized and we didn't send Authorization, retry with client_secret in body
-      if (response.status === 401 && !tokenHeaders['Authorization']) {
-        const fallbackSecret = this._resolveClientSecret();
-        if (fallbackSecret) {
-        try {
-          const retryForm = new URLSearchParams(tokenRequest);
-          retryForm.set('client_secret', fallbackSecret);
-          console.log('[authAPI] Retrying /token with client_secret in body (no Basic header)');
-          response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: retryForm.toString(),
-            credentials: 'include',
-          });
-        } catch (e) {
-          console.warn('[authAPI] Retry with client_secret failed to send', e);
-        }
-        }
-      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -234,6 +214,15 @@ export const authAPI = {
       if (tokens.refresh_token) {
         localStorage.setItem('refresh_token', tokens.refresh_token);
       }
+      if (typeof (tokens as any)?.expires_in === 'number') {
+        const expAt = Date.now() + Number((tokens as any).expires_in) * 1000;
+        localStorage.setItem('access_expires_at', String(expAt));
+      } else {
+        localStorage.removeItem('access_expires_at');
+      }
+
+      // Mark session issuance time (cookie set during auth flow)
+      localStorage.setItem('session_issued_at', String(Date.now()));
 
       // Clean up session storage
       sessionStorage.removeItem('oauth_session_token');
@@ -294,37 +283,38 @@ export const authAPI = {
   // OAuth Authorization Code Flow - Step 2: Exchange code for tokens
   async exchangeCodeForTokens(code: string, state?: string): Promise<OAuthTokenResponse | OAuthErrorResponse> {
     try {
-      const tokenRequest: OAuthTokenRequest = {
+      // RFC 6749: application/x-www-form-urlencoded request
+      const form = new URLSearchParams({
         grant_type: 'authorization_code',
         code,
         client_id: API_CONFIG.OAUTH.CLIENT_ID,
-  redirect_uri: getRedirectUri(),
-      };
+        redirect_uri: getRedirectUri(),
+      });
 
-      console.log('Token exchange request:', { ...tokenRequest, code: code.substring(0, 10) + '...' });
-      console.log('[authAPI] Checks before /token (json):', {
+      console.log('Token exchange request:', { grant_type: 'authorization_code', code: code.substring(0, 10) + '...', client_id: API_CONFIG.OAUTH.CLIENT_ID, redirect_uri: getRedirectUri() });
+      console.log('[authAPI] Checks before /token (form):', {
         hasClientId: Boolean(API_CONFIG.OAUTH.CLIENT_ID),
         hasSecret: Boolean((import.meta as any)?.env?.VITE_OAUTH_CLIENT_SECRET),
       });
 
       const tokenHeaders: Record<string, string> = {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       };
       const basic = this._getBasicAuthHeader();
-  if (basic) tokenHeaders['Authorization'] = basic;
-  console.log('[authAPI] Will send Authorization header (json)?', Boolean(tokenHeaders['Authorization']));
+      if (basic) tokenHeaders['Authorization'] = basic;
+      console.log('[authAPI] Will send Authorization header (form)?', Boolean(tokenHeaders['Authorization']));
       if (DEBUG_AUTH) {
-        console.log('[authAPI] /token headers (json):', {
+        console.log('[authAPI] /token headers (form exchange):', {
           hasAuthorization: Boolean(tokenHeaders['Authorization']),
           authScheme: tokenHeaders['Authorization']?.split(' ')[0] || null,
           contentType: tokenHeaders['Content-Type']
         });
       }
 
-      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
+  const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
         method: 'POST',
         headers: tokenHeaders,
-        body: JSON.stringify(tokenRequest),
+        body: form.toString(),
         credentials: 'include',
       });
 
@@ -335,7 +325,7 @@ export const authAPI = {
         return { error: message, error_description: mapped } as OAuthErrorResponse;
       }
 
-      const tokens: OAuthTokenResponse = await response.json();
+  const tokens: OAuthTokenResponse = await response.json();
       console.log('Access tokens received');
 
       // Store tokens
@@ -343,6 +333,15 @@ export const authAPI = {
       if (tokens.refresh_token) {
         localStorage.setItem('refresh_token', tokens.refresh_token);
       }
+      if (typeof (tokens as any)?.expires_in === 'number') {
+        const expAt = Date.now() + Number((tokens as any).expires_in) * 1000;
+        localStorage.setItem('access_expires_at', String(expAt));
+      } else {
+        localStorage.removeItem('access_expires_at');
+      }
+
+      // Mark session issuance time (cookie set during auth flow)
+      localStorage.setItem('session_issued_at', String(Date.now()));
 
       return tokens;
     } catch (error) {
@@ -360,38 +359,39 @@ export const authAPI = {
         throw new Error('No refresh token available');
       }
 
-      const tokenRequest: OAuthTokenRequest = {
+      // RFC 6749: application/x-www-form-urlencoded for token endpoint
+      const form = new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
         client_id: API_CONFIG.OAUTH.CLIENT_ID,
-      };
+      });
 
       const tokenHeaders: Record<string, string> = {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       };
       const basic = this._getBasicAuthHeader();
-  if (basic) tokenHeaders['Authorization'] = basic;
-  console.log('[authAPI] Will send Authorization header (refresh)?', Boolean(tokenHeaders['Authorization']));
+      if (basic) tokenHeaders['Authorization'] = basic;
       if (DEBUG_AUTH) {
-        console.log('[authAPI] /token headers (refresh):', {
+        console.log('[authAPI] /token headers (refresh, form):', {
           hasAuthorization: Boolean(tokenHeaders['Authorization']),
           authScheme: tokenHeaders['Authorization']?.split(' ')[0] || null,
           contentType: tokenHeaders['Content-Type']
         });
       }
 
-      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
+  const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
         method: 'POST',
         headers: tokenHeaders,
-        body: JSON.stringify(tokenRequest),
+        body: form.toString(),
         credentials: 'include',
       });
 
       if (!response.ok) {
-        // Only clear tokens on 401/invalid refresh; keep user logged in on transient errors
+        // Only clear tokens on 401/invalid refresh; keep tokens on transient errors
         if (response.status === 401) {
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
+          throw new Error('invalid_refresh_token');
         }
         return null;
       }
@@ -403,13 +403,43 @@ export const authAPI = {
       if (tokens.refresh_token) {
         localStorage.setItem('refresh_token', tokens.refresh_token);
       }
+      if (typeof (tokens as any)?.expires_in === 'number') {
+        const expAt = Date.now() + Number((tokens as any).expires_in) * 1000;
+        localStorage.setItem('access_expires_at', String(expAt));
+      } else {
+        localStorage.removeItem('access_expires_at');
+      }
+
+  // Log success for observability
+  try { console.log('api bearer token refreshed'); } catch (e) { /* noop */ }
 
       return tokens;
     } catch (error) {
-      console.error('Token refresh failed:', error);
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
+      // If backend explicitly indicated invalid refresh token, propagate
+      if (error instanceof Error && error.message === 'invalid_refresh_token') {
+        throw error;
+      }
+      // Network or other errors: do not clear tokens; allow caller to retry later
+      console.warn('Token refresh transient failure:', error);
       return null;
+    }
+  },
+
+  // Rotate the session cookie before it expires; cookie-first GET
+  async refreshSession(): Promise<boolean> {
+    try {
+      const res = await fetch(buildApiUrl('/auth/v1/refresh'), {
+        method: 'GET',
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' },
+      });
+      if (!res.ok) return false;
+      // Mark new session issuance time so scheduling can proceed
+      localStorage.setItem('session_issued_at', String(Date.now()));
+  try { console.log('session cookie refreshed'); } catch (e) { /* noop */ }
+      return true;
+    } catch {
+      return false;
     }
   },
 
@@ -574,20 +604,55 @@ export const authAPI = {
 
   fetchUserProfile: async (profileName?: string) => {
     try {
+      // Token must exist; otherwise, do not call /me
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        return { error: 'not_authenticated' };
+      }
+
+      // Simple fingerprint to bind cache to token without storing full token again
+      const fingerprint = (() => {
+        const parts = token.split('.');
+        return (parts[2] || token).slice(-12);
+      })();
+
+      // TTL config (default 15 minutes)
+      const ttlMs = Number((import.meta as any)?.env?.VITE_PROFILE_TTL_MS ?? 15 * 60 * 1000);
+      const cached = localStorage.getItem('sck_profile_cache');
+      const cachedAt = Number(localStorage.getItem('sck_profile_fetched_at') || '0');
+      const cachedFp = localStorage.getItem('sck_profile_token_fp');
+
+      if (cached && cachedFp === fingerprint && (ttlMs <= 0 || (Date.now() - cachedAt) < ttlMs)) {
+        try {
+          return JSON.parse(cached);
+        } catch {
+          // fall through to refetch on parse error
+        }
+      }
+
       const url = profileName
         ? `${buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.ME)}?profile=${profileName}`
         : buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.ME);
 
       const response = await fetch(url, {
         headers: getAuthHeaders(),
-  credentials: 'include',
+        credentials: 'include',
       });
 
       if (!response.ok) {
         throw new Error('Failed to fetch profile');
       }
 
-      return await response.json();
+      const json = await response.json();
+      // Persist cache
+      try {
+        localStorage.setItem('sck_profile_cache', JSON.stringify(json));
+        localStorage.setItem('sck_profile_fetched_at', String(Date.now()));
+        localStorage.setItem('sck_profile_token_fp', fingerprint);
+      } catch {
+        // ignore storage errors
+      }
+      return json;
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Unknown error' };
     }

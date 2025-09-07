@@ -36,8 +36,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const location = useLocation();
+  // Cache profile retrieval per access token
+  const fetchedTokenRef = React.useRef<string | null>(null);
 
-  const login = async (token: string) => {
+  const login = React.useCallback(async (token: string) => {
     // Keep both keys for compatibility with other parts of the app
     localStorage.setItem('token', token);
     localStorage.setItem('access_token', token);
@@ -45,40 +47,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null);
 
     try {
-      const meUrl = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.ME);
-      console.log('[AuthContext] Fetching profile from', meUrl);
-      const response = await fetch(meUrl, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      // Handle rate limiting quickly
-      if (response.status === 429) {
-        const retryAfter = response.headers.get('Retry-After') || 'unknown';
-        throw new Error(`Rate limited (429). Retry-After: ${retryAfter}`);
+      // If we've already fetched profile for this token, don't re-fetch
+      if (fetchedTokenRef.current === token && user) {
+        setLoading(false);
+        return;
       }
-
-      const contentType = response.headers.get('content-type') || '';
-      if (!response.ok) {
-        // Try to capture response body for diagnostics
-        if (contentType.includes('application/json')) {
-          const errJson = await response.json().catch(() => ({}));
-          const msg = errJson?.message || JSON.stringify(errJson) || `HTTP ${response.status}`;
-          throw new Error(`Failed to fetch profile: ${msg}`);
-        } else {
-          const text = await response.text().catch(() => '');
-          throw new Error(`Failed to fetch profile: HTTP ${response.status} ${text?.slice(0, 120)}`);
-        }
-      }
-
-      if (!contentType.includes('application/json')) {
-        // Non-JSON (likely HTML). Fall back to decoding JWT for minimal user info.
+      // Use centralized cache-aware fetch (requires token to be present)
+      const profile = await authAPI.fetchUserProfile();
+      if ((profile as any)?.error) {
+        // Fall back to minimal user from JWT if available
         const claims = decodeJwt<any>(token);
-        console.warn('[AuthContext] /me returned non-JSON. Using JWT claims as fallback.');
         if (claims) {
           const minimal: User = {
             id: claims.sub || claims.user_id || 'self',
@@ -86,19 +64,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             name: claims.name || claims.preferred_username || 'User',
           };
           setUser(minimal);
-          return;
+        } else {
+          throw new Error('Failed to fetch profile');
         }
-        throw new Error('Profile response not JSON and JWT decode failed');
+      } else {
+        setUser(profile as User);
       }
-
-      const profile = await response.json();
-      setUser(profile);
-      try {
-        localStorage.setItem('sck_logged_in', '1');
-        sessionStorage.setItem('sck_logged_in', '1');
-      } catch (e) {
-        console.warn('Failed to persist session flag', e);
-      }
+  fetchedTokenRef.current = token;
+  // no-op: we don't maintain separate logged-in flags; presence of access_token is source of truth
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMessage);
@@ -113,42 +86,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           name: claims.name || claims.preferred_username || 'User',
         };
         setUser(minimal);
-        try {
-          localStorage.setItem('sck_logged_in', '1');
-          sessionStorage.setItem('sck_logged_in', '1');
-        } catch (e) {
-          // ignore
-        }
+  fetchedTokenRef.current = token;
+  // no-op: we don't maintain separate logged-in flags
       } else {
         setUser(null);
       }
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
   const logout = () => {
   localStorage.removeItem('token');
   localStorage.removeItem('access_token');
-  try {
-    localStorage.removeItem('sck_logged_in');
-    sessionStorage.removeItem('sck_logged_in');
-  } catch (e) {
-    // ignore
-  }
+  // no-op: no separate logged-in flags to clear
     setUser(null);
     setError(null);
+  fetchedTokenRef.current = null;
   };
 
   // Initialize auth state on mount
   useEffect(() => {
     const initializeAuth = async () => {
-      // Do not fetch /auth/v1/me on the public login page
-      if (location.pathname === '/login') {
-        setLoading(false);
-        return;
-      }
-
       // Consider session alive if we have an access token; use refresh only when needed
       const access = localStorage.getItem('access_token') || localStorage.getItem('token');
       if (!access) {
@@ -178,11 +137,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      await login(access);
+      // Only fetch once per token
+      if (fetchedTokenRef.current !== access) {
+        await login(access);
+      } else {
+        setLoading(false);
+      }
     };
 
     initializeAuth();
-  }, [location.pathname]);
+  }, [location.pathname, login]);
 
   const value: AuthContextType = {
     user,

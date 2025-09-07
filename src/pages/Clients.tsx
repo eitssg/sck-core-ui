@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Search, MoreHorizontal, Edit, Trash2, Eye, Building2, Globe, Mail } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Edit, Trash2, Eye, Building2, Globe, Mail, Users } from "lucide-react";
 
 import DashboardLayout from "@/components/DashboardLayout";
 import { useReduxData } from "@/hooks/useReduxData";
@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 import type { Client } from "@/store/types";
 
@@ -94,7 +95,7 @@ const Clients = () => {
           </CardContent>
         </Card>
 
-        {/* Content */}
+  {/* Content */}
         {clients.loading ? (
           <Card>
             <CardContent className="flex items-center justify-center py-8">
@@ -140,117 +141,93 @@ const Clients = () => {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredClients.map((client: Client) => (
-              <Card key={client.client} className="group hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-1 flex-1">
-                      <CardTitle className="text-lg">{client.client_name || client.client}</CardTitle>
-                      <CardDescription className="line-clamp-2">
-                        {client.client_description || "No description provided"}
-                      </CardDescription>
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem asChild>
-                          <Link to={`/clients/${client.client}`}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            View Details
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <Link to={`/clients/${client.client}/edit`}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(client.client)}>
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Status</span>
-                      {getStatusBadge(client.client_status)}
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Client</span>
-                      <code className="text-sm font-mono bg-muted px-2 py-1 rounded">{client.client}</code>
-                    </div>
-
-                    {client.client_type && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Type</span>
-                        <Badge variant="outline">{client.client_type}</Badge>
-                      </div>
-                    )}
-
-                    {client.domain && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Domain</span>
-                        <div className="flex items-center gap-1">
-                          <Globe className="h-3 w-3" />
-                          <span className="text-sm truncate max-w-[140px]">{client.domain}</span>
+          <Card>
+            <CardContent className="pt-4">
+              <ul className="divide-y divide-border">
+                {filteredClients.map((client: Client) => {
+                  const title = client.client_name || client.client;
+                  const subtitle = client.client_description || "No description provided";
+                  const org = client.organization_name || "";
+                  const created = client.created_at ? new Date(client.created_at).toLocaleDateString() : undefined;
+                  const initials = (title || client.client || 'C')
+                    .split(/\s+/)
+                    .map((s) => s.charAt(0))
+                    .slice(0, 2)
+                    .join('')
+                    .toUpperCase();
+                  return (
+                    <li key={client.client} className="py-3">
+                      <div className="flex items-center gap-4">
+                        <Avatar className="h-9 w-9">
+                          <AvatarFallback className="bg-muted text-foreground font-semibold">
+                            {initials}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <Link to={`/clients/${client.client}`} className="font-medium hover:underline truncate">
+                                  {title}
+                                </Link>
+                                {getStatusBadge(client.client_status)}
+                              </div>
+                              <div className="text-sm text-muted-foreground truncate">
+                                {subtitle}
+                              </div>
+                              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                <div className="flex items-center gap-1">
+                                  <code className="font-mono bg-muted px-1.5 py-0.5 rounded">{client.client}</code>
+                                </div>
+                                {org && (
+                                  <div className="flex items-center gap-1">
+                                    <Users className="h-3 w-3" />
+                                    <span className="truncate max-w-[240px]">{org}</span>
+                                  </div>
+                                )}
+                                {client.domain && (
+                                  <div className="flex items-center gap-1">
+                                    <Globe className="h-3 w-3" />
+                                    <span className="truncate max-w-[200px]">{client.domain}</span>
+                                  </div>
+                                )}
+                                {created && <span>Created {created}</span>}
+                              </div>
+                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" aria-label="Client actions">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem asChild>
+                                  <Link to={`/clients/${client.client}`}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    View Details
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem asChild>
+                                  <Link to={`/clients/${client.client}/edit`}>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(client.client)}>
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
                       </div>
-                    )}
-
-                    {client.homepage && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Homepage</span>
-                        <a
-                          href={client.homepage}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-primary hover:underline truncate max-w-[140px]"
-                        >
-                          Visit Site
-                        </a>
-                      </div>
-                    )}
-
-                    {client.organization_email && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Contact</span>
-                        <div className="flex items-center gap-1">
-                          <Mail className="h-3 w-3" />
-                          <span className="text-sm truncate max-w-[160px]">{client.organization_email}</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {client.created_at && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Created</span>
-                        <span className="text-sm">{new Date(client.created_at).toLocaleDateString()}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t">
-                    <Button asChild variant={isDark ? "secondary" : "outline"} size="sm" className="w-full">
-                      <Link to={`/clients/${client.client}`}>
-                        <Eye className="mr-2 h-4 w-4" />
-                        View Details
-                      </Link>
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </CardContent>
+          </Card>
         )}
 
         {/* Summary */}

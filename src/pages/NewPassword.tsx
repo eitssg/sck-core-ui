@@ -207,6 +207,7 @@ export default function NewPassword() {
                     size="icon"
                     className="absolute right-1 top-1 h-8 w-8"
                     onClick={() => setShowPassword(!showPassword)}
+                    tabIndex={-1}
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4" />
@@ -238,6 +239,7 @@ export default function NewPassword() {
                     size="icon"
                     className="absolute right-1 top-1 h-8 w-8"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    tabIndex={-1}
                   >
                     {showConfirmPassword ? (
                       <EyeOff className="h-4 w-4" />

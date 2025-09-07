@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, PropsWithChildren } from 'react'
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth as useAuthRedux } from '@/hooks/useAuth'
 import { useAuth as useAuthContext } from '@/contexts/useAuth'
+import { useTheme } from '@/hooks/useTheme'
 import {
   Home,
   User,
@@ -11,11 +12,32 @@ import {
   LogOut,
   FolderOpen,
   List,
-  Building2,
   GitBranch,
   Cloud,
 } from 'lucide-react'
+import {
+  ArrowLeftRight,
+} from 'lucide-react'
+import { useSelector, useDispatch } from 'react-redux'
+import { RootState, useAppDispatch } from '@/store'
+import { selectSelectedClient, selectClients, selectSelectedClientName } from '@/store/slices/clientsSlice'
+import { selectUser as selectProfileUser, selectUserProfiles, selectCurrentProfile, switchToProfile } from '@/store/slices/profileSlice'
 import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from '@/components/ui/dropdown-menu'
+import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Sidebar,
@@ -30,6 +52,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar'
 import { useReduxData } from '@/hooks/useReduxData'
+import { fetchClients } from '@/store/slices/clientsSlice'
 import type { Client } from '@/store/types'
 
 type DashboardLayoutProps = PropsWithChildren<{
@@ -43,14 +66,33 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
   // Use both auth systems: Redux (tokens) + Context (session flag/user)
   const { logout: logoutRedux } = useAuthRedux()
   const { logout: logoutCtx } = useAuthContext()
+  const { theme, isDark, toggleTheme } = useTheme()
+  const profileUser = useSelector(selectProfileUser as any) as any
+  const profiles = useSelector(selectUserProfiles as any) as any[]
+  const currentProfile = useSelector(selectCurrentProfile as any) as string | null
+  const dispatch = useDispatch()
 
-  // Redux-backed data/hooks
-  const { clients: clientsState, selectedClient, selectClient } = useReduxData()
+  const avatarUrl = profileUser?.avatar_url || ''
+  const loginName = profileUser?.email || profileUser?.identity?.email || profileUser?.identity?.username || profileUser?.user_id || '—'
+  const displayName = profileUser?.display_name || [profileUser?.first_name, profileUser?.last_name].filter(Boolean).join(' ') || ''
+  const initials = (displayName || loginName || 'U')
+    .split(' ')
+    .map((s: string) => s?.charAt(0))
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
 
-  const clients = useMemo<Client[]>(
-    () => (Array.isArray(clientsState?.items) ? (clientsState.items as Client[]) : []),
-    [clientsState?.items]
-  )
+  // Redux-backed client data (source of truth)
+  const clients = useSelector((s: RootState) => selectClients(s)) as Client[]
+  const selectedClient = useSelector((s: RootState) => selectSelectedClient(s)) as string | null
+  const currentClientName = useSelector((s: RootState) => selectSelectedClientName(s)) as string
+  const { selectClient } = useReduxData()
+  const dispatchTyped = useAppDispatch()
+
+  // Ensure client list is available after login (cached & TTL guarded by thunk)
+  useEffect(() => {
+    dispatchTyped(fetchClients({ limit: 100 }))
+  }, [dispatchTyped])
 
   // Auto-select first client if none selected and we have data
   useEffect(() => {
@@ -61,13 +103,11 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: Home },
-    { name: 'Clients', href: '/clients', icon: Building2 },
     { name: 'Zones', href: '/zones', icon: GitBranch },
     { name: 'Portfolios', href: '/portfolios', icon: Briefcase },
     { name: 'Applications', href: '/applications', icon: FolderOpen },
-    { name: 'Deployments', href: '/deployments', icon: GitBranch },
-    { name: 'Documentation', href: '/docs', icon: List },
-    { name: 'Profile', href: '/profile', icon: User },
+  { name: 'Deployments', href: '/deployments', icon: GitBranch },
+  { name: 'Documentation', href: '/docs', icon: List },
   ]
 
   const isActive = (href: string) =>
@@ -111,8 +151,8 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
             </div>
 
             <div className="flex items-center gap-4">
-              {/* Client Selection */}
-              {clients.length > 0 && (
+              {/* Client Selection: only show when multiple clients exist */}
+              {clients.length > 1 && (
                 <div className="flex items-center gap-2">
                   <Select
                     value={selectedClient ?? ''}
@@ -132,14 +172,87 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
                 </div>
               )}
 
-              <Button variant="ghost" size="icon" asChild>
-                <Link to="/settings">
-                  <Settings className="h-5 w-5" />
-                </Link>
-              </Button>
-              <Button variant="ghost" size="icon" onClick={handleLogout}>
-                <LogOut className="h-5 w-5" />
-              </Button>
+              {/* Current client display */}
+              <div className="hidden sm:flex items-center px-2 py-1 rounded-md bg-muted/60 text-muted-foreground max-w-[200px]">
+                <span className="truncate" title={currentClientName}>{currentClientName}</span>
+              </div>
+
+              {/* Profile/avatar dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="flex items-center gap-2 rounded-full border hover:bg-accent transition-colors p-1 pl-1.5 pr-2"
+                    aria-label="User menu"
+                  >
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={avatarUrl} alt={displayName || loginName || 'User'} />
+                      <AvatarFallback>{initials || 'U'}</AvatarFallback>
+                    </Avatar>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-9 w-9">
+                        <AvatarImage src={avatarUrl} alt={displayName || loginName || 'User'} />
+                        <AvatarFallback>{initials || 'U'}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="font-semibold truncate">{displayName || 'User'}</span>
+                            <div className="text-xs text-muted-foreground truncate">{loginName}</div>
+                          </div>
+                          {/* Arrow opens profile switch submenu */}
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger className="p-0 h-auto self-center data-[state=open]:bg-transparent [&>svg:last-child]:hidden inline-flex items-center justify-center">
+                              <ArrowLeftRight className="h-5 w-5 text-muted-foreground" />
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent>
+                              <DropdownMenuRadioGroup
+                                value={currentProfile ?? (profiles?.[0]?.profile_name || 'default')}
+                                onValueChange={(value) => dispatch(switchToProfile({ profileName: value }))}
+                              >
+                                {(profiles && profiles.length > 0 ? profiles : [{ profile_name: 'default' }]).map((p: any) => (
+                                  <DropdownMenuRadioItem key={p.profile_name} value={p.profile_name}>
+                                    {p.profile_name}
+                                  </DropdownMenuRadioItem>
+                                ))}
+                              </DropdownMenuRadioGroup>
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                        </div>
+                      </div>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem asChild>
+                    <Link to="/profile">Profiles</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/clients">Clients</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/settings">Settings</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="flex items-center justify-between">
+                    <span>Dark mode</span>
+                    <Switch
+                      checked={isDark}
+                      onCheckedChange={() => toggleTheme()}
+                      aria-label="Toggle dark mode"
+                    />
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={handleLogout}
+                    className="group data-[highlighted]:bg-red-500/10 data-[highlighted]:text-red-600 dark:data-[highlighted]:bg-green-500/10 dark:data-[highlighted]:text-green-400"
+                  >
+                    <LogOut className="mr-2 h-4 w-4 text-muted-foreground dark:text-foreground group-data-[highlighted]:text-red-600 dark:group-data-[highlighted]:text-green-400" />
+                    Logout
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </header>

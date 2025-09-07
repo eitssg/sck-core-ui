@@ -7,26 +7,64 @@ export type ApiFetchOptions = RequestInit & {
   notify401?: boolean;   // emit a global 401 event for aggregation (default true)
   contextLabel?: string; // human label for the resource (e.g., 'Clients')
   onUnauthorized?: () => void; // caller-specific handler for 401
+  noAuthRetryOn401?: boolean; // when cookieFirst, do not retry with Bearer on 401 (e.g., login)
 };
 
 export async function apiFetch(input: string, options: ApiFetchOptions = {}): Promise<Response> {
-  const url = input.startsWith('/auth/') || input.startsWith('/api/') ? buildApiUrl(input) : input;
-  const cookieFirst = options.cookieFirst === true;
+  // Determine final URL and whether this is an /api request
+  const shouldBuild = input.startsWith('/auth/') || input.startsWith('/api/');
+  const url = shouldBuild ? buildApiUrl(input) : input;
+
+  // Determine which endpoints require Authorization header
+  const requiresAuth = (() => {
+    const needs = (p: string) => {
+      if (p.startsWith('/api/')) return true; // all /api require Bearer
+      // Protected /auth endpoints that require Bearer (post-login)
+      return p === '/auth/v1/me' || p === '/auth/v1/logout' || p === '/auth/v1/revoke';
+    };
+    try {
+      // Prefer checking the fully built URL's pathname
+      const u = new URL(url);
+      return needs(u.pathname);
+    } catch {
+      // Fallback to raw input heuristic
+      return needs(input);
+    }
+  })();
+
+  // For /api endpoints, we must include Authorization and must NOT use cookie-first fallback
+  const cookieFirstRequested = options.cookieFirst === true;
+  // For endpoints that require auth, never use cookie-first fallback
+  const cookieFirst = requiresAuth ? false : cookieFirstRequested;
+
+  const makeHeaders = () => {
+    // Always start from auth headers to pick up Authorization
+    const base = getAuthHeaders();
+    const combined = { ...base, ...(options.headers || {}) } as Record<string, string>;
+    // Ensure Accept for JSON APIs
+    if (!('Accept' in combined)) combined['Accept'] = 'application/json';
+    return combined;
+  };
+
+  // Guard: /api without Authorization is a programmer error
+  const headersForApiCheck = makeHeaders();
+  const hasAuthHeader = Object.keys(headersForApiCheck).some(k => k.toLowerCase() === 'authorization');
+  if (requiresAuth && !hasAuthHeader) {
+    throw new Error('Missing access token: this request requires Authorization: Bearer <token>.');
+  }
 
   const doFetch = async (init: RequestInit) => fetch(url, { credentials: 'include', ...init });
 
   if (cookieFirst) {
-    // First attempt: no Authorization header (avoid preflight)
+    // First attempt: no Authorization header (avoid preflight) – only for /auth
     const res1 = await doFetch({ ...options, headers: { ...(options.headers || {}), Accept: 'application/json' } });
-  if (res1.status !== 401) return res1;
-    // Fallback with Bearer
-  const res2 = await doFetch({ ...options, headers: { ...getAuthHeaders(), ...(options.headers || {}) } });
-  handle401(res2, options);
-    return res2;
+    // NEVER retry on 401
+    handle401(res1, options);
+    return res1;
   }
 
-  // Default: attach Bearer immediately
-  const res = await doFetch({ ...options, headers: { ...getAuthHeaders(), ...(options.headers || {}) } });
+  // Default: attach Bearer immediately (mandatory for /api)
+  const res = await doFetch({ ...options, headers: makeHeaders() });
   handle401(res, options);
   return res;
 }

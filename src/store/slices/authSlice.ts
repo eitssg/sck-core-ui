@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { authAPI } from '@/lib/auth-api';
-import { OAuthTokenResponse, UserProfile } from '@/lib/auth-types';
+import { OAuthTokenResponse, UserProfile } from '@/store/types';
 
 export type User = UserProfile;
 
@@ -148,16 +148,12 @@ const authSlice = createSlice({
         state.error = null;
       })
       .addCase(loginUser.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.user = action.payload.user;
-        state.tokens = action.payload.tokens;
-        state.isAuthenticated = true;
-        state.lastActivity = Date.now();
-        state.error = null;
-        
-        // Store tokens in localStorage
-        localStorage.setItem('access_token', action.payload.tokens.access_token);
-        localStorage.setItem('refresh_token', action.payload.tokens.refresh_token);
+  // For this app, email/password login only establishes a session cookie
+  // and then redirects to /authorize. We DO NOT consider the user logged in
+  // until we have exchanged the code at /auth/v1/token and obtained an access_token.
+  // Therefore, do not set tokens or isAuthenticated here.
+  state.isLoading = false;
+  state.error = null;
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.isLoading = false;

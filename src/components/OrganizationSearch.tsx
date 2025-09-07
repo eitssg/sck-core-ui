@@ -3,7 +3,10 @@ import { Building, ChevronDown, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { API_CONFIG, buildApiUrl } from "@/lib/api-config";
+import { apiFetch } from "@/lib/api-fetch";
 
+// Internal shape used by the component
 interface Organization {
   id: string;
   name: string;
@@ -60,12 +63,25 @@ export default function OrganizationSearch({ value, onChange, onOrganizationSele
   const searchOrganizations = async (query: string) => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/organizations?search=${encodeURIComponent(query)}`);
-      const data = await response.json();
+      const url = new URL(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.ORGANIZATIONS));
+      url.searchParams.set('search', query);
+
+      // Pre-login endpoint, cookie allowed, no Bearer needed
+      const response = await apiFetch(url.toString(), { method: 'GET', cookieFirst: true });
+      let json: any = {};
+      try { json = await response.json(); } catch { json = {}; }
+
       if (response.ok) {
-        setOrganizations(data?.organizations || []);
+        // Backend contract: { data: [] }
+        const list = Array.isArray(json?.data) ? json.data : [];
+        // Normalize casing: support {id,name} or snake_case {organization_id, organization_name}
+        const normalized: Organization[] = list.map((item: any) => ({
+          id: item.id ?? item.organization_id ?? String(item?.Id ?? item?.ID ?? ''),
+          name: item.name ?? item.organization_name ?? String(item?.Name ?? item?.NAME ?? ''),
+        })).filter(o => o.id && o.name);
+        setOrganizations(normalized);
       } else {
-        console.error('Error searching organizations:', data);
+        console.error('Error searching organizations:', json);
         setOrganizations([]);
       }
       setIsDropdownOpen(true);

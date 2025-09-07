@@ -1,11 +1,12 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { API_CONFIG, buildApiUrl, getAuthHeaders } from '@/lib/api-config';
+import { API_CONFIG, buildApiUrl } from '@/lib/api-config';
 import { apiFetch } from '@/lib/api-fetch';
-import type { OAuthTokenRequest, OAuthTokenResponse } from '@/lib/auth-types';
+import type { OAuthTokenRequest, OAuthTokenResponse } from '@/store/types';
 import type { RootState, AppDispatch } from '@/store';
 import type { ApiResponse } from '../shared';
 import { toArray } from '../shared';
 import type { Client } from '@/store/types'; // use shared type
+import { authAPI } from '@/lib/auth-api';
 
 // Summary interface for list operations (matches ClientSummary from your API)
 export interface ClientSummary {
@@ -54,9 +55,8 @@ export const createClient = createAsyncThunk(
   'clients/create',
   async (clientData: Partial<Client>, thunkAPI) => {
     try {
-      const response = await fetch(buildApiUrl('/api/v1/registry/clients'), {
+  const response = await apiFetch(buildApiUrl('/api/v1/registry/clients'), {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: JSON.stringify(clientData),
       });
 
@@ -75,7 +75,7 @@ export const createClient = createAsyncThunk(
 
 // READ - List all clients (GET /api/v1/registry/clients) - HEAVILY CACHED
 export const fetchClients = createAsyncThunk<
-  ApiResponse<ClientSummary>,
+  ApiResponse<Client>,
   { limit?: number; cursor?: string | null; force?: boolean } | undefined,
   { state: RootState }
 >(
@@ -96,7 +96,7 @@ export const fetchClients = createAsyncThunk<
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const json = await response.json() as ApiResponse<ClientSummary>;
+  const json = await response.json() as ApiResponse<Client>;
     return json;
   },
   {
@@ -178,9 +178,8 @@ export const updateClient = createAsyncThunk(
   'clients/update',
   async ({ clientSlug, clientData }: { clientSlug: string; clientData: Client }, thunkAPI) => {
     try {
-      const response = await fetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
         method: 'PUT',
-        headers: getAuthHeaders(),
         body: JSON.stringify(clientData),
       });
 
@@ -202,9 +201,8 @@ export const patchClient = createAsyncThunk(
   'clients/patch',
   async ({ clientSlug, clientData }: { clientSlug: string; clientData: Partial<Client> }, thunkAPI) => {
     try {
-      const response = await fetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
         method: 'PATCH',
-        headers: getAuthHeaders(),
         body: JSON.stringify(clientData),
       });
 
@@ -226,9 +224,8 @@ export const deleteClient = createAsyncThunk(
   'clients/delete',
   async (clientSlug: string, thunkAPI) => {
     try {
-      const response = await fetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
         method: 'DELETE',
-        headers: getAuthHeaders(),
       });
 
       if (!response.ok) {
@@ -305,19 +302,11 @@ export const switchToClient = createAsyncThunk<
         localStorage.setItem('refresh_token', tokens.refresh_token);
       }
 
-      // Fetch user profile from new client context
-      const userResponse = await fetch(buildApiUrl('/auth/v1/me'), {
-        headers: {
-          'Authorization': `Bearer ${tokens.access_token}`,
-          'Content-Type': 'application/json',
-        }
-      });
-
-      if (!userResponse.ok) {
+      // Fetch user profile from new client context (cached)
+      const user = await authAPI.fetchUserProfile();
+      if ((user as any)?.error) {
         throw new Error('Failed to fetch user profile for new client context');
       }
-
-      const user = await userResponse.json();
 
       return { user, tokens, clientSlug };
     } catch (error) {
@@ -472,21 +461,36 @@ const clientsSlice = createSlice({
         state.status = 'loading';
         state.error = null;
       })
-      .addCase(fetchClients.fulfilled, (state, action: PayloadAction<ApiResponse<ClientSummary>>) => {
-        const summaryData = toArray<ClientSummary>(action.payload.data);
-        // Transform ClientSummary to Client shape (no UI-only fields)
-        state.items = summaryData.map((s) => ({
-          client: s.Client,
-          client_name: s.Name,
-        } as Client));
-        state.cursor = action.payload.metadata?.cursor ?? null;
-        state.status = 'succeeded';
-        state.lastFetched = Date.now();
-        state.error = null;
-        summaryData.forEach((s) => {
-          state.individualClientCache[s.Client] = Date.now();
-        });
-      })
+      .addCase(fetchClients.fulfilled, (state, action: PayloadAction<ApiResponse<Client>>) => {
+            const data = toArray<Client>(action.payload.data);
+            const now = Date.now();
+
+            state.items = data.map((c) => {
+              const slug = (c as any).client || (c as any).Client || '';
+              // Keep full data for the current active client; otherwise store minimal fields
+              if (slug && slug === state.currentActiveClient) {
+                state.fullClientDataCache[slug] = true;
+                state.individualClientCache[slug] = now;
+                return normalizeClient({ ...(c as Client), client: slug });
+              }
+              const minimal: Client = {
+                client: slug,
+                client_status: (c as any).client_status,
+                client_name: (c as any).client_name || (c as any).Name,
+                client_description: (c as any).client_description,
+                organization_name: (c as any).organization_name,
+                created_at: (c as any).created_at,
+              };
+              state.fullClientDataCache[slug] = false;
+              state.individualClientCache[slug] = now;
+              return minimal;
+            });
+
+            state.cursor = action.payload.metadata?.cursor ?? null;
+            state.status = 'succeeded';
+            state.lastFetched = now;
+            state.error = null;
+          })
       .addCase(fetchClients.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.error.message ?? 'Failed to load clients';
@@ -705,6 +709,18 @@ export const selectCanSwitchToClient = (state: RootState, clientSlug: string) =>
 export const selectAvailableClientsForSwitching = (state: RootState) => {
   const currentClient = state.clients.currentActiveClient;
   return state.clients.items.filter(c => c.client !== currentClient);
+};
+
+// Convenience selectors for the currently selected client
+export const selectSelectedClientObject = (state: RootState) => {
+  const slug = state.clients.selectedClient;
+  if (!slug) return undefined;
+  return state.clients.items.find((c) => c.client === slug);
+};
+
+export const selectSelectedClientName = (state: RootState) => {
+  const obj = selectSelectedClientObject(state);
+  return obj?.client_name || obj?.client || 'Core';
 };
 
 export default clientsSlice.reducer;

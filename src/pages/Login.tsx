@@ -137,6 +137,7 @@ export default function Login() {
       const res = await apiFetch(url, {
         method: "POST",
         cookieFirst: true,
+        noAuthRetryOn401: true,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
@@ -268,6 +269,7 @@ export default function Login() {
                     size="icon"
                     className="absolute right-1 top-1 h-8 w-8"
                     onClick={() => setShowPassword((s) => !s)}
+                    tabIndex={-1}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>

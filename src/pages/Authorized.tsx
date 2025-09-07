@@ -4,6 +4,9 @@ import { authAPI } from '@/lib/auth-api';
 import { useAuth } from '@/contexts/useAuth';
 import { useReduxData } from '@/hooks/useReduxData';
 import { setError } from '@/store/slices/authSlice';
+import { API_CONFIG, buildApiUrl } from '@/lib/api-config';
+import { apiFetch } from '@/lib/api-fetch';
+import { syncFromAuth, normalizeUserProfile } from '@/store/slices/profileSlice';
 
 export default function Authorized() {
   const [searchParams] = useSearchParams();
@@ -60,24 +63,42 @@ export default function Authorized() {
           return;
   } else if ('access_token' in result) {
           console.log('OAuth login successful, redirecting to dashboard');
-          try {
-            localStorage.setItem('sck_logged_in', '1');
-            sessionStorage.setItem('sck_logged_in', '1');
-          } catch (e) {
-            console.warn('Failed to set login session flag', e);
-          }
           // Avoid duplicate profile fetch if token already stored
           try {
             const existing = localStorage.getItem('access_token');
             if (existing !== result.access_token) {
               await login(result.access_token);
             }
+            // Prefer cache set by AuthContext.login() to avoid duplicate /me fetch
+            let profileNameForPatch: string | null = null;
+            try {
+              const cached = localStorage.getItem('sck_profile_cache');
+              if (cached) {
+                const parsed = JSON.parse(cached);
+                try { dispatch(syncFromAuth(normalizeUserProfile(parsed))); } catch (e) { /* non-blocking */ }
+                profileNameForPatch = (parsed as any)?.profile_name || null;
+              }
+            } catch {
+              // ignore cache parse errors
+            }
+            if (!profileNameForPatch) {
+              // Fallback to a single profile fetch only if cache was missing
+              try {
+                const profile = await authAPI.fetchUserProfile();
+                try { dispatch(syncFromAuth(normalizeUserProfile(profile))); } catch (e) { /* non-blocking */ }
+                profileNameForPatch = (profile as any)?.profile_name || null;
+              } catch {
+                // ignore; we'll patch with default
+              }
+            }
+            fireLoggedInPatch(profileNameForPatch || 'default');
           } catch (e) {
             // If profile fetch fails, still proceed; ProtectedRoute may bounce back
             console.warn('Post-login profile fetch failed; proceeding to dashboard', e);
+            fireLoggedInPatch('default');
           }
           navigate('/dashboard', { replace: true });
-        } else {
+  } else {
           dispatch(setError('Login failed - unexpected response'));
           navigate('/login');
           return;
@@ -96,6 +117,19 @@ export default function Authorized() {
 
   processOAuthCallback();
   }, [searchParams, navigate, dispatch, login]);
+
+  // Helper: fire-and-forget logged_in patch with profile_name
+  async function fireLoggedInPatch(profileName: string = 'default') {
+    try {
+      const url = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.ME);
+      await apiFetch(url, {
+        method: 'PATCH',
+        body: JSON.stringify({ logged_in: true, profile_name: profileName || 'default' }),
+      });
+    } catch {
+      // non-blocking
+    }
+  }
 
   if (isProcessing) {
     return (
