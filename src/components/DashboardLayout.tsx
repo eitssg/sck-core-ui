@@ -21,7 +21,7 @@ import {
 import { useSelector, useDispatch } from 'react-redux'
 import { RootState, useAppDispatch } from '@/store'
 import { selectSelectedClient, selectClients, selectSelectedClientName } from '@/store/slices/clientsSlice'
-import { selectUser as selectProfileUser, selectUserProfiles, selectCurrentProfile, switchToProfile } from '@/store/slices/profileSlice'
+import { selectUser as selectProfileUser, selectUserProfiles, selectCurrentProfile, switchToProfile, fetchUserProfile } from '@/store/slices/profileSlice'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -93,6 +93,13 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
   useEffect(() => {
     dispatchTyped(fetchClients({ limit: 100 }))
   }, [dispatchTyped])
+
+  // Ensure profile is loaded after reloads so header avatar/menu has data
+  useEffect(() => {
+    if (!profileUser) {
+      dispatchTyped(fetchUserProfile({}))
+    }
+  }, [dispatchTyped, profileUser])
 
   // Auto-select first client if none selected and we have data
   useEffect(() => {

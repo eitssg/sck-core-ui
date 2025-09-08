@@ -124,7 +124,12 @@ export const SessionManager = () => {
           const maxIdleBeforeRefreshMs = (sessionRefreshAtMinutes - 1) * 60 * 1000; // user must have interacted recently (~within refresh window)
           if (idleMs <= Math.max(0, maxIdleBeforeRefreshMs)) {
             console.log('[session] refreshing session cookie');
-            await authAPI.refreshSession();
+            const ok = await authAPI.refreshSession();
+            if (ok) {
+              // give the backend a brief moment to persist/rotate cookies before hitting /token
+              try { console.log('[session] session cookie refreshed, waiting briefly before token refresh'); } catch (e) { /* no-op */ }
+              await new Promise((r) => setTimeout(r, 150));
+            }
           } else {
             console.log(
               `[session] skipped session cookie refresh due to idle (${Math.round(idleMs / 1000)}s idle > ` +
@@ -153,6 +158,10 @@ export const SessionManager = () => {
       } catch (err) {
   // Only thrown when refresh token is invalid (explicit 401 from backend)
   try { await dispatch(logoutUser()).unwrap(); } catch { /* ignore */ }
+        // Log explicit timeout/logout event for visibility
+        try {
+          console.log('[session] session timeout, logging out');
+        } catch { /* no-op */ }
         const path = location.pathname;
         const isAuthFlow = path.startsWith('/authorized') || path.startsWith('/login') || path.startsWith('/signup');
         if (!isAuthFlow) navigate('/login?reason=session_expired', { replace: true });
@@ -234,6 +243,9 @@ export const SessionManager = () => {
         const res = await authAPI.refreshToken();
         if (!res || !res.access_token) {
           // Hard sign-out on invalid refresh; redirect to login (avoid loops)
+          try {
+            console.log('[session] session timeout, logging out');
+          } catch { /* no-op */ }
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
           // Avoid redirecting away from auth/public pages
@@ -252,6 +264,9 @@ export const SessionManager = () => {
         // On unexpected errors, clear and redirect
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
+        try {
+          console.log('[session] session error, logging out');
+        } catch { /* no-op */ }
         const path = location.pathname;
         const isAuthFlow = path.startsWith('/authorized') || path.startsWith('/login') || path.startsWith('/signup');
         if (!isAuthFlow) navigate('/login?reason=session_error', { replace: true });

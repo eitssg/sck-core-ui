@@ -33,6 +33,8 @@ import {
 } from "@/store/slices/profileSlice";
 import type { UserProfile } from "@/store/types";
 import { AWS_REGIONS, AWS_REGION_NAME_BY_CODE } from "@/constants/aws-regions";
+import { SUPPORTED_LANGUAGES } from "@/constants/languages";
+import { getTimezones } from "@/constants/timezones";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -155,7 +157,7 @@ export default function Profile() {
   const handleSave = async () => {
     setSaving(true);
     try {
-  const allowed: (keyof UserProfile)[] = ["first_name", "last_name", "email", "preferred_region"];
+  const allowed: (keyof UserProfile)[] = ["first_name", "last_name", "email", "preferred_region", "language", "timezone"];
   const diff = diffFields(editData as any, initialForm as any, allowed as any);
   const payload: Partial<UserProfile> & { profile_name: string } = { profile_name: editData.profile_name || "default", ...(diff as Partial<UserProfile>) };
 
@@ -216,44 +218,42 @@ export default function Profile() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Profile</h1>
-          <p className="text-muted-foreground">Manage your account settings and preferences</p>
-        </div>
-        <div className="flex gap-2">
-          {!editing ? (
-            <Button onClick={() => setEditing(true)} className="gap-2">
-              <Edit className="h-4 w-4" />
-              Edit Profile
-            </Button>
-          ) : (
-            <>
-              <Button variant="outline" onClick={() => { setEditData(initialForm); setEditing(false); }}>
-                Cancel
-              </Button>
-              <Button onClick={handleSave} disabled={saving} className="gap-2">
-                <Save className="h-4 w-4" />
-                {saving ? "Saving..." : "Save Changes"}
-              </Button>
-            </>
-          )}
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Profile</h1>
+        <p className="text-muted-foreground mt-1">Manage your account settings and preferences</p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-8 lg:grid-cols-3">
         {/* Main column */}
         <div className="lg:col-span-2 space-y-6">
           {/* Profile info */}
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-start gap-2">
               <CardTitle className="flex items-center gap-2">
                 <UserIcon className="h-5 w-5 text-primary" />
                 Personal Information
               </CardTitle>
-              <CardDescription>Update your basic details and preferences</CardDescription>
+              <div className="ml-auto flex items-center gap-2">
+                {!editing ? (
+                  <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground" onClick={() => setEditing(true)}>
+                    <Edit className="h-4 w-4" />
+                    Edit
+                  </Button>
+                ) : (
+                  <>
+                    <Button variant="ghost" size="sm" onClick={() => { setEditData(initialForm); setEditing(false); }}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1">
+                      <Save className="h-4 w-4" />
+                      {saving ? "Saving..." : "Save"}
+                    </Button>
+                  </>
+                )}
+              </div>
+              {/* Removed redundant helper description per request */}
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Avatar */}
@@ -265,9 +265,9 @@ export default function Profile() {
                 {editing && (
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="gap-2"
+                    className="gap-2 text-muted-foreground hover:text-foreground"
                     onClick={() => {
                       const el = document.getElementById("avatar_url");
                       el?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -324,19 +324,13 @@ export default function Profile() {
                       value={String(editData.last_name || "")}
                       onChange={(v) => setEditData((s) => ({ ...s, last_name: v }))}
                     />
-                    <FieldEdit
-                      id="timezone"
-                      label="Timezone"
+                    <TimezoneCombobox
                       value={String(editData.timezone || "UTC")}
                       onChange={(v) => setEditData((s) => ({ ...s, timezone: v }))}
-                      placeholder="UTC, America/New_York, ..."
                     />
-                    <FieldEdit
-                      id="language"
-                      label="Language"
+                    <LanguageCombobox
                       value={String(editData.language || "en-US")}
                       onChange={(v) => setEditData((s) => ({ ...s, language: v }))}
-                      placeholder="en-US, en-GB, ..."
                     />
                     <PreferredRegionCombobox
                       value={String(editData.preferred_region || "us-east-1")}
@@ -383,7 +377,7 @@ export default function Profile() {
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-6">
+  <div className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Account Info</CardTitle>
@@ -544,6 +538,109 @@ function PreferredRegionCombobox({
                       <span className="font-medium">{r.name}</span>
                       <span className="text-xs text-muted-foreground">{r.code}</span>
                     </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+// Language selector combobox (structured like AWS regions combobox)
+function LanguageCombobox({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = SUPPORTED_LANGUAGES.find((l) => l.code === value) || SUPPORTED_LANGUAGES[0];
+
+  const handleSelect = (code: string) => {
+    onChange(code);
+    setOpen(false);
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="language">Language</Label>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button id="language" variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between">
+            {current?.name || value || 'Select language...'}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="p-0 w-[--radix-popover-trigger-width]">
+          <Command filter={(val, search) => {
+            const code = val.toLowerCase();
+            const name = SUPPORTED_LANGUAGES.find((l) => l.code === val)?.name.toLowerCase() || '';
+            const s = search.toLowerCase();
+            return code.includes(s) || name.includes(s) ? 1 : 0;
+          }}>
+            <CommandInput placeholder="Type a code or name..." />
+            <CommandEmpty>No language found.</CommandEmpty>
+            <CommandList>
+              <CommandGroup heading="Supported Languages">
+                {SUPPORTED_LANGUAGES.map((l) => (
+                  <CommandItem key={l.code} value={l.code} onSelect={handleSelect}>
+                    <div className="flex flex-col">
+                      <span className="font-medium">{l.name}</span>
+                      <span className="text-xs text-muted-foreground">{l.code}</span>
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+// Timezone selector combobox using IANA timezones (searchable)
+function TimezoneCombobox({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const tzs = useMemo(() => getTimezones(), []);
+  const current = value && tzs.includes(value) ? value : 'UTC';
+
+  const handleSelect = (code: string) => {
+    onChange(code);
+    setOpen(false);
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="timezone">Timezone</Label>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button id="timezone" variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between">
+            {current}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="p-0 w-[--radix-popover-trigger-width] max-h-72 overflow-auto">
+          <Command filter={(val, search) => {
+            const v = val.toLowerCase();
+            const s = search.toLowerCase();
+            return v.includes(s) ? 1 : 0;
+          }}>
+            <CommandInput placeholder="Type a timezone..." />
+            <CommandEmpty>No timezone found.</CommandEmpty>
+            <CommandList>
+              <CommandGroup heading="IANA Timezones">
+                {tzs.map((tz) => (
+                  <CommandItem key={tz} value={tz} onSelect={handleSelect}>
+                    <span className="font-medium">{tz}</span>
                   </CommandItem>
                 ))}
               </CommandGroup>

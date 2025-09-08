@@ -186,6 +186,16 @@ export default function NewPassword() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Offscreen username field to satisfy password manager/a11y expectations */}
+              <input
+                type="text"
+                name="username"
+                autoComplete="username"
+                inputMode="email"
+                className="sr-only"
+                tabIndex={-1}
+                aria-hidden="true"
+              />
               {/* New Password */}
               <div className="space-y-2">
                 <Label htmlFor="password">New Password</Label>

@@ -14,6 +14,8 @@ import { lazy, Suspense } from "react";
 import { createProtectedRoute, createPublicRoute } from '@/utils/routeHelpers';
 import { PageLoader } from '@/components/PageLoader';
 import PermissionIssues from '@/components/PermissionIssues';
+import AuthBootstrap from '@/components/AuthBootstrap';
+import ProfileBootstrap from '@/components/ProfileBootstrap';
 
 // Lazy load all pages
 const Login = lazy(() => import("./pages/Login"));
@@ -154,6 +156,8 @@ const App = () => (
         <BrowserRouter basename={import.meta.env.DEV ? undefined : (import.meta.env.VITE_BASE_PATH || undefined)}>
           <AuthProvider>
             <TooltipProvider>
+              <AuthBootstrap />
+              <ProfileBootstrap />
               <SessionManager />
               <ToastBridge />
               <PermissionIssues />

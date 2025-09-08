@@ -379,7 +379,9 @@ export const authAPI = {
         });
       }
 
-  const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
+      // Start request (log minimal diagnostics pre/post)
+  try { if (DEBUG_AUTH) console.log('[authAPI] refreshToken: requesting /token (grant_type=refresh_token)'); } catch (e) { /* no-op */ }
+      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
         method: 'POST',
         headers: tokenHeaders,
         body: form.toString(),
@@ -387,6 +389,7 @@ export const authAPI = {
       });
 
       if (!response.ok) {
+  try { if (DEBUG_AUTH) console.log('[authAPI] refreshToken: non-OK status', response.status); } catch (e) { /* no-op */ }
         // Only clear tokens on 401/invalid refresh; keep tokens on transient errors
         if (response.status === 401) {
           localStorage.removeItem('access_token');
@@ -420,7 +423,7 @@ export const authAPI = {
         throw error;
       }
       // Network or other errors: do not clear tokens; allow caller to retry later
-      console.warn('Token refresh transient failure:', error);
+  try { console.warn('Token refresh transient failure:', error); } catch (e) { /* no-op */ }
       return null;
     }
   },
@@ -428,15 +431,19 @@ export const authAPI = {
   // Rotate the session cookie before it expires; cookie-first GET
   async refreshSession(): Promise<boolean> {
     try {
+  try { if (DEBUG_AUTH) console.log('[authAPI] refreshSession: calling /auth/v1/refresh'); } catch (e) { /* no-op */ }
       const res = await fetch(buildApiUrl('/auth/v1/refresh'), {
         method: 'GET',
         credentials: 'include',
         headers: { 'Accept': 'application/json' },
       });
-      if (!res.ok) return false;
+      if (!res.ok) {
+  try { console.log('[authAPI] refreshSession: non-OK status', res.status); } catch (e) { /* no-op */ }
+        return false;
+      }
       // Mark new session issuance time so scheduling can proceed
       localStorage.setItem('session_issued_at', String(Date.now()));
-  try { console.log('session cookie refreshed'); } catch (e) { /* noop */ }
+      try { console.log('session cookie refreshed'); } catch (e) { /* noop */ }
       return true;
     } catch {
       return false;

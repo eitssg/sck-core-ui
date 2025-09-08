@@ -238,6 +238,7 @@ export default function Login() {
                   <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="email"
+                    name="username"
                     type="email"
                     autoComplete="username"
                     placeholder="admin@company.com"
@@ -255,6 +256,7 @@ export default function Login() {
                   <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="password"
+                    name="password"
                     type={showPassword ? "text" : "password"}
                     autoComplete="current-password"
                     placeholder="Enter your password"

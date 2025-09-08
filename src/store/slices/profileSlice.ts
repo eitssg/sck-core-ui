@@ -88,7 +88,8 @@ const initialState: ProfileState = hydrateInitialState() ?? {
 
 // Normalize server payload to strict snake_case UserProfile
 export function normalizeUserProfile(raw: any): UserProfile {
-  const src = raw?.data ?? raw ?? {};
+  // Accept common envelope shapes: {data: {...}}, {user: {...}}, {profile: {...}}, {data: {user: {...}}}
+  const src = (raw && (raw.data?.user || raw.user || raw.profile || raw.data || raw)) || {};
   const profile: UserProfile = {
     user_id: src.user_id ?? src.UserId ?? '',
     profile_name: src.profile_name ?? src.ProfileName ?? 'default',
@@ -669,6 +670,7 @@ const profileSlice = createSlice({
       })
       .addCase(fetchUserProfile.fulfilled, (state, action) => {
         state.isLoading = false
+  try { if ((import.meta as any)?.env?.VITE_DEBUG) console.log('[profile] fetched /auth/me', action.payload); } catch (e) { /* no-op */ }
         state.user = action.payload.profile
   state.currentProfile = action.payload.profile.profile_name
         state.currentContext = action.payload.context
