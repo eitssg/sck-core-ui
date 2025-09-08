@@ -29,17 +29,16 @@ const initialState: AuthState = {
 // Async thunk for refreshing tokens
 export const refreshAccessToken = createAsyncThunk(
   'auth/refreshToken',
-  async (_, { getState, rejectWithValue }) => {
+  async (stateParam: string | undefined, { getState, rejectWithValue }) => {
     try {
       const state = getState() as { auth: AuthState };
-      const refreshToken = state.auth.tokens?.refresh_token;
-      
-      if (!refreshToken) {
-        return rejectWithValue('No refresh token available');
-      }
+      const refreshTokenFromState = state.auth.tokens?.refresh_token || null;
+      const refreshTokenFromStorage = (typeof localStorage !== 'undefined') ? (localStorage.getItem('refresh_token') || null) : null;
+      const refreshToken = refreshTokenFromState || refreshTokenFromStorage;
+      if (!refreshToken) return rejectWithValue('No refresh token available');
 
       console.log('Refreshing access token...');
-      const newTokens = await authAPI.refreshToken();
+  const newTokens = await authAPI.refreshToken(stateParam);
       
       if (!newTokens) {
         return rejectWithValue('Token refresh failed');
@@ -47,11 +46,13 @@ export const refreshAccessToken = createAsyncThunk(
 
       // Calculate expiration timestamp
       const expiresAt = Date.now() + (newTokens.expires_in * 1000);
-      
-      return {
+      // Preserve existing refresh_token if server didn’t return a new one
+      const finalTokens: AuthTokens = {
         ...newTokens,
+        refresh_token: newTokens.refresh_token || refreshToken,
         expires_at: expiresAt,
       };
+      return finalTokens;
     } catch (error) {
       console.error('Token refresh error:', error);
       return rejectWithValue(error instanceof Error ? error.message : 'Token refresh failed');
@@ -90,8 +91,7 @@ export const logoutUser = createAsyncThunk(
     }
     
     // Clear localStorage
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+  try { localStorage.clear(); } catch { /* ignore */ }
     sessionStorage.removeItem('oauth_session_token');
     sessionStorage.removeItem('oauth_token_type');
     
@@ -175,7 +175,9 @@ const authSlice = createSlice({
           
           // Update localStorage
           localStorage.setItem('access_token', action.payload.access_token);
-          localStorage.setItem('refresh_token', action.payload.refresh_token);
+          if (action.payload.refresh_token) {
+            localStorage.setItem('refresh_token', action.payload.refresh_token);
+          }
           
           console.log('Access token refreshed successfully');
         }
@@ -183,15 +185,7 @@ const authSlice = createSlice({
       .addCase(refreshAccessToken.rejected, (state, action) => {
         console.error('Token refresh failed:', action.payload);
         state.error = action.payload as string;
-        
-        // If refresh fails, log out the user
-        state.isAuthenticated = false;
-        state.user = null;
-        state.tokens = null;
-        
-        // Clear localStorage
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+  // Do not auto-logout or clear storage on 401; leave state intact.
       })
       
       // Logout cases

@@ -40,8 +40,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchedTokenRef = React.useRef<string | null>(null);
 
   const login = React.useCallback(async (token: string) => {
-    // Keep both keys for compatibility with other parts of the app
-    localStorage.setItem('token', token);
+  // Store canonical session token key for clarity
+  localStorage.setItem('session_token', token);
     localStorage.setItem('access_token', token);
     setLoading(true);
     setError(null);
@@ -97,8 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const logout = () => {
-  localStorage.removeItem('token');
-  localStorage.removeItem('access_token');
+  try { localStorage.clear(); } catch { /* ignore */ }
   // no-op: no separate logged-in flags to clear
     setUser(null);
     setError(null);
@@ -109,7 +108,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initializeAuth = async () => {
       // Consider session alive if we have an access token; use refresh only when needed
-      const access = localStorage.getItem('access_token') || localStorage.getItem('token');
+      // Prefer canonical key, then fallbacks for a limited time
+      const access = localStorage.getItem('access_token')
+        || localStorage.getItem('session_token');
       if (!access) {
         setLoading(false);
         return;
@@ -127,7 +128,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // ignore, will handle below
         }
         // If refresh didn’t succeed, don’t hard-logout here; proceed with minimal JWT if possible
-        const stillHave = localStorage.getItem('access_token') || localStorage.getItem('token');
+        const stillHave = localStorage.getItem('access_token')
+          || localStorage.getItem('session_token');
         if (!stillHave) {
           // Tokens were cleared (likely 401). Finish without user and allow ProtectedRoute to handle.
           setLoading(false);

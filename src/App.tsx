@@ -28,6 +28,7 @@ const NewPasswordSuccess = lazy(() => import("./pages/NewPasswordSuccess"));
 const Authorized = lazy(() => import("./pages/Authorized"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Profile = lazy(() => import("./pages/Profile"));
+const AWSCredentials = lazy(() => import("./pages/AWSCredentials"));
 const Settings = lazy(() => import("./pages/Settings"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Portfolios = lazy(() => import("./pages/Portfolios"));
@@ -108,6 +109,7 @@ const AppRoutes = () => (
     {/* Protected routes */}
     {createProtectedRoute('/dashboard', Dashboard, 'dashboard')}
     {createProtectedRoute('/profile', Profile, 'form')}
+  {createProtectedRoute('/aws-credentials', AWSCredentials, 'form')}
     {createProtectedRoute('/settings', Settings, 'form')}
 
     {/* Portfolio routes */}

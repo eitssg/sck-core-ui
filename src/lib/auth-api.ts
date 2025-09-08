@@ -351,8 +351,8 @@ export const authAPI = {
     }
   },
 
-  // Refresh access token using refresh token
-  async refreshToken(): Promise<OAuthTokenResponse | null> {
+  // Refresh access token using refresh token; optional state is appended for observability/flows
+  async refreshToken(stateParam?: string): Promise<OAuthTokenResponse | null> {
     try {
       const refreshToken = localStorage.getItem('refresh_token');
       if (!refreshToken) {
@@ -365,6 +365,9 @@ export const authAPI = {
         refresh_token: refreshToken,
         client_id: API_CONFIG.OAUTH.CLIENT_ID,
       });
+      if (stateParam) {
+        form.append('state', stateParam);
+      }
 
       const tokenHeaders: Record<string, string> = {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -377,6 +380,7 @@ export const authAPI = {
           authScheme: tokenHeaders['Authorization']?.split(' ')[0] || null,
           contentType: tokenHeaders['Content-Type']
         });
+        if (stateParam) console.log('[authAPI] refreshToken: appended state param', stateParam);
       }
 
       // Start request (log minimal diagnostics pre/post)
@@ -392,8 +396,7 @@ export const authAPI = {
   try { if (DEBUG_AUTH) console.log('[authAPI] refreshToken: non-OK status', response.status); } catch (e) { /* no-op */ }
         // Only clear tokens on 401/invalid refresh; keep tokens on transient errors
         if (response.status === 401) {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
+          // Don't auto-logout on 401; just signal invalid refresh
           throw new Error('invalid_refresh_token');
         }
         return null;
@@ -499,9 +502,8 @@ export const authAPI = {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      // Always clear local storage
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
+  // Always clear local storage completely
+  try { localStorage.clear(); } catch { /* ignore */ }
     }
   },
 

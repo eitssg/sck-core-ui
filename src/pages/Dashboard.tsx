@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { useAppSelector } from "@/store";
+import { selectUser as selectProfileUser } from "@/store/slices/profileSlice";
 import { Link } from "react-router-dom";
 
 import { useReduxData } from "@/hooks/useReduxData";
@@ -59,6 +61,7 @@ type Deployment = {
 export default function Dashboard() {
   const { isDark } = useTheme();
   const { toast } = useToast();
+  const profileUser = useAppSelector(selectProfileUser as any);
 
   // Redux-backed data
   const { clients, portfolios, actions, selectedClient } = useReduxData();
@@ -77,6 +80,14 @@ export default function Dashboard() {
   const [recentDeployments, setRecentDeployments] = useState<Deployment[]>([]);
   const [busy, setBusy] = useState<boolean>(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [aws401, setAws401] = useState<string | null>(null);
+
+  // Determine AWS credentials presence from profile
+  const hasAwsCreds = useMemo(() => {
+    const p: any = profileUser || {};
+    const c: any = p.credentials || {};
+    return Boolean(c.AwsCredentials);
+  }, [profileUser]);
 
   // Initial fetches
   useEffect(() => {
@@ -113,6 +124,24 @@ export default function Dashboard() {
         const appsJson = (await appsRes.json()) as ApiResponse<any>;
         setAppTotal(appsJson.metadata?.total ?? toArray(appsJson.data).length);
       } else {
+        if (appsRes.status === 401) {
+          try {
+            const j = await appsRes.clone().json().catch(() => ({}));
+            const msg = String(j?.message || "");
+            if (msg) {
+              if (msg.includes('key_rotation_required')) {
+                setAws401('key_rotation_required');
+                try { sessionStorage.setItem('aws_cred_status', 'rotation'); } catch { /* ignore storage errors */ }
+              } else if (msg.includes('invalid_credentils') || msg.includes('aws_credentials_invalid')) {
+                setAws401('aws_credentials_invalid');
+                try { sessionStorage.setItem('aws_cred_status', 'invalid'); } catch { /* ignore storage errors */ }
+              } else if (msg.includes('aws_credentials_missing')) {
+                setAws401('aws_credentials_missing');
+                try { sessionStorage.setItem('aws_cred_status', 'missing'); } catch { /* ignore storage errors */ }
+              }
+            }
+          } catch { /* ignore */ }
+        }
         setAppTotal(0);
       }
 
@@ -136,6 +165,24 @@ export default function Dashboard() {
         ).length;
         setActiveDeployments(active);
       } else {
+        if (depRes.status === 401) {
+          try {
+            const j = await depRes.clone().json().catch(() => ({}));
+            const msg = String(j?.message || "");
+            if (msg) {
+              if (msg.includes('key_rotation_required')) {
+                setAws401('key_rotation_required');
+                try { sessionStorage.setItem('aws_cred_status', 'rotation'); } catch { /* ignore storage errors */ }
+              } else if (msg.includes('invalid_credentils') || msg.includes('aws_credentials_invalid')) {
+                setAws401('aws_credentials_invalid');
+                try { sessionStorage.setItem('aws_cred_status', 'invalid'); } catch { /* ignore storage errors */ }
+              } else if (msg.includes('aws_credentials_missing')) {
+                setAws401('aws_credentials_missing');
+                try { sessionStorage.setItem('aws_cred_status', 'missing'); } catch { /* ignore storage errors */ }
+              }
+            }
+          } catch { /* ignore */ }
+        }
         setRecentDeployments([]);
         setDepTotal(0);
         setActiveDeployments(0);
@@ -154,9 +201,9 @@ export default function Dashboard() {
   }, [currentClient, toast]);
 
   useEffect(() => {
-    if (!currentClient) return;
+    if (!currentClient || !hasAwsCreds) return;
     fetchDashboardStats();
-  }, [currentClient, fetchDashboardStats]);
+  }, [currentClient, hasAwsCreds, fetchDashboardStats]);
 
   // Derived stat cards (clients/portfolios from store)
   const totalClients = clients.items?.length || 0;
@@ -167,6 +214,48 @@ export default function Dashboard() {
   return (
     <DashboardLayout activeItem="dashboard">
       <div className="space-y-6">
+        {/* AWS Credentials CTA */}
+  {!hasAwsCreds && (
+          <div className="rounded-lg border bg-amber-50 dark:bg-amber-950/30 p-4">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5">
+                <Activity className="h-5 w-5 text-amber-600" />
+              </div>
+              <div className="flex-1">
+                <div className="font-semibold">AWS credentials required</div>
+                <div className="text-sm text-muted-foreground">
+      Add your AWS Access Key and Secret to enable /api features.
+                </div>
+                <div className="mt-2">
+      <Link to="/aws-credentials" className="text-sm underline">Add AWS Credentials →</Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {aws401 && (
+          <div className="rounded-lg border bg-red-50 dark:bg-red-950/30 p-4">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5">
+                <Activity className="h-5 w-5 text-red-600" />
+              </div>
+              <div className="flex-1">
+                <div className="font-semibold">API access blocked</div>
+                <div className="text-sm text-muted-foreground">
+                  {aws401 === 'key_rotation_required'
+                    ? 'Your AWS credentials must be rotated. Please enter new keys on the AWS Credentials page.'
+                    : aws401 === 'aws_credentials_invalid'
+                      ? 'Your AWS credentials are invalid. Please update them on the AWS Credentials page.'
+                      : 'AWS credentials are missing. Please add them on the AWS Credentials page.'}
+                </div>
+                <div className="mt-2">
+                  <Link to="/aws-credentials" className="text-sm underline">Open AWS Credentials →</Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Ambient header banner */}
         <div className="relative overflow-hidden rounded-xl border bg-card shadow-medium">
           <div className="pointer-events-none absolute inset-0">
@@ -200,7 +289,7 @@ export default function Dashboard() {
               <Button
                 onClick={fetchDashboardStats}
                 variant={isDark ? "secondary" : "outline"}
-                disabled={!currentClient || busy}
+                disabled={!currentClient || busy || !hasAwsCreds}
                 className="gap-2"
               >
                 {busy ? "Refreshing..." : "Refresh"}

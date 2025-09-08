@@ -98,7 +98,8 @@ export function normalizeUserProfile(raw: any): UserProfile {
     email: src.email ?? src.Email,
     display_name: src.display_name ?? src.DisplayName,
     first_name: src.first_name ?? src.FirstName,
-    last_name: src.last_name ?? src.LastName,
+  // Accept server-side typo 'last_naem' for backward compatibility
+  last_name: src.last_name ?? src.LastName ?? src.last_naem,
     avatar_url: src.avatar_url ?? src.AvatarUrl,
     profile_description: src.profile_description ?? src.ProfileDescription,
     timezone: src.timezone ?? src.Timezone,
@@ -237,6 +238,13 @@ export const fetchUserProfile = createAsyncThunk<
       if (!state.profile) return true;
       
       const context = generateContextKey(client, portfolio);
+      // If using auth endpoint and essential identity fields are missing, force a refetch
+      if (!client && !portfolio) {
+        const u = state.profile.user as any;
+        if (u && (u.first_name == null || u.last_name == null || u.first_name === '' || u.last_name === '')) {
+          return true;
+        }
+      }
       
       // Check if we have this specific profile cached (any context)
       if (profileName) {

@@ -15,8 +15,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
       // Treat session cookie as source of truth; we can't read it directly, so use a session flag set at login
       const flag = localStorage.getItem('sck_logged_in') || sessionStorage.getItem('sck_logged_in');
       if (flag === '1') return true;
-      // Back-compat: if tokens exist, also allow
-      return Boolean(localStorage.getItem('access_token') || localStorage.getItem('token'));
+      // If tokens exist, also allow (prefer canonical key)
+      return Boolean(
+        localStorage.getItem('access_token') ||
+        localStorage.getItem('session_token')
+      );
     } catch {
       return false;
     }

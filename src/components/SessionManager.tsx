@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { authAPI } from '@/lib/auth-api';
-import { buildApiUrl } from '@/lib/api-config';
 import { useAppDispatch } from '@/store';
-import { logoutUser } from '@/store/slices/authSlice';
+import { logoutUser, refreshAccessToken } from '@/store/slices/authSlice';
 
 /**
  * SessionManager
@@ -138,16 +137,17 @@ export const SessionManager = () => {
           }
         }
 
-        const res = await authAPI.refreshToken();
-        console.log('[session] proactive access token refresh attempted');
-        if (!res) {
+  const action = await dispatch(refreshAccessToken('timer_refresh'));
+  console.log('[session] proactive access token refresh attempted');
+  if (refreshAccessToken.rejected.match(action)) {
           // Transient failure: keep tokens; we’ll try again at next schedule/focus
           console.log('[session] transient failure refreshing access token; will reschedule');
           scheduleProactiveRefresh();
           return;
         }
         // Reschedule with new token
-        currentTokenRef.current = res.access_token;
+  const payload = action.payload as any;
+  currentTokenRef.current = payload?.access_token || localStorage.getItem('access_token');
         console.log('[session] proactive access token refresh succeeded');
         scheduleProactiveRefresh();
         try {
@@ -156,20 +156,48 @@ export const SessionManager = () => {
           // no-op
         }
       } catch (err) {
-  // Only thrown when refresh token is invalid (explicit 401 from backend)
-  try { await dispatch(logoutUser()).unwrap(); } catch { /* ignore */ }
-        // Log explicit timeout/logout event for visibility
+        // Only thrown when refresh token is invalid (explicit 401 from backend)
+        // Logout ONLY if (cookie expired OR access token expired) AND user has been idle beyond threshold.
+        const now = Date.now();
+        const idleMs = now - lastActivityRef.current;
+        const maxIdleBeforeRefreshMs = (sessionRefreshAtMinutes - 1) * 60 * 1000; // same threshold as above
+        const issuedAt = Number(localStorage.getItem('session_issued_at') || '0');
+        const sessionWindowMs = sessionWindowMinutes * 60 * 1000;
+        const cookieExpired = issuedAt > 0 ? (now - issuedAt) >= sessionWindowMs : false;
+        // Check access token expiry (prefer stored, fallback to JWT exp)
+        let accessExpired = false;
         try {
-          console.log('[session] session timeout, logging out');
+          const expStored = Number(localStorage.getItem('access_expires_at') || '0');
+          if (expStored > 0) {
+            accessExpired = now >= expStored;
+          } else {
+            const tk = getAccessToken();
+            const claims = tk ? decodeJwtClaims(tk) : null;
+            const expMs = claims?.exp ? claims.exp * 1000 : 0;
+            accessExpired = expMs > 0 ? now >= expMs : false;
+          }
         } catch { /* no-op */ }
-        const path = location.pathname;
-        const isAuthFlow = path.startsWith('/authorized') || path.startsWith('/login') || path.startsWith('/signup');
-        if (!isAuthFlow) navigate('/login?reason=session_expired', { replace: true });
+
+        if ((cookieExpired || accessExpired) && idleMs > Math.max(0, maxIdleBeforeRefreshMs)) {
+          try {
+            console.log('[session] session cookie expired and user idle; logging out');
+          } catch { /* no-op */ }
+          try { await dispatch(logoutUser()).unwrap(); } catch { /* ignore */ }
+          const path = location.pathname;
+          const isAuthFlow = path.startsWith('/authorized') || path.startsWith('/login') || path.startsWith('/signup');
+          if (!isAuthFlow) navigate('/login?reason=session_expired', { replace: true });
+        } else {
+          // Active user or cookie not past window: do not auto-logout; reschedule and continue
+          try {
+            console.log('[session] refresh invalid but user active or window not expired; not logging out');
+          } catch { /* no-op */ }
+          scheduleProactiveRefresh();
+        }
       } finally {
         refreshingRef.current = false;
       }
     }, delay);
-  }, [navigate, location.pathname, refreshLeewayMs, sessionRefreshAtMinutes, sessionWindowMinutes, dispatch]);
+  }, [refreshLeewayMs, sessionRefreshAtMinutes, sessionWindowMinutes, dispatch, navigate, location.pathname]);
 
   useEffect(() => {
     // Initial schedule and react to navigation (helps right after login)
@@ -240,18 +268,12 @@ export const SessionManager = () => {
 
       refreshingRef.current = true;
       try {
-        const res = await authAPI.refreshToken();
-        if (!res || !res.access_token) {
-          // Hard sign-out on invalid refresh; redirect to login (avoid loops)
+  const action = await dispatch(refreshAccessToken('timer_refresh'));
+  if (refreshAccessToken.rejected.match(action)) {
+          // On 401 from an API call, do not auto-logout. Log and leave state as-is.
           try {
-            console.log('[session] session timeout, logging out');
+            console.log('[session] 401 encountered; refresh failed. Not logging out automatically.');
           } catch { /* no-op */ }
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          // Avoid redirecting away from auth/public pages
-          const path = location.pathname;
-          const isAuthFlow = path.startsWith('/authorized') || path.startsWith('/login') || path.startsWith('/signup');
-          if (!isAuthFlow) navigate('/login?reason=session_expired', { replace: true });
         } else {
           // Broadcast that tokens were refreshed (optional listeners may react)
           try {
@@ -261,15 +283,10 @@ export const SessionManager = () => {
           }
         }
       } catch {
-        // On unexpected errors, clear and redirect
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+        // On unexpected errors, do not auto-logout on 401 path
         try {
-          console.log('[session] session error, logging out');
+          console.log('[session] 401 handler encountered an error; not logging out automatically.');
         } catch { /* no-op */ }
-        const path = location.pathname;
-        const isAuthFlow = path.startsWith('/authorized') || path.startsWith('/login') || path.startsWith('/signup');
-        if (!isAuthFlow) navigate('/login?reason=session_error', { replace: true });
       } finally {
         // small cooldown so bursts of 401s don’t reenter immediately
         setTimeout(() => {
@@ -281,7 +298,7 @@ export const SessionManager = () => {
     const handler = () => onApi401();
     window.addEventListener('sck:api401', handler as EventListener);
     return () => window.removeEventListener('sck:api401', handler as EventListener);
-  }, [enableAutoRefreshOn401, location.pathname, navigate]);
+  }, [enableAutoRefreshOn401, location.pathname, navigate, dispatch]);
 
   // Removed global ping; session refresh happens based on window timing above
 
