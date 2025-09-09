@@ -1,6 +1,8 @@
 import { store } from '@/store';
 import { selectTokens } from '@/store/slices/authSlice';
 
+const DEBUG_AUTH = Boolean((import.meta as any)?.env?.VITE_DEBUG);
+
 // API Configuration
 export const API_CONFIG = {
   BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8090',
@@ -49,11 +51,13 @@ export const API_CONFIG = {
 
 // Helper function to build full URL
 export const buildApiUrl = (endpoint: string): string => {
-  // In development, route through same-origin at root so Vite proxy handles CORS.
   const isDev = (import.meta as any)?.env?.DEV || (import.meta as any)?.env?.MODE === 'development';
-  if (isDev && (endpoint.startsWith('/api') || endpoint.startsWith('/auth'))) {
+  const bypassProxy = String((import.meta as any)?.env?.VITE_BYPASS_VITE_PROXY || 'false') === 'true';
+  // In dev, use same-origin (Vite proxy) unless explicitly bypassed
+  if (isDev && !bypassProxy && (endpoint.startsWith('/api') || endpoint.startsWith('/auth'))) {
     return `${window.location.origin}${endpoint}`;
   }
+  // Otherwise, use BASE_URL
   return `${API_CONFIG.BASE_URL}${endpoint}`;
 };
 
@@ -66,14 +70,79 @@ export const getRedirectUri = (): string => {
   return API_CONFIG.OAUTH.REDIRECT_URI || derivedRedirect;
 };
 
-export const buildOAuthAuthorizeUrl = (state?: string): string => {
+// PKCE helpers (RFC 7636)
+async function sha256(input: string): Promise<ArrayBuffer> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  return await crypto.subtle.digest('SHA-256', data);
+}
+
+function base64UrlEncode(arrayBuffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function generateCodeVerifier(): string {
+  // 32 bytes -> 43+ chars base64url, within 43-128 limit
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+async function generateCodeChallenge(verifier: string): Promise<string> {
+  const hash = await sha256(verifier);
+  return base64UrlEncode(hash);
+}
+
+export const buildOAuthAuthorizeUrl = async (state?: string): Promise<string> => {
+  // Generate state if not provided
+  let finalState = state;
+  try {
+    if (!finalState) {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+      finalState = `st:${hex}`;
+    }
+    // Persist expected state for validation after redirect
+    sessionStorage.setItem('oauth_expected_state', finalState);
+  } catch {
+    // ignore state generation errors; proceed without state if unavailable
+  }
+
+  // PKCE: generate verifier and challenge (S256)
+  let codeChallenge: string | undefined;
+  let codeVerifier: string | undefined;
+  try {
+    codeVerifier = generateCodeVerifier();
+    codeChallenge = await generateCodeChallenge(codeVerifier);
+    // Persist verifier in sessionStorage (both generic and state-keyed for safety)
+    sessionStorage.setItem('pkce_code_verifier', codeVerifier);
+    if (finalState) sessionStorage.setItem(`pkce_code_verifier_${finalState}`, codeVerifier);
+    if (DEBUG_AUTH) {
+      // Do not log sensitive material; only presence
+      console.log('[auth] PKCE prepared for authorize URL', {
+        hasCodeChallenge: Boolean(codeChallenge),
+        method: 'S256',
+        hasState: Boolean(finalState),
+      });
+    }
+  } catch {
+    // If crypto not available, proceed without PKCE (server may reject for public clients)
+  }
+
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: API_CONFIG.OAUTH.CLIENT_ID,
     redirect_uri: getRedirectUri(),
     scope: API_CONFIG.OAUTH.SCOPE,
-    ...(state && { state }),
-  });
+    ...(finalState && { state: finalState }),
+    ...(codeChallenge && { code_challenge: codeChallenge, code_challenge_method: 'S256' }),
+  } as Record<string, string>);
 
   return `${buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.AUTHORIZE)}?${params.toString()}`;
 };
@@ -84,11 +153,19 @@ export function getAuthHeaders(): Record<string, string> {
     'Content-Type': 'application/json',
   };
 
-  // Fallback to localStorage for non-React contexts
-  const accessToken = localStorage.getItem('access_token');
-  if (accessToken) {
-    headers['Authorization'] = `Bearer ${accessToken}`;
+  // Read access token from Redux store (in-memory) only
+  try {
+    const state = store.getState();
+    const tokens = selectTokens(state as any);
+    const accessToken = tokens?.access_token;
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+  } catch {
+    // no-op: omit Authorization if state not available
   }
+
+  // No fallback to storage: access tokens must remain in-memory only.
 
   return headers;
 

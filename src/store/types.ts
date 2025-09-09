@@ -229,6 +229,12 @@ export interface UserProfile {
   // Usage tracking (per profile)
   session_count?: number;
   is_active?: boolean;
+
+  // MFA fields (added server-side)
+  mfa_enabled?: boolean;
+  mfa_methods?: string[];
+  totp_secret?: string; // not normally returned; included here for shape completeness
+  recovery_codes?: string[];
 }
 
 // Client-side cached variant with metadata

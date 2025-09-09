@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { authAPI } from '@/lib/auth-api';
 import { useAuth } from '@/contexts/useAuth';
 import { useReduxData } from '@/hooks/useReduxData';
-import { setError } from '@/store/slices/authSlice';
+import { setError, setTokens } from '@/store/slices/authSlice';
 import { API_CONFIG, buildApiUrl } from '@/lib/api-config';
 import { apiFetch } from '@/lib/api-fetch';
 import { syncFromAuth, normalizeUserProfile } from '@/store/slices/profileSlice';
@@ -23,7 +23,7 @@ export default function Authorized() {
       // Guard against double-invocation (React StrictMode, rapid re-renders)
       if (processingRef.current) return;
       processingRef.current = true;
-      try {
+  try {
         // Extract authorization code from URL
         const code = searchParams.get('code');
         const error = searchParams.get('error');
@@ -43,8 +43,8 @@ export default function Authorized() {
 
         console.log('Processing OAuth callback with code:', code);
 
-        // Idempotency guard: if we've already exchanged this exact code, skip token call
-        const consumeKey = `oauth_code_consumed:${code}`;
+  // Idempotency guard: if we've already exchanged this exact code, skip token call
+  const consumeKey = `oauth_code_consumed:${code}`;
         if (sessionStorage.getItem(consumeKey) === 'true') {
           console.log('OAuth code already consumed. Skipping duplicate token exchange.');
           navigate('/dashboard', { replace: true });
@@ -63,12 +63,19 @@ export default function Authorized() {
           return;
   } else if ('access_token' in result) {
           console.log('OAuth login successful, redirecting to dashboard');
-          // Avoid duplicate profile fetch if token already stored
           try {
-            const existing = localStorage.getItem('access_token');
-            if (existing !== result.access_token) {
-              await login(result.access_token);
-            }
+            // Persist tokens in Redux immediately so Authorization header becomes available
+            const expires_at = Date.now() + (Number((result as any).expires_in || 0) * 1000);
+            dispatch(setTokens({ ...(result as any), expires_at }));
+          } catch (e) {
+            // non-blocking
+          }
+          // Mark session active for bootstrap and session manager gating
+          try { sessionStorage.setItem('auth_session_active', '1'); } catch { /* ignore */ }
+          // No storage flags; rely on Redux and bootstrap flows
+          // Hydrate AuthContext using the freshly received in-memory access token
+          try {
+            await login(result.access_token);
             // Prefer cache set by AuthContext.login() to avoid duplicate /me fetch
             let profileNameForPatch: string | null = null;
             try {
@@ -111,6 +118,11 @@ export default function Authorized() {
         return;
       } finally {
   sessionStorage.removeItem('oauth_processing');
+        // Destroy any storage that references the raw authorization code (no longer valid)
+        try {
+          const code = searchParams.get('code');
+          if (code) sessionStorage.removeItem(`oauth_code_consumed:${code}`);
+        } catch { /* ignore */ }
         setIsProcessing(false);
       }
     };

@@ -27,53 +27,7 @@ export interface ProfileState {
   contextIndex: Record<string, string[]>
 }
 
-const PERSIST_KEY = 'profile_cache_v1';
-const PERSIST_TTL_MS = 10 * 60 * 1000; // 10 minutes across reloads
-
-function hydrateInitialState(): ProfileState | null {
-  try {
-    const raw = sessionStorage.getItem(PERSIST_KEY);
-    if (!raw) return null;
-    const cached = JSON.parse(raw);
-    if (!cached?.ts || (Date.now() - cached.ts) > PERSIST_TTL_MS) return null;
-    const state: ProfileState = {
-      user: cached.user ?? null,
-      userProfiles: cached.userProfiles ?? [],
-      currentProfile: cached.currentProfile ?? null,
-      isLoading: false,
-      error: null,
-      lastFetched: cached.lastFetched ?? null,
-      currentContext: cached.currentContext ?? null,
-  individualProfileCache: cached.individualProfileCache ?? {},
-  contextCache: cached.contextCache ?? {},
-  contextIndex: cached.contextIndex ?? {},
-    };
-    return state;
-  } catch {
-    return null;
-  }
-}
-
-function persistState(state: ProfileState) {
-  try {
-    const payload = {
-      ts: Date.now(),
-      user: state.user,
-      userProfiles: state.userProfiles,
-      currentProfile: state.currentProfile,
-      lastFetched: state.lastFetched,
-      currentContext: state.currentContext,
-  individualProfileCache: state.individualProfileCache,
-  contextCache: state.contextCache,
-  contextIndex: state.contextIndex,
-    };
-    sessionStorage.setItem(PERSIST_KEY, JSON.stringify(payload));
-  } catch {
-    // ignore storage errors
-  }
-}
-
-const initialState: ProfileState = hydrateInitialState() ?? {
+const initialState: ProfileState = {
   user: null,
   userProfiles: [],
   currentProfile: null,
@@ -117,6 +71,12 @@ export function normalizeUserProfile(raw: any): UserProfile {
     preferences: src.preferences ?? src.Preferences,
     session_count: src.session_count ?? src.SessionCount,
     is_active: src.is_active ?? src.IsActive,
+  // MFA fields (ensure we preserve server state)
+  mfa_enabled: src.mfa_enabled ?? src.MfaEnabled,
+  mfa_methods: src.mfa_methods ?? src.MfaMethods,
+  // Secret and recovery codes are usually not sent by /auth/me, but map if present for completeness
+  totp_secret: src.totp_secret ?? src.TotpSecret,
+  recovery_codes: src.recovery_codes ?? src.RecoveryCodes,
   };
   return profile;
 }
@@ -690,7 +650,7 @@ const profileSlice = createSlice({
   state.individualProfileCache[action.payload.profile.profile_name] = Date.now();
         state.contextCache[action.payload.context] = Date.now();
   setContextProfiles(state, action.payload.context, [action.payload.profile]);
-  persistState(state);
+  // no storage persistence
       })
       .addCase(fetchUserProfile.rejected, (state, action) => {
         state.isLoading = false
@@ -722,7 +682,7 @@ const profileSlice = createSlice({
         });
         state.contextCache[action.payload.context] = Date.now();
         state.lastFetched = Date.now();
-  persistState(state);
+  // no storage persistence
       })
       .addCase(fetchUserProfiles.rejected, (state, action) => {
         state.isLoading = false
@@ -751,7 +711,7 @@ const profileSlice = createSlice({
   const addSet2 = new Set(state.contextIndex[action.payload.context] || []);
   addSet2.add(action.payload.profile.profile_name);
   state.contextIndex[action.payload.context] = Array.from(addSet2);
-  persistState(state);
+  // no storage persistence
       })
       .addCase(updateUserProfile.rejected, (state, action) => {
         state.isLoading = false
@@ -780,7 +740,7 @@ const profileSlice = createSlice({
   const addSet3 = new Set(state.contextIndex[action.payload.context] || []);
   addSet3.add(action.payload.profile.profile_name);
   state.contextIndex[action.payload.context] = Array.from(addSet3);
-  persistState(state);
+  // no storage persistence
       })
       .addCase(patchUserProfile.rejected, (state, action) => {
         state.isLoading = false
@@ -810,7 +770,7 @@ const profileSlice = createSlice({
         
         // Clear cache entries
         delete state.individualProfileCache[action.payload.profileName || ''];
-  persistState(state);
+  // no storage persistence
       })
       .addCase(deleteUserProfile.rejected, (state, action) => {
         state.isLoading = false
@@ -851,7 +811,7 @@ const profileSlice = createSlice({
         const addSet = new Set(state.contextIndex[action.payload.context] || [])
         addSet.add(action.payload.profile.profile_name)
         state.contextIndex[action.payload.context] = Array.from(addSet)
-        persistState(state)
+  // no storage persistence
       })
       .addCase(putCurrentUserProfile.rejected, (state, action) => {
         state.isLoading = false
@@ -874,7 +834,7 @@ const profileSlice = createSlice({
         const addSet = new Set(state.contextIndex[action.payload.context] || [])
         addSet.add(action.payload.profile.profile_name)
         state.contextIndex[action.payload.context] = Array.from(addSet)
-        persistState(state)
+  // no storage persistence
       })
       .addCase(patchCurrentUserProfile.rejected, (state, action) => {
         state.isLoading = false

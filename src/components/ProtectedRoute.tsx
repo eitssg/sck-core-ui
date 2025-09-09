@@ -1,6 +1,10 @@
 import { Navigate, useLocation } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/useAuth';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAppSelector } from '@/store';
+import { selectTokens } from '@/store/slices/authSlice';
+import { selectUser as selectProfileUser, selectProfileLoading } from '@/store/slices/profileSlice';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -9,23 +13,46 @@ interface ProtectedRouteProps {
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
-  const hasSession = (() => {
-    if (typeof window === 'undefined') return false;
-    try {
-      // Treat session cookie as source of truth; we can't read it directly, so use a session flag set at login
-      const flag = localStorage.getItem('sck_logged_in') || sessionStorage.getItem('sck_logged_in');
-      if (flag === '1') return true;
-      // If tokens exist, also allow (prefer canonical key)
-      return Boolean(
-        localStorage.getItem('access_token') ||
-        localStorage.getItem('session_token')
-      );
-    } catch {
-      return false;
-    }
-  })();
+  // Consider session present if we have an in-memory access token (Redux)
+  // or a refresh token in sessionStorage (cookie/session-based continuity)
+  const tokens = useAppSelector(selectTokens as any) as { access_token?: string } | null;
+  const hasAccess = Boolean(tokens && tokens.access_token);
+  let hasRefresh = false;
+  try { hasRefresh = Boolean(sessionStorage.getItem('refresh_token')); } catch { /* ignore */ }
+  const hasSession = hasAccess || hasRefresh;
+  // Profile hydration state (Redux is source of truth for user profile)
+  const profileUser = useAppSelector(selectProfileUser as any);
+  const profileLoading = useAppSelector(selectProfileLoading as any);
 
-  if (loading) {
+  // Short grace window while we may be refreshing access using the refresh token
+  // Prevents a redirect bounce to /login during app boot on reload.
+  const [waitingForAccess, setWaitingForAccess] = useState<boolean>(hasRefresh && !hasAccess);
+  const waitTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    // If we have a refresh token but no access token yet, wait briefly
+    if (hasRefresh && !hasAccess) {
+      setWaitingForAccess(true);
+      if (waitTimerRef.current) window.clearTimeout(waitTimerRef.current);
+      waitTimerRef.current = window.setTimeout(() => setWaitingForAccess(false), 2500);
+      return () => {
+        if (waitTimerRef.current) {
+          window.clearTimeout(waitTimerRef.current);
+          waitTimerRef.current = null;
+        }
+      };
+    }
+    // Access present or no refresh token; stop waiting immediately
+    setWaitingForAccess(false);
+    if (waitTimerRef.current) {
+      window.clearTimeout(waitTimerRef.current);
+      waitTimerRef.current = null;
+    }
+  }, [hasRefresh, hasAccess]);
+
+  // Gate rendering until profile is available when we have an access token
+  const hydrating = loading || profileLoading || (hasAccess && !profileUser) || waitingForAccess;
+
+  if (hydrating) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="space-y-4 w-full max-w-md">
@@ -37,9 +64,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     );
   }
 
-  // If we have a session (cookie likely set) but user isn't hydrated yet due to
-  // a transient /me error, allow access and let downstream components recover.
-  if (!user && hasSession) {
+  // If profile exists (Redux) or auth context user exists, allow
+  if (profileUser || user) {
     return <>{children}</>;
   }
 

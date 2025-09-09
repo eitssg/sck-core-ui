@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { authAPI } from '@/lib/auth-api';
-import { useAppDispatch } from '@/store';
-import { logoutUser, refreshAccessToken } from '@/store/slices/authSlice';
+import { useAppDispatch, useAppSelector } from '@/store';
+import { logoutUser, refreshAccessToken, selectTokens } from '@/store/slices/authSlice';
+import type { OAuthTokenResponse } from '@/store/types';
+
+type AuthTokens = OAuthTokenResponse & { expires_at?: number };
 
 /**
  * SessionManager
@@ -39,6 +42,7 @@ export const SessionManager = () => {
   const refreshTimerRef = useRef<number | undefined>(undefined);
   const currentTokenRef = useRef<string | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
+  const tokens = useAppSelector(selectTokens as any) as AuthTokens | null;
 
   const enableAutoRefreshOn401 = String((import.meta as any)?.env?.VITE_ENABLE_AUTO_REFRESH_ON_401 || 'false') === 'true';
   // Session cookie window and access token leeway
@@ -47,8 +51,10 @@ export const SessionManager = () => {
   const refreshLeewayMs = Number((import.meta as any)?.env?.VITE_ACCESS_REFRESH_LEEWAY_MS ?? 5 * 60 * 1000); // refresh 5m before exp by default
   const minScheduleMs = 5_000; // avoid ultra-short loops
 
-  const getAccessToken = () => localStorage.getItem('access_token');
-  const getRefreshToken = () => localStorage.getItem('refresh_token');
+  const getAccessToken = useCallback(() => tokens?.access_token || null, [tokens]);
+  const getRefreshToken = useCallback(() => {
+    try { return sessionStorage.getItem('refresh_token'); } catch { return null; }
+  }, []);
 
   const scheduleProactiveRefresh = useCallback(() => {
   const token = getAccessToken();
@@ -61,19 +67,18 @@ export const SessionManager = () => {
     currentTokenRef.current = token;
 
   if (!token || !rtoken) return; // nothing to schedule
-    const claims = decodeJwtClaims(token) || {};
-    if (!claims.exp) return; // cannot schedule without exp
+  const claims = decodeJwtClaims(token) || {};
+  if (!claims.exp && !tokens?.expires_at) return; // cannot schedule without exp
 
-    const nowMs = Date.now();
-    const expMsFromJwt = claims.exp * 1000;
-    const expMsStored = Number(localStorage.getItem('access_expires_at') || '0');
-    const expMs = expMsStored > 0 ? expMsStored : expMsFromJwt;
+  const nowMs = Date.now();
+  const expMsFromJwt = claims.exp ? claims.exp * 1000 : 0;
+  const expMs = typeof tokens?.expires_at === 'number' && tokens!.expires_at! > 0 ? tokens!.expires_at! : expMsFromJwt;
 
     // Compute access-refresh due
   const accessDueMs = Math.max(0, expMs - refreshLeewayMs - nowMs);
 
     // Compute session-refresh due based on issued at + configured window
-    const issuedAt = Number(localStorage.getItem('session_issued_at') || '0');
+  const issuedAt = Number(sessionStorage.getItem('session_issued_at') || '0');
     const sessionWindowMs = sessionWindowMinutes * 60 * 1000;
     const sessionRefreshAtMs = sessionRefreshAtMinutes * 60 * 1000;
   let sessionDueMs = Number.POSITIVE_INFINITY;
@@ -102,13 +107,13 @@ export const SessionManager = () => {
 
     refreshTimerRef.current = window.setTimeout(async () => {
       // Single-flight and recheck token presence
-      if (refreshingRef.current) return;
-      const stillToken = getAccessToken();
-      const stillRefresh = getRefreshToken();
+  if (refreshingRef.current) return;
+  const stillToken = getAccessToken();
+  const stillRefresh = getRefreshToken();
       if (!stillToken || !stillRefresh) return;
 
       // If token changed since scheduled, reschedule using new token
-      if (currentTokenRef.current && stillToken !== currentTokenRef.current) {
+  if (currentTokenRef.current && stillToken !== currentTokenRef.current) {
         scheduleProactiveRefresh();
         return;
       }
@@ -147,7 +152,7 @@ export const SessionManager = () => {
         }
         // Reschedule with new token
   const payload = action.payload as any;
-  currentTokenRef.current = payload?.access_token || localStorage.getItem('access_token');
+  currentTokenRef.current = payload?.access_token || getAccessToken();
         console.log('[session] proactive access token refresh succeeded');
         scheduleProactiveRefresh();
         try {
@@ -161,13 +166,13 @@ export const SessionManager = () => {
         const now = Date.now();
         const idleMs = now - lastActivityRef.current;
         const maxIdleBeforeRefreshMs = (sessionRefreshAtMinutes - 1) * 60 * 1000; // same threshold as above
-        const issuedAt = Number(localStorage.getItem('session_issued_at') || '0');
+  const issuedAt = Number(sessionStorage.getItem('session_issued_at') || '0');
         const sessionWindowMs = sessionWindowMinutes * 60 * 1000;
         const cookieExpired = issuedAt > 0 ? (now - issuedAt) >= sessionWindowMs : false;
         // Check access token expiry (prefer stored, fallback to JWT exp)
         let accessExpired = false;
         try {
-          const expStored = Number(localStorage.getItem('access_expires_at') || '0');
+          const expStored = typeof tokens?.expires_at === 'number' ? tokens!.expires_at! : 0;
           if (expStored > 0) {
             accessExpired = now >= expStored;
           } else {
@@ -197,11 +202,17 @@ export const SessionManager = () => {
         refreshingRef.current = false;
       }
     }, delay);
-  }, [refreshLeewayMs, sessionRefreshAtMinutes, sessionWindowMinutes, dispatch, navigate, location.pathname]);
+  }, [refreshLeewayMs, sessionRefreshAtMinutes, sessionWindowMinutes, dispatch, navigate, location.pathname, tokens, getAccessToken, getRefreshToken]);
 
   useEffect(() => {
     // Initial schedule and react to navigation (helps right after login)
   lastActivityRef.current = Date.now();
+    // Skip while OAuth callback is processing
+    try { if (sessionStorage.getItem('oauth_processing') === '1') return; } catch { /* ignore */ }
+  // Only run if we have a refresh token available
+  let hasRefresh = false;
+  try { hasRefresh = Boolean(sessionStorage.getItem('refresh_token')); } catch { /* ignore */ }
+  if (!hasRefresh) return;
     scheduleProactiveRefresh();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
@@ -209,8 +220,8 @@ export const SessionManager = () => {
   useEffect(() => {
     // React to token updates from other tabs and optional custom events
     const onStorage = (e: StorageEvent) => {
-      if (e.key === 'access_token' || e.key === 'refresh_token') scheduleProactiveRefresh();
-    };
+        if (e.key === 'refresh_token') scheduleProactiveRefresh();
+      };
     const onTokenRefreshed = () => scheduleProactiveRefresh();
     const onActivity = () => { lastActivityRef.current = Date.now(); };
     window.addEventListener('storage', onStorage);
@@ -232,8 +243,12 @@ export const SessionManager = () => {
   useEffect(() => {
     // Sleep/wake or tab focus: check if close to expiry and refresh immediately if needed
     const maybeRefreshSoon = () => {
-      const token = getAccessToken();
-      const rtoken = getRefreshToken();
+      // Only when we have a refresh token
+      let hasRefresh = false;
+      try { hasRefresh = Boolean(sessionStorage.getItem('refresh_token')); } catch { /* ignore */ }
+      if (!hasRefresh) return;
+  const token = getAccessToken();
+  const rtoken = getRefreshToken();
       if (!token || !rtoken) return;
       const claims = decodeJwtClaims(token) || {};
       if (!claims.exp) return;
@@ -255,7 +270,7 @@ export const SessionManager = () => {
         if (!document.hidden) maybeRefreshSoon();
       });
     };
-  }, [refreshLeewayMs, scheduleProactiveRefresh]);
+  }, [refreshLeewayMs, scheduleProactiveRefresh, getAccessToken, getRefreshToken]);
 
   useEffect(() => {
     if (!enableAutoRefreshOn401) return; // feature-flagged off by default

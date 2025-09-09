@@ -33,7 +33,7 @@ export const refreshAccessToken = createAsyncThunk(
     try {
       const state = getState() as { auth: AuthState };
       const refreshTokenFromState = state.auth.tokens?.refresh_token || null;
-      const refreshTokenFromStorage = (typeof localStorage !== 'undefined') ? (localStorage.getItem('refresh_token') || null) : null;
+  const refreshTokenFromStorage = (() => { try { return sessionStorage.getItem('refresh_token'); } catch { return null; } })();
       const refreshToken = refreshTokenFromState || refreshTokenFromStorage;
       if (!refreshToken) return rejectWithValue('No refresh token available');
 
@@ -45,7 +45,7 @@ export const refreshAccessToken = createAsyncThunk(
       }
 
       // Calculate expiration timestamp
-      const expiresAt = Date.now() + (newTokens.expires_in * 1000);
+  const expiresAt = Date.now() + (newTokens.expires_in * 1000);
       // Preserve existing refresh_token if server didn’t return a new one
       const finalTokens: AuthTokens = {
         ...newTokens,
@@ -90,10 +90,9 @@ export const logoutUser = createAsyncThunk(
       // Continue with local logout even if API fails
     }
     
-    // Clear localStorage
+    // Clear all local and session storage (no multi-session caching in app)
   try { localStorage.clear(); } catch { /* ignore */ }
-    sessionStorage.removeItem('oauth_session_token');
-    sessionStorage.removeItem('oauth_token_type');
+  try { sessionStorage.clear(); } catch { /* ignore */ }
     
     return null;
   }
@@ -117,27 +116,17 @@ const authSlice = createSlice({
     setTokens: (state, action: PayloadAction<AuthTokens>) => {
       state.tokens = action.payload;
       state.isAuthenticated = true;
-      
-      // Store in localStorage
-      localStorage.setItem('access_token', action.payload.access_token);
-      localStorage.setItem('refresh_token', action.payload.refresh_token);
+  // Option B: Do not persist access token. Persist refresh token to sessionStorage only.
+  try { if (action.payload.refresh_token) sessionStorage.setItem('refresh_token', action.payload.refresh_token); } catch { /* ignore */ }
+      // Broadcast token update to other tabs
+      try { new BroadcastChannel('sck-auth-sync').postMessage({ type: 'auth:token' }); } catch { /* no-op */ }
     },
     
     initializeAuth: (state) => {
-      const accessToken = localStorage.getItem('access_token');
-      const refreshToken = localStorage.getItem('refresh_token');
-      
-      if (accessToken && refreshToken) {
-        state.tokens = {
-          access_token: accessToken,
-          refresh_token: refreshToken,
-          token_type: 'Bearer',
-          expires_in: 1200, // 20 minutes conservative estimate
-          expires_at: Date.now() + (20 * 60 * 1000),
-        };
-        state.isAuthenticated = true;
-        state.lastActivity = Date.now();
-      }
+  // Option B: Do not bootstrap from storage; refresh will occur in useAuth using sessionStorage refresh_token and cookie.
+  state.tokens = null;
+  state.isAuthenticated = false;
+  state.lastActivity = Date.now();
     },
   },
   extraReducers: (builder) => {
@@ -168,19 +157,13 @@ const authSlice = createSlice({
         state.error = null;
       })
       .addCase(refreshAccessToken.fulfilled, (state, action) => {
-        if (state.tokens) {
-          state.tokens = action.payload;
-          state.lastActivity = Date.now();
-          state.error = null;
-          
-          // Update localStorage
-          localStorage.setItem('access_token', action.payload.access_token);
-          if (action.payload.refresh_token) {
-            localStorage.setItem('refresh_token', action.payload.refresh_token);
-          }
-          
-          console.log('Access token refreshed successfully');
-        }
+        // Always accept refreshed tokens (first tokens after reload included)
+        state.tokens = action.payload;
+        state.isAuthenticated = true;
+        state.lastActivity = Date.now();
+        state.error = null;
+        try { if (action.payload.refresh_token) sessionStorage.setItem('refresh_token', action.payload.refresh_token); } catch { /* ignore */ }
+        console.log('Access token refreshed successfully');
       })
       .addCase(refreshAccessToken.rejected, (state, action) => {
         console.error('Token refresh failed:', action.payload);
@@ -196,6 +179,7 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.error = null;
         state.lastActivity = Date.now();
+  try { sessionStorage.removeItem('auth_session_active'); } catch { /* ignore */ }
       });
   },
 });

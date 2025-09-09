@@ -16,6 +16,7 @@ import { PageLoader } from '@/components/PageLoader';
 import PermissionIssues from '@/components/PermissionIssues';
 import AuthBootstrap from '@/components/AuthBootstrap';
 import ProfileBootstrap from '@/components/ProfileBootstrap';
+import TokenBootstrap from '@/components/TokenBootstrap';
 
 // Lazy load all pages
 const Login = lazy(() => import("./pages/Login"));
@@ -29,6 +30,7 @@ const Authorized = lazy(() => import("./pages/Authorized"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Profile = lazy(() => import("./pages/Profile"));
 const AWSCredentials = lazy(() => import("./pages/AWSCredentials"));
+const MFAToken = lazy(() => import("./pages/MFAToken"));
 const Settings = lazy(() => import("./pages/Settings"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Portfolios = lazy(() => import("./pages/Portfolios"));
@@ -110,6 +112,7 @@ const AppRoutes = () => (
     {createProtectedRoute('/dashboard', Dashboard, 'dashboard')}
     {createProtectedRoute('/profile', Profile, 'form')}
   {createProtectedRoute('/aws-credentials', AWSCredentials, 'form')}
+    {createProtectedRoute('/mfa-token', MFAToken, 'form')}
     {createProtectedRoute('/settings', Settings, 'form')}
 
     {/* Portfolio routes */}
@@ -158,6 +161,7 @@ const App = () => (
         <BrowserRouter basename={import.meta.env.DEV ? undefined : (import.meta.env.VITE_BASE_PATH || undefined)}>
           <AuthProvider>
             <TooltipProvider>
+              <TokenBootstrap />
               <AuthBootstrap />
               <ProfileBootstrap />
               <SessionManager />

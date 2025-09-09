@@ -1,11 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAppSelector } from "@/store";
-import {
-  selectUser,
-  selectIsAuthenticated,
-  selectIsLoading,
-  selectAuthError,
-} from "@/store/slices/authSlice";
+import { selectUser } from "@/store/slices/authSlice";
 import { Link, useNavigate } from "react-router-dom";
 import { User as UserIcon, Save, Edit, Camera, Calendar, Building2, Trash2, Cloud, LogOut, ArrowLeftRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -48,7 +43,6 @@ import {
   putCurrentUserProfile,
   selectUser as selectProfileUser,
   selectProfileLoading,
-  selectProfileError,
   switchToProfile,
 } from "@/store/slices/profileSlice";
 import { selectUserProfiles, selectCurrentProfile, setCurrentProfile } from "@/store/slices/profileSlice";
@@ -77,10 +71,8 @@ export default function Profile() {
   const { clients, actions, selectedClient } = useReduxData();
 
   const user = useAppSelector(selectUser);
-  const authError = useAppSelector(selectAuthError);
   const profileUser = useAppSelector(selectProfileUser as any);
   const profileLoading = useAppSelector(selectProfileLoading as any);
-  const profileError = useAppSelector(selectProfileError as any);
   const profiles = useAppSelector(selectUserProfiles as any) as UserProfile[];
   const currentProfileName = useAppSelector(selectCurrentProfile as any);
   const activeClientSlug = useAppSelector(selectCurrentActiveClient as any);
@@ -261,6 +253,12 @@ export default function Profile() {
     return Boolean(c.AwsCredentials);
   }, [profileUser]);
 
+  // MFA status derived from profile (fallback false if absent)
+  const mfaEnabled = useMemo(() => {
+    const p: any = profileUser || {};
+    return Boolean(p.mfa_enabled);
+  }, [profileUser]);
+
   // Capture any recently detected invalid status from other pages (e.g., Dashboard 401)
   const awsInvalid = useMemo(() => {
     try {
@@ -409,20 +407,9 @@ export default function Profile() {
     );
   }
 
-  if (!profileUser) {
-    return (
-      <div className="flex items-center justify-center min-h-96">
-        <div className="text-center space-y-3">
-          <p className="text-muted-foreground">No profile found for your account.</p>
-          <div className="flex items-center justify-center gap-2">
-            <Button onClick={() => window.location.reload()}>Retry</Button>
-            <Button variant="outline" onClick={() => navigate('/dashboard')}>Back</Button>
-          </div>
-          {(profileError || authError) && <p className="text-sm text-destructive mt-2">{String(profileError || authError)}</p>}
-        </div>
-      </div>
-    );
-  }
+  // Note: Do not show a "No profile" overlay; a user always has a profile. If
+  // profile is not yet loaded, we rely on the loading state above and
+  // render the page using safe fallbacks.
 
   return (
     <div className="min-h-screen w-full flex flex-col">
@@ -571,9 +558,9 @@ export default function Profile() {
                       <div className="flex items-center">
                         <Label className="text-sm font-medium text-muted-foreground">AWS Credentials</Label>
                         <Button asChild variant="ghost" size="icon" className="h-7 w-7 ml-1 text-muted-foreground">
-                          <a href="/aws-credentials" aria-label="Edit AWS Credentials">
+                          <Link to="/aws-credentials" aria-label="Edit AWS Credentials">
                             <Edit className="h-4 w-4" />
-                          </a>
+                          </Link>
                         </Button>
                       </div>
                       <p className="mt-1 text-sm">
@@ -587,6 +574,18 @@ export default function Profile() {
                           'Not Configured'
                         )}
                       </p>
+                    </div>
+                    {/* MFA status row */}
+                    <div>
+                      <div className="flex items-center">
+                        <Label className="text-sm font-medium text-muted-foreground">MFA</Label>
+                        <Button asChild variant="ghost" size="icon" className="h-7 w-7 ml-1 text-muted-foreground">
+                          <Link to="/mfa-token" aria-label="Edit MFA Settings">
+                            <Edit className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                      </div>
+                      <p className="mt-1 text-sm">{mfaEnabled ? 'Active' : 'Inactive'}</p>
                     </div>
                     <FieldView label="My Home AWS Account" value={String((profileUser as any)?.aws_account_id || '—')} />
                     <FieldView label="Preferred Region" value={String(editData.preferred_region || "us-east-1")} />
@@ -645,9 +644,9 @@ export default function Profile() {
                       <div className="flex items-center">
                         <Label className="text-sm font-medium text-muted-foreground">AWS Credentials</Label>
                         <Button asChild variant="ghost" size="icon" className="h-7 w-7 ml-1 text-muted-foreground">
-                          <a href="/aws-credentials" aria-label="Edit AWS Credentials">
+                          <Link to="/aws-credentials" aria-label="Edit AWS Credentials">
                             <Edit className="h-4 w-4" />
-                          </a>
+                          </Link>
                         </Button>
                       </div>
                       <p className="mt-1 text-sm">
@@ -661,6 +660,18 @@ export default function Profile() {
                           'Not Configured'
                         )}
                       </p>
+                    </div>
+                    {/* MFA status row (non-editable) */}
+                    <div>
+                      <div className="flex items-center">
+                        <Label className="text-sm font-medium text-muted-foreground">MFA</Label>
+                        <Button asChild variant="ghost" size="icon" className="h-7 w-7 ml-1 text-muted-foreground">
+                          <Link to="/mfa-token" aria-label="Edit MFA Settings">
+                            <Edit className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                      </div>
+                      <p className="mt-1 text-sm">{mfaEnabled ? 'Active' : 'Inactive'}</p>
                     </div>
                     {/* Editable AWS Account ID with validation (edit mode only) */}
                     <div className="space-y-2">

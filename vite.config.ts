@@ -10,26 +10,51 @@ export default defineConfig(({ command, mode }) => ({
   // Use relative base for build to support nested routes; dev stays at root '/'
   base: command === 'build' ? './' : '/',
   server: {
-    host: "::",
+    host: "127.0.0.1",
     port: 8080,
     open: false,
     strictPort: true,
     proxy: {
       // Proxy API calls to backend to avoid CORS in development
       '/api': {
-        target: 'http://localhost:8090',
+        target: 'http://127.0.0.1:8090',
         changeOrigin: true,
         secure: false,
+        cookieDomainRewrite: '', // ensure Set-Cookie domain matches dev origin
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, _res) => {
+            console.error('[vite-proxy:/api] error:', err?.message || err);
+          });
+          proxy.on('proxyReq', (_proxyReq, req, _res) => {
+            // Helpful trace without dumping bodies
+            console.log('[vite-proxy:/api] ->', req.method, req.url);
+          });
+          proxy.on('proxyRes', (proxyRes, req, _res) => {
+            console.log('[vite-proxy:/api] <-', proxyRes.statusCode, req.url);
+          });
+        },
       },
       '/auth': {
-        target: 'http://localhost:8090',
+        target: 'http://127.0.0.1:8090',
         changeOrigin: true,
         secure: false,
+        cookieDomainRewrite: '', // ensure Set-Cookie domain matches dev origin
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, _res) => {
+            console.error('[vite-proxy:/auth] error:', err?.message || err);
+          });
+          proxy.on('proxyReq', (_proxyReq, req, _res) => {
+            console.log('[vite-proxy:/auth] ->', req.method, req.url);
+          });
+          proxy.on('proxyRes', (proxyRes, req, _res) => {
+            console.log('[vite-proxy:/auth] <-', proxyRes.statusCode, req.url);
+          });
+        },
       },
     },
   },
   preview: {
-    host: "::",
+    host: "127.0.0.1",
   port: 8081,
     open: false,
     strictPort: true,

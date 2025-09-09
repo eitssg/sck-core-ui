@@ -160,7 +160,7 @@ export default function Login() {
       }
 
   // Success: Redirect to OAuth authorize (session cookie will be sent automatically)
-      const authorizeUrl = buildOAuthAuthorizeUrl();
+      const authorizeUrl = await buildOAuthAuthorizeUrl();
       window.location.href = authorizeUrl;
       // No further code executes after navigation
     } catch (err) {

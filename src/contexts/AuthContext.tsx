@@ -40,9 +40,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchedTokenRef = React.useRef<string | null>(null);
 
   const login = React.useCallback(async (token: string) => {
-  // Store canonical session token key for clarity
-  localStorage.setItem('session_token', token);
-    localStorage.setItem('access_token', token);
     setLoading(true);
     setError(null);
 
@@ -128,14 +125,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // ignore, will handle below
         }
         // If refresh didn’t succeed, don’t hard-logout here; proceed with minimal JWT if possible
-        const stillHave = localStorage.getItem('access_token')
-          || localStorage.getItem('session_token');
+        const stillHave = undefined; // no persisted access token
         if (!stillHave) {
           // Tokens were cleared (likely 401). Finish without user and allow ProtectedRoute to handle.
           setLoading(false);
           return;
         }
-        await login(stillHave);
+        await login(access);
         return;
       }
 
@@ -161,4 +157,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-// Hook moved to ./useAuth to keep this file components-only exports
+  // Hook moved to ./useAuth to keep this file components-only exports

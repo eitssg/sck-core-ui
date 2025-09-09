@@ -183,6 +183,83 @@ export default function RegisterClient() {
             )}
           </CardContent>
         </Card>
+
+            {/* Guidance: OAuth authorize + PKCE requirements */}
+            <div className="rounded-lg border bg-muted/40 p-4 text-sm leading-relaxed">
+              <div className="font-semibold mb-1">/auth/v1/authorize requirements</div>
+              <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+                <li>Required query params: <span className="font-mono text-foreground">client_id</span>, <span className="font-mono text-foreground">response_type=code</span>, <span className="font-mono text-foreground">redirect_uri</span> (must match a registered URI exactly).</li>
+                <li>Recommended: <span className="font-mono text-foreground">scope</span> (space-delimited) and <span className="font-mono text-foreground">state</span> (random, printable ≤512 chars; store and validate on callback).</li>
+                <li>PKCE: For browser-based SPAs, do not embed <span className="font-mono text-foreground">client_secret</span>. Use PKCE with <span className="font-mono text-foreground">code_challenge_method=S256</span>. The <span className="font-mono text-foreground">code_challenge</span> is optional for now but will become required for public clients.</li>
+                <li>Token exchange: Call <span className="font-mono text-foreground">POST /auth/v1/token</span> with <span className="font-mono text-foreground">grant_type=authorization_code</span>, <span className="font-mono text-foreground">code</span>, <span className="font-mono text-foreground">redirect_uri</span>, <span className="font-mono text-foreground">client_id</span>, and for SPAs, include <span className="font-mono text-foreground">code_verifier</span>. Do not send a client secret from the browser.</li>
+              </ul>
+
+              <div className="mt-3 font-medium">PKCE (S256) quick-start for SPAs</div>
+              <pre className="mt-2 whitespace-pre-wrap rounded-md bg-background p-3 border text-xs overflow-x-auto">
+{`// 1) Generate a code_verifier (43–128 chars from [A-Z a-z 0-9 - . _ ~])
+const randomString = (len = 64) => {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~';
+  const bytes = new Uint32Array(len);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => chars[b % chars.length]).join('');
+};
+
+// 2) Create code_challenge = BASE64URL(SHA256(code_verifier))
+const base64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)))
+  .replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+const sha256 = async (input) => {
+  const data = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return base64url(digest);
+};
+
+// 3) Build the authorize URL and redirect
+async function startLogin({ clientId, authorizeUrl, redirectUri, scope }) {
+  const state = crypto.randomUUID();
+  const verifier = randomString(64);
+  const challenge = await sha256(verifier);
+  sessionStorage.setItem('oauth_state', state);
+  sessionStorage.setItem('pkce_verifier', verifier);
+  const params = new URLSearchParams({
+    client_id: clientId,
+    response_type: 'code',
+    redirect_uri: redirectUri,
+    scope: scope || 'read:profile',
+    state,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+  });
+  window.location.assign(
+    authorizeUrl + (authorizeUrl.includes('?') ? '&' : '?') + params.toString()
+  );
+}
+
+// 4) On callback, validate state and exchange code
+async function exchangeCodeForTokens({ tokenUrl, clientId, redirectUri }) {
+  const url = new URL(window.location.href);
+  const code = url.searchParams.get('code');
+  const state = url.searchParams.get('state');
+  const expected = sessionStorage.getItem('oauth_state');
+  if (!code || !state || state !== expected) throw new Error('Invalid OAuth state');
+  const verifier = sessionStorage.getItem('pkce_verifier');
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: redirectUri,
+    client_id: clientId,
+    code_verifier: verifier || '',
+  });
+  const res = await fetch(tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  if (!res.ok) throw new Error('Token exchange failed');
+  return await res.json();
+}`}
+              </pre>
+
+              <p className="mt-2 text-xs text-muted-foreground">
+                Note: Confidential clients (server-based) may authenticate at <span className="font-mono">/auth/v1/token</span> using HTTP Basic with
+                their client_secret. Public browser SPAs must use PKCE and should never embed secrets.
+              </p>
+            </div>
       </div>
     </div>
   );
