@@ -122,7 +122,7 @@ export const SessionManager = () => {
       try {
         // If session refresh is due sooner or equal, do it first (cookie-only)
         const doSessionFirst = sessionDueMs <= accessDueMs;
-        if (doSessionFirst && Number(localStorage.getItem('session_issued_at') || '0') > 0) {
+  if (doSessionFirst && Number(sessionStorage.getItem('session_issued_at') || '0') > 0) {
           // Respect idleness: if user has been idle beyond refresh threshold, let cookie expire
           const idleMs = Date.now() - lastActivityRef.current;
           const maxIdleBeforeRefreshMs = (sessionRefreshAtMinutes - 1) * 60 * 1000; // user must have interacted recently (~within refresh window)
@@ -278,7 +278,8 @@ export const SessionManager = () => {
     const onApi401 = async () => {
       if (refreshingRef.current) return; // single-flight
       // Only attempt if we have a refresh_token
-      const hasRefresh = Boolean(localStorage.getItem('refresh_token'));
+  let hasRefresh = false;
+  try { hasRefresh = Boolean(sessionStorage.getItem('refresh_token')); } catch { /* ignore */ }
       if (!hasRefresh) return;
 
       refreshingRef.current = true;

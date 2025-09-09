@@ -11,7 +11,8 @@ import { toArray } from '../shared';
  * Portfolio = Business Application/Software Package
  * - Think of it as a "store" or "software" registered in business CMDB
  * - It's the "Application I want to Run" (e.g., E-Commerce Platform, Analytics Dashboard)
- * - Composed of one or more Deployments (dev, staging, prod environments)
+ * - Composed of one or more Deployments (api, database, frontend) in multiple 
+ *   environments (dev, staging, prod)
  * - The "portfolio" field is the "slug" for the software package/solution/enterprise app
  * 
  * Client Context:

@@ -4,7 +4,8 @@ import { OAuthTokenResponse, UserProfile } from '@/store/types';
 
 export type User = UserProfile;
 
-export type AuthTokens = OAuthTokenResponse & {
+// Only keep access token details in Redux (no refresh_token)
+export type AuthTokens = Omit<OAuthTokenResponse, 'refresh_token'> & {
   expires_at?: number;
 };
 
@@ -29,12 +30,9 @@ const initialState: AuthState = {
 // Async thunk for refreshing tokens
 export const refreshAccessToken = createAsyncThunk(
   'auth/refreshToken',
-  async (stateParam: string | undefined, { getState, rejectWithValue }) => {
+  async (stateParam: string | undefined, { rejectWithValue }) => {
     try {
-      const state = getState() as { auth: AuthState };
-      const refreshTokenFromState = state.auth.tokens?.refresh_token || null;
-  const refreshTokenFromStorage = (() => { try { return sessionStorage.getItem('refresh_token'); } catch { return null; } })();
-      const refreshToken = refreshTokenFromState || refreshTokenFromStorage;
+      const refreshToken = (() => { try { return sessionStorage.getItem('refresh_token'); } catch { return null; } })();
       if (!refreshToken) return rejectWithValue('No refresh token available');
 
       console.log('Refreshing access token...');
@@ -46,10 +44,14 @@ export const refreshAccessToken = createAsyncThunk(
 
       // Calculate expiration timestamp
   const expiresAt = Date.now() + (newTokens.expires_in * 1000);
-      // Preserve existing refresh_token if server didn’t return a new one
+      // Persist refresh token in sessionStorage only (never in Redux)
+      try { if (newTokens.refresh_token) sessionStorage.setItem('refresh_token', newTokens.refresh_token); } catch { /* ignore */ }
+      // Only return access token fields to reducer
       const finalTokens: AuthTokens = {
-        ...newTokens,
-        refresh_token: newTokens.refresh_token || refreshToken,
+        access_token: newTokens.access_token,
+        token_type: newTokens.token_type,
+        expires_in: newTokens.expires_in,
+        scope: newTokens.scope,
         expires_at: expiresAt,
       };
       return finalTokens;
@@ -113,11 +115,13 @@ const authSlice = createSlice({
       state.lastActivity = Date.now();
     },
     
-    setTokens: (state, action: PayloadAction<AuthTokens>) => {
-      state.tokens = action.payload;
+    // Accept wide payload (may include refresh_token) but store only access token fields
+    setTokens: (state, action: PayloadAction<OAuthTokenResponse & { expires_at?: number }>) => {
+      const { access_token, token_type, expires_in, scope, expires_at, refresh_token } = action.payload;
+      state.tokens = { access_token, token_type, expires_in, scope, expires_at };
       state.isAuthenticated = true;
-  // Option B: Do not persist access token. Persist refresh token to sessionStorage only.
-  try { if (action.payload.refresh_token) sessionStorage.setItem('refresh_token', action.payload.refresh_token); } catch { /* ignore */ }
+      // Persist refresh token to sessionStorage only
+      try { if (refresh_token) sessionStorage.setItem('refresh_token', refresh_token); } catch { /* ignore */ }
       // Broadcast token update to other tabs
       try { new BroadcastChannel('sck-auth-sync').postMessage({ type: 'auth:token' }); } catch { /* no-op */ }
     },
@@ -162,7 +166,6 @@ const authSlice = createSlice({
         state.isAuthenticated = true;
         state.lastActivity = Date.now();
         state.error = null;
-        try { if (action.payload.refresh_token) sessionStorage.setItem('refresh_token', action.payload.refresh_token); } catch { /* ignore */ }
         console.log('Access token refreshed successfully');
       })
       .addCase(refreshAccessToken.rejected, (state, action) => {

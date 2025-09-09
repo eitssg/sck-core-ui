@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { refreshAccessToken, selectTokens } from '@/store/slices/authSlice';
 import type { OAuthTokenResponse } from '@/store/types';
@@ -16,8 +17,27 @@ export default function TokenBootstrap() {
   const dispatch = useAppDispatch();
   const tokens = useAppSelector(selectTokens as any) as AuthTokens | null;
   const startedRef = useRef(false);
+  const location = useLocation();
 
   useEffect(() => {
+  // Skip bootstrap on public routes where we intentionally hard-logout
+  const pathname = location?.pathname || '/';
+  const isPublicRoute = (
+    pathname === '/' ||
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/signup') ||
+    pathname.startsWith('/forgot-password') ||
+    pathname.startsWith('/enter-code') ||
+    pathname.startsWith('/new-password') ||
+    pathname.startsWith('/no-account') ||
+    pathname.startsWith('/new-password-success') ||
+    pathname.startsWith('/verify-email') ||
+    pathname.startsWith('/welcome') ||
+    pathname.startsWith('/authorized') ||
+    pathname.startsWith('/github')
+  );
+  if (isPublicRoute) return;
+
   // Do not bootstrap while OAuth callback is processing
   try { if (sessionStorage.getItem('oauth_processing') === '1') return; } catch { /* ignore */ }
 
@@ -37,7 +57,7 @@ export default function TokenBootstrap() {
       // Fire and forget; SessionManager will maintain thereafter
       dispatch(refreshAccessToken('bootstrap'));
     }
-  }, [dispatch, tokens]);
+  }, [dispatch, tokens, location]);
 
   return null;
 }

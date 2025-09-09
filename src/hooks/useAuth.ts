@@ -85,19 +85,29 @@ export const useAuth = () => {
         clearTimeout(refreshTimerRef.current);
       }
 
-      const refreshBuffer = 60 * 1000; // 60 seconds before expiry
+  const refreshBuffer = 60 * 1000; // 60 seconds before expiry
+  // Session window clamp: refresh access token no later than 25 minutes from now
+  const SESSION_MAX_MS = 30 * 60 * 1000; // 30 minutes
+  const SESSION_REFRESH_MARGIN = 5 * 60 * 1000; // leave 5 minutes margin
+  const MAX_WAIT_MS = Math.max(30_000, SESSION_MAX_MS - SESSION_REFRESH_MARGIN); // ~25 minutes
       const now = Date.now();
       const expAt = tokens.expires_at ?? (now + tokens.expires_in * 1000);
       const jitterRange = Number((import.meta as any)?.env?.VITE_REFRESH_JITTER_MS ?? 10_000);
       const rand = Math.random() * 2 - 1; // [-1, 1)
       const jitter = Math.trunc(rand * jitterRange);
-      const plannedAt = expAt - refreshBuffer + jitter;
-      const latestAt = expAt - 5_000;
-      const earliestAt = now + 5_000;
-      const scheduledAt = Math.max(Math.min(plannedAt, latestAt), earliestAt);
-      const refreshTime = Math.max(0, scheduledAt - now);
+  // Base plan: shortly before expiry, with jitter
+  let candidateAt = expAt - refreshBuffer + jitter;
+  // Do not schedule past token expiry
+  candidateAt = Math.min(candidateAt, expAt - 5_000);
+  // Do not schedule beyond session window clamp
+  candidateAt = Math.min(candidateAt, now + MAX_WAIT_MS);
+  // Ensure at least a few seconds from now
+  candidateAt = Math.max(candidateAt, now + 5_000);
+  const refreshTime = Math.max(0, candidateAt - now);
 
-      console.log(`Access token: refresh scheduled in ${Math.round(refreshTime / 1000)}s (jitter ${jitter}ms)`);
+  const secs = Math.round(refreshTime / 1000);
+  const ttlSecs = Math.round((expAt - now) / 1000);
+  console.log(`Access token: ttl=${ttlSecs}s, scheduled refresh in ${secs}s (jitter ${jitter}ms, clamp ${Math.round(MAX_WAIT_MS/1000)}s)`);
 
       refreshTimerRef.current = setTimeout(() => {
         console.log('Access token: auto-refreshing now...');
@@ -112,6 +122,42 @@ export const useAuth = () => {
       };
     }
   }, [tokens, isAuthenticated, dispatch, requestRefresh]);
+
+  // Periodic session cookie refresh (every ~25 minutes) while authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      if (sessionTimerRef.current) {
+        clearTimeout(sessionTimerRef.current);
+        sessionTimerRef.current = null;
+      }
+      return;
+    }
+
+    const SESSION_MAX_MS = 30 * 60 * 1000; // 30 minutes
+    const SESSION_REFRESH_EVERY_MS = Math.max(60_000, SESSION_MAX_MS - 5 * 60 * 1000); // ~25 minutes
+
+    const scheduleSessionRefresh = () => {
+      if (sessionTimerRef.current) clearTimeout(sessionTimerRef.current);
+      sessionTimerRef.current = setTimeout(async () => {
+        try {
+          console.log(`Session: refreshing cookie now (interval ~${Math.round(SESSION_REFRESH_EVERY_MS/1000)}s)`);
+          await authAPI.refreshSession();
+        } finally {
+          scheduleSessionRefresh();
+        }
+      }, SESSION_REFRESH_EVERY_MS);
+      console.log(`Session: refresh scheduled in ${Math.round(SESSION_REFRESH_EVERY_MS/1000)}s`);
+    };
+
+    scheduleSessionRefresh();
+
+    return () => {
+      if (sessionTimerRef.current) {
+        clearTimeout(sessionTimerRef.current);
+        sessionTimerRef.current = null;
+      }
+    };
+  }, [isAuthenticated]);
 
   // Dedicated idle timeout: logs out after 10 minutes of no user interaction
   useEffect(() => {

@@ -34,6 +34,7 @@ export const API_CONFIG = {
   VERIFY: '/auth/v1/verify',
       VERIFY_SECRET: '/auth/v1/verify-secret',
       UPDATE_PASSWORD: '/auth/v1/password',
+  MFA_VERIFY: '/auth/v1/mfa/verify',
       GITHUB_LOGIN: '/auth/github/login',
       GITHUB_CALLBACK: '/auth/github/callback',
     },

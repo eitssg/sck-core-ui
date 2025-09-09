@@ -1,5 +1,6 @@
 // Custom authentication API service
 import { API_CONFIG, buildApiUrl, buildOAuthAuthorizeUrl, getAuthHeaders, getRedirectUri } from './api-config';
+import { apiFetch } from './api-fetch';
 // Enable debug logs if VITE_DEBUG=true for the active mode
 declare const __BUILD_MODE__: string | undefined;
 const DEBUG_AUTH = Boolean((import.meta as any)?.env?.VITE_DEBUG);
@@ -88,11 +89,12 @@ export const authAPI = {
   },
 
   // MFA: TOTP setup
-  async mfaTotpSetup(): Promise<{ secret?: string; provisioning_uri?: string; recovery_codes?: string[] } | OAuthErrorResponse> {
+  async mfaTotpSetup(opts?: { profile_name?: string; label?: string; issuer?: string; force_reset?: boolean }): Promise<{ secret?: string; provisioning_uri?: string; recovery_codes?: string[] } | OAuthErrorResponse> {
     try {
       const resp = await fetch(buildApiUrl('/auth/v1/mfa/totp/setup'), {
         method: 'POST',
         headers: getAuthHeaders(),
+        body: JSON.stringify(opts || {}),
         credentials: 'include',
       });
       const json = await resp.json().catch(() => ({}));
@@ -733,29 +735,15 @@ export const authAPI = {
 
   fetchUserProfile: async (profileName?: string) => {
     try {
-      // Build headers up front to check Authorization and possibly derive a fingerprint for cache binding
-      const headers = getAuthHeaders();
-      // Require Authorization header (access token) before calling /auth/v1/me
-      if (!headers['Authorization']) {
-        return { error: 'not_authenticated' };
-      }
-  // No storage-based caching; rely on Redux slice caching only
-
+      // Use centralized apiFetch with credentials included and optional Bearer
       const url = profileName
-        ? `${buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.ME)}?profile=${profileName}`
-        : buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.ME);
+        ? `${API_CONFIG.ENDPOINTS.AUTH.ME}?profile=${encodeURIComponent(profileName)}`
+        : API_CONFIG.ENDPOINTS.AUTH.ME;
 
-      const response = await fetch(url, {
-        headers,
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch profile');
-      }
-
-  const json = await response.json();
-  return json;
+  const res = await apiFetch(url, { contextLabel: 'Profile' });
+      if (!res.ok) throw new Error('Failed to fetch profile');
+      const json = await res.json();
+      return json;
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Unknown error' };
     }

@@ -62,6 +62,10 @@ export default function Login() {
   const canSubmit = useMemo(() => email.trim().length > 3 && password.length >= 1, [email, password]);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [needMfa, setNeedMfa] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
+  const [useRecovery, setUseRecovery] = useState(false);
+  const [mfaError, setMfaError] = useState("");
   const errorMsg = auth?.error || "";
   const errorRef = useRef<HTMLDivElement | null>(null);
 
@@ -96,13 +100,22 @@ export default function Login() {
         }
       } finally {
         // Revoke token + clear local storage via thunk (also calls authAPI.logout)
-        if (!cancelled) dispatch(logoutUser());
+        if (!cancelled) {
+          try { await dispatch(logoutUser()).unwrap(); } catch { /* ignore */ }
+        }
         // Ensure local cleanup regardless
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        localStorage.removeItem("token");
-        sessionStorage.removeItem("oauth_session_token");
-        sessionStorage.removeItem("oauth_token_type");
+        try {
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("refresh_token");
+          localStorage.removeItem("token");
+        } catch { /* ignore */ }
+        try {
+          sessionStorage.removeItem('refresh_token');
+          sessionStorage.removeItem("oauth_session_token");
+          sessionStorage.removeItem("oauth_token_type");
+          sessionStorage.removeItem('session_issued_at');
+          sessionStorage.removeItem('auth_session_active');
+        } catch { /* ignore */ }
       }
     })();
     return () => { cancelled = true; };
@@ -130,6 +143,8 @@ export default function Login() {
     e.preventDefault();
     setIsLoading(true);
   dispatch(clearError());
+  setMfaError("");
+  setNeedMfa(false);
 
     try {
       // Step 1: Login to obtain a session credential (cookie)
@@ -145,7 +160,12 @@ export default function Login() {
           client_id: API_CONFIG.OAUTH.CLIENT_ID,
         }),
       });
-
+      // MFA required
+      if (res.status === 202) {
+        setNeedMfa(true);
+        setIsLoading(false);
+        return;
+      }
       if (!res.ok) {
         let server = { message: "" as string };
         try {
@@ -165,6 +185,37 @@ export default function Login() {
       // No further code executes after navigation
     } catch (err) {
       dispatch(setError(mapOAuthErrorToUserMessage(err instanceof Error ? err.message : "Login failed")));
+      setIsLoading(false);
+    }
+  };
+
+  const handleMfaVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mfaCode.trim()) return;
+    setIsLoading(true);
+    setMfaError("");
+    try {
+      // Verify using cookie-only auth; backend will upgrade mfa_pending to session on success
+      const res = await apiFetch(API_CONFIG.ENDPOINTS.AUTH.MFA_VERIFY, {
+        method: "POST",
+        cookieFirst: true,
+        noAuthRetryOn401: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(useRecovery ? { code: mfaCode.trim(), method: "recovery" } : { code: mfaCode.trim() }),
+      });
+      if (!res.ok) {
+        let server: any = {};
+        try { server = await res.json(); } catch { /* ignore */ }
+        const msg = server?.message || (res.status === 401 ? "Invalid code" : "MFA verification failed");
+        setMfaError(msg);
+        setIsLoading(false);
+        return;
+      }
+      // On success, backend set the real session cookie; proceed to authorize
+      const authorizeUrl = await buildOAuthAuthorizeUrl();
+      window.location.href = authorizeUrl;
+    } catch (err) {
+      setMfaError(err instanceof Error ? err.message : "MFA verification failed");
       setIsLoading(false);
     }
   };
@@ -209,28 +260,33 @@ export default function Login() {
               </div>
             )}
 
-            <Button
-              variant="outline"
-              size="lg"
-              className="w-full"
-              onClick={handleGitHubLogin}
-              disabled={isLoading}
-            >
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M12 0C5.374 0 0 5.373 0 12 0 17.302 3.438 21.8 8.207 23.387c.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
-              </svg>
-              Continue with GitHub
-            </Button>
+            {!needMfa && (
+              <>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="w-full"
+                  onClick={handleGitHubLogin}
+                  disabled={isLoading}
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 0C5.374 0 0 5.373 0 12 0 17.302 3.438 21.8 8.207 23.387c.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
+                  </svg>
+                  Continue with GitHub
+                </Button>
 
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <Separator className="w-full" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">Or continue with email</span>
-              </div>
-            </div>
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <Separator className="w-full" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">Or continue with email</span>
+                  </div>
+                </div>
+              </>
+            )}
 
+            {!needMfa && (
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
@@ -288,6 +344,50 @@ export default function Login() {
                 {isLoading ? "Signing in..." : "Sign In"}
               </Button>
             </form>
+            )}
+
+            {needMfa && (
+              <form onSubmit={handleMfaVerify} className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="mfa">{useRecovery ? "Enter a recovery code" : "Enter your authentication code"}</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-auto px-2 py-1 text-xs"
+                      onClick={() => { setUseRecovery(v => !v); setMfaCode(""); setMfaError(""); }}
+                    >
+                      {useRecovery ? "Use authenticator app" : "Use a recovery code"}
+                    </Button>
+                  </div>
+                  <div className="relative">
+                    <Input
+                      id="mfa"
+                      name="mfa"
+                      inputMode={useRecovery ? "text" : "numeric"}
+                      pattern={useRecovery ? undefined : "[0-9]*"}
+                      placeholder={useRecovery ? "e.g. 1234 5678" : "123 456"}
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                      className="pr-10"
+                      autoFocus
+                      required
+                    />
+                  </div>
+                </div>
+                {mfaError && (
+                  <div className="text-sm text-destructive">{mfaError}</div>
+                )}
+                <Button type="submit" size="lg" className="w-full" variant="gradient" disabled={isLoading || !mfaCode}>
+                  {isLoading ? "Verifying..." : useRecovery ? "Verify recovery code" : "Verify"}
+                </Button>
+                <div className="text-xs text-muted-foreground text-center">
+                  {useRecovery
+                    ? "Recovery codes are single-use. You can generate new ones in your security settings."
+                    : "Use a recovery code if you don’t have access to your authenticator."}
+                </div>
+              </form>
+            )}
 
             <div className="text-center space-y-2">
               <Link to="/forgot-password" className="text-sm text-primary hover:underline">

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { selectUser as selectProfileUser, updateProfileGlobally, fetchUserProfile as fetchUserProfileThunk } from '@/store/slices/profileSlice';
+import { selectUser as selectProfileUser, updateProfileGlobally, fetchUserProfile as fetchUserProfileThunk, patchCurrentUserProfile } from '@/store/slices/profileSlice';
 import { useNavigate } from 'react-router-dom';
 import { authAPI } from '@/lib/auth-api';
 
@@ -24,11 +24,40 @@ export default function MFAToken() {
   const [verifyCode, setVerifyCode] = useState<string>('');
   const [confirmed, setConfirmed] = useState<boolean>(false);
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  // Persist recovery codes briefly to survive remounts after confirm
+  const RECOVERY_CODES_KEY = 'sck-ui-mfa-recovery-codes';
+  const RECOVERY_CODES_TTL_MS = 10 * 60 * 1000; // 10 minutes
+  const saveRecoveryCodes = (codes: string[]) => {
+    try {
+      if (!codes || codes.length === 0) return;
+      const payload = { codes, ts: Date.now() };
+      sessionStorage.setItem(RECOVERY_CODES_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore storage errors
+    }
+  };
+  const loadRecoveryCodes = (): string[] => {
+    try {
+      const raw = sessionStorage.getItem(RECOVERY_CODES_KEY);
+      if (!raw) return [];
+      const payload = JSON.parse(raw) as { codes: string[]; ts: number };
+      if (!payload?.codes?.length) return [];
+      if (Date.now() - (payload.ts || 0) > RECOVERY_CODES_TTL_MS) return [];
+      return payload.codes;
+    } catch {
+      return [];
+    }
+  };
+  const clearRecoveryCodes = () => {
+    try { sessionStorage.removeItem(RECOVERY_CODES_KEY); } catch { /* noop */ }
+    setRecoveryCodes([]);
+  };
   // Track MFA status from server to avoid racing on initial hydration
   const [apiMfaEnabled, setApiMfaEnabled] = useState<boolean | null>(null);
   const [setupStarted, setSetupStarted] = useState<boolean>(false);
   // Inline verify feedback for enabled flow
   const [verifyFeedback, setVerifyFeedback] = useState<{ ok: boolean; message: string } | null>(null);
+  const [unlinking, setUnlinking] = useState(false);
 
   const onCopyCode = async () => {
     if (!verifyCode) return;
@@ -53,14 +82,16 @@ export default function MFAToken() {
   const beginSetup = async () => {
     setLoading(true);
     try {
-      const res = await authAPI.mfaTotpSetup();
+  const res = await authAPI.mfaTotpSetup();
       if ('error' in res) {
         toast({ title: 'MFA setup failed', description: res.error_description || res.error, variant: 'destructive' });
         return;
       }
       setProvisioningUri(res.provisioning_uri || '');
       setSecret(res.secret || '');
-      setRecoveryCodes(res.recovery_codes || []);
+  const codes = res.recovery_codes || [];
+  setRecoveryCodes(codes);
+  if (codes.length > 0) saveRecoveryCodes(codes);
     } catch {
       toast({ title: 'Network error', description: 'Could not start MFA setup.', variant: 'destructive' });
     } finally {
@@ -81,6 +112,7 @@ export default function MFAToken() {
         return;
       }
       setConfirmed(true);
+  setApiMfaEnabled(true);
       toast({ title: 'MFA enabled', description: 'Your authenticator is now linked.' });
       // Optimistically mark MFA active in local store for current profile
       try {
@@ -130,6 +162,36 @@ export default function MFAToken() {
     }
   };
 
+  const disableMfa = async () => {
+    try {
+      setUnlinking(true);
+      const p: any = profileUser || {};
+      const profileName = p?.profile_name || 'default';
+      // Patch current profile to disable MFA and clear TOTP + recovery codes
+      await dispatch(
+        patchCurrentUserProfile({
+          profile_name: profileName,
+          mfa_enabled: false,
+          mfa_methods: [],
+          totp_secret: null as any,
+          recovery_codes: [],
+        } as any) as any
+      );
+      // Ensure store reflects latest server state
+      try { await dispatch(fetchUserProfileThunk({ force: true } as any)); } catch { /* best-effort */ }
+      // Local UI updates
+      setApiMfaEnabled(false);
+      setVerifyCode('');
+      setVerifyFeedback(null);
+      clearRecoveryCodes();
+      toast({ title: 'MFA disabled', description: 'You can re-enable it anytime.' });
+    } catch {
+      toast({ title: 'Failed to disable MFA', description: 'Please try again.', variant: 'destructive' });
+    } finally {
+      setUnlinking(false);
+    }
+  };
+
   // Fetch server MFA status on first mount
   useEffect(() => {
     let ignore = false;
@@ -160,6 +222,15 @@ export default function MFAToken() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiMfaEnabled, setupStarted]);
+
+  // On mount, restore any recently generated recovery codes so they appear after confirm
+  useEffect(() => {
+    const restored = loadRecoveryCodes();
+    if (restored.length > 0) setRecoveryCodes(restored);
+    // Do not clear on unmount to avoid losing on route re-mounts right after confirm
+    // We'll clear explicitly on unlink or if user hides them
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="min-h-screen w-full flex flex-col">
@@ -222,11 +293,56 @@ export default function MFAToken() {
                   <div className="flex items-center gap-2">
                     <Input id="verify_code" inputMode="numeric" maxLength={6} value={verifyCode} onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="123456" />
                     <Button onClick={verifyLogin} disabled={loading}>Verify</Button>
+                    <Button variant="outline" onClick={disableMfa} disabled={unlinking || loading} title="Disable MFA">Unlink</Button>
                   </div>
                   {verifyFeedback ? (
                     <p className={`text-sm ${verifyFeedback.ok ? 'text-green-600' : 'text-red-600'}`}>{verifyFeedback.message}</p>
                   ) : null}
                 </div>
+    {recoveryCodes.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <Label>Recovery Codes</Label>
+      <p className="text-xs text-muted-foreground">Store these codes now. You won’t see them again after leaving this page.</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(recoveryCodes.join('\n'));
+                            toast({ title: 'Recovery codes copied' });
+                          } catch {
+                            toast({ title: 'Copy failed', description: 'Clipboard not available.', variant: 'destructive' });
+                          }
+                        }}
+                        title="Copy all codes"
+                      >
+                        Copy all
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {recoveryCodes.map((c, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          className="text-left text-sm font-mono p-2 rounded bg-muted hover:bg-muted/80"
+                          onClick={async () => {
+                            try { await navigator.clipboard.writeText(c); toast({ title: 'Code copied' }); } catch { toast({ title: 'Copy failed', variant: 'destructive' }); }
+                          }}
+                          title="Copy code"
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex justify-end">
+                      <Button variant="ghost" className="text-xs" onClick={clearRecoveryCodes} title="Hide recovery codes">Hide</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">To get new recovery codes, first Unlink MFA, then set it up again.</p>
+                )}
               </div>
             ) : (
               <div className="space-y-4">
@@ -254,6 +370,34 @@ export default function MFAToken() {
                           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                         </svg>
                       </button>
+                      {recoveryCodes.length === 0 ? (
+                        <Button
+                          variant="outline"
+                          className="ml-2"
+                          disabled={loading}
+                          onClick={async () => {
+                            setLoading(true);
+                            try {
+                              const res = await authAPI.mfaTotpSetup({ force_reset: true });
+                              if ('error' in res) {
+                                toast({ title: 'Could not regenerate codes', description: res.error_description || res.error, variant: 'destructive' });
+                              } else {
+                                setProvisioningUri(res.provisioning_uri || provisioningUri);
+                                setSecret(res.secret || secret);
+                                const codes = res.recovery_codes || [];
+                                setRecoveryCodes(codes);
+                                if (codes.length > 0) saveRecoveryCodes(codes);
+                                toast({ title: 'Recovery codes regenerated' });
+                              }
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                          title="Regenerate recovery codes"
+                        >
+                          Regenerate codes
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}
@@ -266,13 +410,41 @@ export default function MFAToken() {
                   </div>
                 </div>
 
-                {confirmed && recoveryCodes.length > 0 ? (
-                  <div className="space-y-2">
-                    <Label>Recovery Codes</Label>
-                    <p className="text-xs text-muted-foreground">Store these codes in a safe place. Each can be used once if you lose your device.</p>
+    {recoveryCodes.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <Label>Recovery Codes</Label>
+      <p className="text-xs text-muted-foreground">Store these codes in a safe place. Each code can be used once if you lose your device.</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(recoveryCodes.join('\n'));
+                            toast({ title: 'Recovery codes copied' });
+                          } catch {
+                            toast({ title: 'Copy failed', description: 'Clipboard not available.', variant: 'destructive' });
+                          }
+                        }}
+                        title="Copy all codes"
+                      >
+                        Copy all
+                      </Button>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       {recoveryCodes.map((c, i) => (
-                        <div key={i} className="text-sm font-mono p-2 rounded bg-muted">{c}</div>
+                        <button
+                          key={i}
+                          type="button"
+                          className="text-left text-sm font-mono p-2 rounded bg-muted hover:bg-muted/80"
+                          onClick={async () => {
+                            try { await navigator.clipboard.writeText(c); toast({ title: 'Code copied' }); } catch { toast({ title: 'Copy failed', variant: 'destructive' }); }
+                          }}
+                          title="Copy code"
+                        >
+                          {c}
+                        </button>
                       ))}
                     </div>
                   </div>

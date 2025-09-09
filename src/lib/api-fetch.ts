@@ -17,23 +17,27 @@ export async function apiFetch(input: string, options: ApiFetchOptions = {}): Pr
 
   // Determine which endpoints require Authorization header
   const requiresAuth = (() => {
-    const needs = (p: string) => {
-      if (p.startsWith('/api/')) return true; // all /api require Bearer
-      // Protected /auth endpoints that require Bearer (post-login)
-      return p === '/auth/v1/me' || p === '/auth/v1/logout' || p === '/auth/v1/revoke';
-    };
+    const needs = (p: string) => p.startsWith('/api/'); // only /api requires Bearer
     try {
-      // Prefer checking the fully built URL's pathname
       const u = new URL(url);
       return needs(u.pathname);
     } catch {
-      // Fallback to raw input heuristic
       return needs(input);
     }
   })();
 
   // For /api endpoints, we must include Authorization and must NOT use cookie-first fallback
-  const cookieFirstRequested = options.cookieFirst === true;
+  const cookieFirstRequested = (() => {
+    if (options.cookieFirst === true) return true;
+    if (typeof input !== 'string') return false;
+    try {
+      // Support both raw path and fully qualified URL; cookie-first for all /auth
+      const u = new URL(input, window.location.origin);
+      return u.pathname.startsWith('/auth/');
+    } catch {
+      return input.startsWith('/auth/');
+    }
+  })();
   // For endpoints that require auth, never use cookie-first fallback
   const cookieFirst = requiresAuth ? false : cookieFirstRequested;
 
@@ -56,8 +60,15 @@ export async function apiFetch(input: string, options: ApiFetchOptions = {}): Pr
   const doFetch = async (init: RequestInit) => fetch(url, { credentials: 'include', ...init });
 
   if (cookieFirst) {
-    // First attempt: no Authorization header (avoid preflight) – only for /auth
-    const res1 = await doFetch({ ...options, headers: { ...(options.headers || {}), Accept: 'application/json' } });
+    // First attempt: cookie-first (session cookie). Keep JSON headers but drop Authorization.
+    const baseHeaders = makeHeaders();
+    // Remove Authorization while preserving Content-Type and any caller-provided headers
+    Object.keys(baseHeaders).forEach((k) => {
+      if (k.toLowerCase() === 'authorization') delete (baseHeaders as any)[k];
+    });
+    const mergedHeaders = { ...baseHeaders, ...(options.headers || {}) } as Record<string, string>;
+    if (!('Accept' in mergedHeaders)) mergedHeaders['Accept'] = 'application/json';
+    const res1 = await doFetch({ ...options, headers: mergedHeaders });
     // NEVER retry on 401
     handle401(res1, options);
     return res1;
