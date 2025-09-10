@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, PropsWithChildren } from 'react'
+import React, { useEffect, useMemo, useState, PropsWithChildren, useCallback, useRef } from 'react'
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth as useAuthRedux } from '@/hooks/useAuth'
 import { useAuth as useAuthContext } from '@/contexts/useAuth'
@@ -13,7 +13,8 @@ import {
   FolderOpen,
   List,
   GitBranch,
-  Cloud,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import {
   ArrowLeftRight,
@@ -60,7 +61,16 @@ type DashboardLayoutProps = PropsWithChildren<{
 }>
 
 export default function DashboardLayout({ children, activeItem }: DashboardLayoutProps) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // Persist sidebar collapsed state across reloads (session-scoped)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return sessionStorage.getItem('sidebar_collapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+  const [mobileOpen, setMobileOpen] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
   // Use both auth systems: Redux (tokens) + Context (session flag/user)
@@ -141,20 +151,88 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
   // Content to render: children if provided, else nested routes via Outlet
   const content = children ?? <Outlet />
 
+  // Mobile detection via CSS breakpoint (no SSR issue since only client matters)
+  const [isMobile, setIsMobile] = useState<boolean>(() => (typeof window !== 'undefined' ? window.innerWidth < 768 : false))
+  useEffect(() => {
+    const onResize = () => {
+      const m = window.innerWidth < 768
+      setIsMobile(m)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  // Close mobile drawer on route change
+  useEffect(() => {
+    if (mobileOpen) setMobileOpen(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname])
+
+  // Esc to close mobile menu
+  useEffect(() => {
+    if (!mobileOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mobileOpen])
+
+  const toggleMobile = useCallback(() => setMobileOpen(o => !o), [])
+
   return (
-    <SidebarProvider open={!sidebarCollapsed} onOpenChange={(open) => setSidebarCollapsed(!open)}>
+    <SidebarProvider
+      open={!sidebarCollapsed}
+      onOpenChange={(open) => {
+        const collapsed = !open
+        setSidebarCollapsed(collapsed)
+        try {
+          sessionStorage.setItem('sidebar_collapsed', collapsed ? '1' : '0')
+        } catch {
+          // ignore persistence errors
+        }
+      }}
+    >
       <div className="min-h-screen w-full flex flex-col">
         {/* Header */}
-        <header className="bg-dashboard-header shadow-soft border-b border-border w-full">
+        <header className="bg-dashboard-header shadow-soft border-b border-border w-full sticky top-0 z-40">
           <div className="flex items-center justify-between px-4 py-4">
             <div className="flex items-center gap-4">
+              {/* Hamburger on mobile */}
+              {isMobile && (
+                <button
+                  aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
+                  onClick={toggleMobile}
+                  className="inline-flex md:hidden items-center justify-center h-9 w-9 rounded-md border border-border bg-background hover:bg-muted transition-colors"
+                >
+                  <span className="sr-only">Menu</span>
+                  <div className="flex flex-col gap-[3px]">
+                    <span className={`h-[2px] w-5 bg-foreground transition-transform ${mobileOpen ? 'rotate-45 translate-y-[5px]' : ''}`}></span>
+                    <span className={`h-[2px] w-5 bg-foreground transition-opacity ${mobileOpen ? 'opacity-0' : 'opacity-100'}`}></span>
+                    <span className={`h-[2px] w-5 bg-foreground transition-transform ${mobileOpen ? '-rotate-45 -translate-y-[5px]' : ''}`}></span>
+                  </div>
+                </button>
+              )}
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-theme-gradient rounded-lg flex items-center justify-center">
-                  <Cloud className="h-5 w-5 text-primary-foreground" />
-                </div>
-                <h1 className="text-xl font-bold text-foreground">Core Automation Portal</h1>
+                {!isMobile && (
+                  <button
+                    onClick={() => setSidebarCollapsed(c => {
+                      const next = !c
+                      try {
+                        sessionStorage.setItem('sidebar_collapsed', next ? '1' : '0')
+                      } catch {
+                        // ignore persistence errors
+                      }
+                      return next
+                    })}
+                    aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    className="h-9 w-9 inline-flex items-center justify-center rounded-md border border-border bg-background hover:bg-muted transition-colors"
+                  >
+                    {sidebarCollapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
+                  </button>
+                )}
+                <h1 className="text-xl font-bold text-foreground">
+                  {isMobile ? 'Core Automation' : 'Core Automation Portal'}
+                </h1>
               </div>
-              <SidebarTrigger />
             </div>
 
             <div className="flex items-center gap-4">
@@ -192,12 +270,47 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
 
         {/* Content area with sidebar */}
         <div className="flex flex-1">
-          <AppSidebar
-            navigation={navigation}
-            isActive={isActive}
-            handleLogout={handleLogout}
-            collapsed={sidebarCollapsed}
-          />
+          {/* Desktop sidebar */}
+          {/* Desktop sidebar always visible on large screens */}
+          {!isMobile && (
+            <AppSidebar
+              navigation={navigation}
+              isActive={isActive}
+              handleLogout={handleLogout}
+              collapsed={sidebarCollapsed}
+            />
+          )}
+
+          {/* Mobile overlay drawer */}
+          {isMobile && mobileOpen && (
+            <div className="fixed inset-0 z-50 flex">
+              <div
+                className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                onClick={() => setMobileOpen(false)}
+                aria-hidden="true"
+              />
+              <div className="relative h-full w-72 max-w-[80%] bg-dashboard-sidebar border-r border-border shadow-xl animate-in slide-in-from-left duration-200 flex flex-col">
+                <div className="flex items-center justify-between px-4 py-4 border-b border-border">
+                  <span className="font-semibold text-sm">Navigation</span>
+                  <button
+                    onClick={() => setMobileOpen(false)}
+                    className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-muted"
+                    aria-label="Close menu"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  <AppSidebar
+                    navigation={navigation}
+                    isActive={isActive}
+                    handleLogout={handleLogout}
+                    collapsed={false}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           <main className="flex-1 p-6">{content}</main>
         </div>

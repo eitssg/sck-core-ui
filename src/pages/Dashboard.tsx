@@ -256,53 +256,7 @@ export default function Dashboard() {
             </div>
           </div>
         )}
-        {/* Ambient header banner */}
-        <div className="relative overflow-hidden rounded-xl border bg-card shadow-medium">
-          <div className="pointer-events-none absolute inset-0">
-            <div className="absolute -top-20 -left-24 h-64 w-64 rounded-full bg-primary/15 blur-3xl" />
-            <div className="absolute -bottom-20 -right-24 h-64 w-64 rounded-full bg-accent/20 blur-3xl" />
-          </div>
-          <div className="relative flex items-center justify-between p-6">
-            <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-medium flex items-center justify-center">
-                <Sparkles className="h-6 w-6" />
-              </div>
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Dashboard</h1>
-                <p className="text-sm text-muted-foreground">
-                  {currentClient ? (
-                    <>
-                      Context: <span className="font-medium">{clientName}</span>
-                    </>
-                  ) : (
-                    "Select a client in the header to get started."
-                  )}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground">
-                <Clock className="h-4 w-4" />
-                <span>Last refresh: {lastRefresh ? lastRefresh.toLocaleTimeString() : "—"}</span>
-              </div>
-              <Button
-                onClick={fetchDashboardStats}
-                variant={isDark ? "secondary" : "outline"}
-                disabled={!currentClient || busy || !hasAwsCreds}
-                className="gap-2"
-              >
-                {busy ? "Refreshing..." : "Refresh"}
-              </Button>
-              <Button asChild>
-                <Link to="/applications/create">
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Deployment
-                </Link>
-              </Button>
-            </div>
-          </div>
-        </div>
+  {/* Removed ambient header banner panel per request */}
 
         {/* Context warning */}
         {!currentClient && (

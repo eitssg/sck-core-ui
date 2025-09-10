@@ -167,6 +167,28 @@ const authSlice = createSlice({
         state.lastActivity = Date.now();
         state.error = null;
         console.log('Access token refreshed successfully');
+        try {
+          // Record issued timestamps for diagnostics (access & refresh tokens)
+          const nowIso = new Date().toISOString();
+          sessionStorage.setItem('access_issued_at', nowIso);
+          // If refresh_token rotated this cycle, capture issued at
+          try {
+            const currentStored = sessionStorage.getItem('refresh_token');
+            // We don't get refresh_token in this reducer payload by design; rotation already persisted in thunk
+            // So just ensure we have an issued timestamp for diagnostics
+            if (currentStored && !sessionStorage.getItem('refresh_issued_at')) {
+              sessionStorage.setItem('refresh_issued_at', nowIso);
+            }
+          } catch { /* ignore */ }
+          // Ensure session_issued_at exists (first successful refresh after auth flow)
+          if (!sessionStorage.getItem('session_issued_at')) {
+            // Assume session cookie window started when first access token obtained
+            sessionStorage.setItem('session_issued_at', Date.now().toString());
+          }
+          if (action.meta && (action.meta.arg || action.meta.requestId)) {
+            // meta present
+          }
+        } catch { /* ignore */ }
       })
       .addCase(refreshAccessToken.rejected, (state, action) => {
         console.error('Token refresh failed:', action.payload);

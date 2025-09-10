@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { Eye, EyeOff, Mail, Lock, Briefcase, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, Briefcase, AlertCircle, Clock, LogOut, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,10 +70,14 @@ export default function Login() {
   const errorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (isAuthenticated) navigate("/dashboard");
-    // Clear any stale auth error when landing on login
+    // If user navigates to /login while authenticated, force a logout then remain on /login
+    if (isAuthenticated) {
+      (async () => {
+        try { await dispatch(logoutUser()).unwrap(); } catch { /* ignore */ }
+      })();
+    }
     dispatch(clearError());
-  }, [isAuthenticated, navigate, dispatch]);
+  }, [isAuthenticated, dispatch]);
 
   // HARD LOGOUT on entering /login: clear cookie + local/session storage to avoid dangling state
   // Skip when we're in the middle of OAuth callback processing to prevent races
@@ -231,9 +235,43 @@ export default function Login() {
     }
   };
 
+  const params = new URLSearchParams(location.search || '');
+  const reason = params.get('reason');
+
+  const banner = (() => {
+    if (!reason) return null;
+    const base = 'flex items-start gap-2 rounded-md px-3 py-2 text-sm shadow-sm border';
+    switch (reason) {
+      case 'idle_timeout':
+        return (
+          <div className={`${base} border-amber-300 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-100`}> 
+            <Clock className="h-4 w-4 mt-0.5" />
+            <span><strong>NOTICE:</strong> You have been auto-logged out due to inactivity.</span>
+          </div>
+        );
+      case 'session_expired':
+        return (
+          <div className={`${base} border-red-300 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-100`}> 
+            <ShieldAlert className="h-4 w-4 mt-0.5" />
+            <span><strong>NOTICE:</strong> Your session expired. Please sign in again.</span>
+          </div>
+        );
+      case 'manual':
+        return (
+          <div className={`${base} border-blue-300 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-100`}> 
+            <LogOut className="h-4 w-4 mt-0.5" />
+            <span><strong>NOTICE:</strong> You have been signed out.</span>
+          </div>
+        );
+      default:
+        return null;
+    }
+  })();
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-dashboard-bg to-primary/5 flex items-center justify-center p-4">
-      <div className="w-full max-w-lg">
+      <div className="w-full max-w-lg space-y-4">
+        {banner}
         {/* Login Card */}
         <Card className="shadow-large animate-fade-in">
           <CardHeader className="text-center space-y-4">
