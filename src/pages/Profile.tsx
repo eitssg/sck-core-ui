@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAppSelector } from "@/store";
 import { selectUser } from "@/store/slices/authSlice";
 import { Link, useNavigate } from "react-router-dom";
-import { User as UserIcon, Save, Edit, Camera, Calendar, Building2, Trash2, Cloud, LogOut, ArrowLeftRight } from "lucide-react";
+import { User as UserIcon, Save, Edit, Camera, Calendar, Building2, Trash2, Cloud, LogOut, ArrowLeftRight, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +60,26 @@ import { SUPPORTED_LANGUAGES } from "@/constants/languages";
 import { getTimezones } from "@/constants/timezones";
 import { authAPI } from "@/lib/auth-api";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+// ...existing imports...
+
+// Helper to POST new profile (clone pattern)
+async function createProfileClone(base: any, newName: string) {
+  const payload = { ...(base || {}), profile_name: newName };
+  delete (payload as any).created_at;
+  delete (payload as any).updated_at;
+  delete (payload as any).last_login;
+  const res = await fetch('/auth/v1/me', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const msg = await res.text();
+    throw new Error(msg || 'Profile create failed');
+  }
+  return await res.json();
+}
 
 export default function Profile() {
   const { logout: logoutCtx } = useAuthContext();
@@ -87,6 +107,11 @@ export default function Profile() {
   const [photoDialogOpen, setPhotoDialogOpen] = useState(false);
   const [photoUrlDraft, setPhotoUrlDraft] = useState<string>("");
   const [photoError, setPhotoError] = useState<string | undefined>(undefined);
+  // New profile modal state
+  const [addOpen, setAddOpen] = useState(false);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
   // Derive client context from available sources (prefer explicit fields, fallback to JWT claim)
   const jwtClient = useMemo(() => authAPI.getCurrentClient(), []);
@@ -481,6 +506,15 @@ export default function Profile() {
                       variant="ghost"
                       size="sm"
                       className="gap-1 text-muted-foreground hover:text-foreground"
+                      onClick={() => { setAddOpen(true); setNewProfileName(''); setAddError(null); }}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1 text-muted-foreground hover:text-foreground"
                       disabled={String((profileUser as any)?.profile_name || currentProfileName || 'default') === 'default'}
                       onClick={() => {
                         const name = String((profileUser as any)?.profile_name || currentProfileName || 'default');
@@ -814,6 +848,67 @@ export default function Profile() {
           </Dialog>
 
           {/* Theme settings removed per design; theme controlled via avatar menu */}
+          {/* Add New Profile Dialog */}
+          <Dialog open={addOpen} onOpenChange={(o) => { if (!adding) { setAddOpen(o); if(!o){ setNewProfileName(''); setAddError(null);} } }}>
+            <DialogContent className="w-[92vw] max-w-sm p-4 sm:p-6">
+              <DialogHeader>
+                <DialogTitle>Create New Profile</DialogTitle>
+                <DialogDescription>Please enter profile identifier (lowercase a-z, max 12 characters).</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Label htmlFor="new_profile_name">Profile Identifier</Label>
+                <Input
+                  id="new_profile_name"
+                  autoFocus
+                  placeholder="e.g. devops"
+                  value={newProfileName}
+                  disabled={adding}
+                  onChange={(e) => {
+                    const raw = e.target.value.toLowerCase();
+                    if (!/^[a-z]*$/.test(raw)) return; // block invalid chars
+                    if (raw.length > 12) return; // enforce length
+                    setNewProfileName(raw);
+                    setAddError(null);
+                  }}
+                />
+                {addError && <p className="text-sm text-destructive">{addError}</p>}
+              </div>
+              <DialogFooter className="pt-4 gap-2">
+                <Button variant="ghost" disabled={adding} onClick={() => { setAddOpen(false); setNewProfileName(''); setAddError(null); }}>Cancel</Button>
+                <Button
+                  disabled={adding || !newProfileName}
+                  onClick={async () => {
+                    if (!newProfileName) return;
+                    if (!/^[a-z]{1,12}$/.test(newProfileName)) { setAddError('Must be 1-12 lowercase letters a-z'); return; }
+                    // Check existing profiles
+                    if (profiles.some(p => (p as any)?.profile_name === newProfileName)) {
+                      setAddError('Profile already exists');
+                      return;
+                    }
+                    try {
+                      setAdding(true);
+                      const base = profileUser || profiles.find(p => (p as any)?.profile_name === currentProfileName) || {};
+                      await createProfileClone(base, newProfileName);
+                      // Refetch profile list / current user data
+                      await dispatch(fetchUserProfileThunk({ force: true }) as any);
+                      // Switch to new profile in Redux + sessionStorage
+                      dispatch(switchToProfile({ profileName: newProfileName }) as any);
+                      try { sessionStorage.setItem('current_profile', newProfileName); } catch { /* ignore storage errors */ }
+                      toast({ title: 'Profile created', description: `Switched to ${newProfileName}` });
+                      setAddOpen(false);
+                      setNewProfileName('');
+                    } catch (e:any) {
+                      setAddError(e?.message || 'Failed to create profile');
+                    } finally {
+                      setAdding(false);
+                    }
+                  }}
+                >
+                  {adding ? 'Saving...' : 'Save'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
 
   {/* Sidebar */}
