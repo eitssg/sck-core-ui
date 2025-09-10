@@ -1,19 +1,34 @@
 import { useEffect } from 'react'
 import { useAppDispatch, useAppSelector } from '@/store'
 import { selectIsAuthenticated } from '@/store/slices/authSlice'
-import { selectUser as selectProfileUser, fetchUserProfile } from '@/store/slices/profileSlice'
+import { selectUser as selectProfileUser, fetchUserProfile, fetchAuthProfiles, fetchAuthProfile, selectUserProfiles } from '@/store/slices/profileSlice'
 
 export default function ProfileBootstrap() {
   const dispatch = useAppDispatch()
   const isAuthenticated = useAppSelector(selectIsAuthenticated as any)
   const profileUser = useAppSelector(selectProfileUser as any)
+  const profiles = useAppSelector(selectUserProfiles as any) as any[]
 
   useEffect(() => {
     if (!isAuthenticated) return
-    if (profileUser) return
-    // Fetch current user's profile via /auth/v1/me
-    dispatch(fetchUserProfile({}))
-  }, [dispatch, isAuthenticated, profileUser])
+    let stored: string | null = null
+    try { stored = sessionStorage.getItem('sck_profile_name'); } catch { /* ignore */ }
+    // If we have a stored profile and no user loaded, hydrate that profile directly
+    if (stored && !profileUser) {
+      dispatch(fetchAuthProfile({ profileName: stored, force: true }) as any)
+        .unwrap()
+        .catch(() => {
+          // Fallback to legacy /auth/v1/me for default
+          dispatch(fetchUserProfile({}) as any)
+        })
+    } else if (!profileUser) {
+      dispatch(fetchUserProfile({}) as any)
+    }
+    // Fetch list (TTL guarded) after attempting specific profile
+    if (!profiles || profiles.length === 0) {
+      dispatch(fetchAuthProfiles({ force: false }) as any)
+    }
+  }, [dispatch, isAuthenticated, profileUser, profiles])
 
   return null
 }

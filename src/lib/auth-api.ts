@@ -646,6 +646,11 @@ export const authAPI = {
       }
 
       const user = await this.fetchUserProfile();
+      // TODO: remove legacy single-profile hydration; multi-profile list now required by UI
+      try {
+        // Fire-and-forget list hydration endpoint; UI thunks provide caching elsewhere.
+        fetch(buildApiUrl('/auth/v1/profiles'), { headers });
+      } catch { /* ignore profile list prefetch errors */ }
       if ((user as any)?.error) {
         return { error: 'profile_fetch_failed' } as OAuthErrorResponse;
       }

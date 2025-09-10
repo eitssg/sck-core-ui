@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
 import { LogOut, ArrowLeftRight } from 'lucide-react'
-import { selectUser as selectProfileUser, selectUserProfiles, selectCurrentProfile, switchToProfile } from '@/store/slices/profileSlice'
+import { selectUser as selectProfileUser, selectUserProfiles, selectCurrentProfile, switchToProfile, fetchAuthProfile } from '@/store/slices/profileSlice'
 
 export default function UserMenu() {
   const { logout: logoutRedux } = useAuthRedux()
@@ -93,7 +93,15 @@ export default function UserMenu() {
                   <DropdownMenuSubContent>
                     <DropdownMenuRadioGroup
                       value={currentProfile ?? (profiles?.[0]?.profile_name || 'default')}
-                      onValueChange={(value) => dispatch(switchToProfile({ profileName: value } as any))}
+                      onValueChange={(value) => {
+                        // Fetch full profile data for selected profile (force bypasses TTL)
+                        dispatch(fetchAuthProfile({ profileName: value, force: true }) as any)
+                          .unwrap()
+                          .catch(() => {
+                            // Fallback to optimistic local switch if network fails
+                            dispatch(switchToProfile({ profileName: value } as any))
+                          })
+                      }}
                     >
                       {(profiles && profiles.length > 0 ? profiles : [{ profile_name: 'default' }]).map((p: any) => (
                         <DropdownMenuRadioItem key={p.profile_name} value={p.profile_name}>

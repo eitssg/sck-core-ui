@@ -12,6 +12,7 @@ import type { UserProfile } from '@/store/types'
  * - Client/Portfolio context caching to avoid redundant fetches
  * - Minimal server calls to reduce costs
  * - Multiple profiles per user fully supported with cross-context caching
+ * - Added lastAuthMeFetched (5s debounce) to suppress duplicate /auth/v1/me calls during rapid bootstrap effects
  */
 
 export interface ProfileState {
@@ -21,6 +22,7 @@ export interface ProfileState {
   isLoading: boolean
   error: string | null
   lastFetched: number | null
+  lastAuthMeFetched?: number | null
   currentContext: string | null
   individualProfileCache: Record<string, number>
   contextCache: Record<string, number>
@@ -34,6 +36,7 @@ const initialState: ProfileState = {
   isLoading: false,
   error: null,
   lastFetched: null,
+  lastAuthMeFetched: null,
   currentContext: null,
   individualProfileCache: {},
   contextCache: {},
@@ -198,6 +201,13 @@ export const fetchUserProfile = createAsyncThunk<
       if (!state.profile) return true;
       
       const context = generateContextKey(client, portfolio);
+      // Prevent multiple rapid /auth/v1/me calls during bootstrap: if using auth context and fetched within 5s, skip
+      if (!client && !portfolio && !profileName) {
+        const last = (state.profile as any).lastAuthMeFetched;
+        if (last && Date.now() - last < 5000) {
+          return false;
+        }
+      }
       // If using auth endpoint and essential identity fields are missing, force a refetch
       if (!client && !portfolio) {
         const u = state.profile.user as any;
@@ -396,7 +406,7 @@ export const updateUserTheme = createAsyncThunk<
         ? buildProfileApiUrl(client, portfolio)
         : buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.ME);
         
-      // When patching /auth/v1/me, include profile_name so backend knows which profile to update
+  // DEPRECATED: legacy /auth/v1/me patch path. Now using /auth/v1/profiles/{profile_name}. Retain for backward compatibility until backend removal.
       const isAuthMe = !(client && portfolio);
       const state = thunkAPI.getState();
       const profileName = state.profile?.user?.profile_name || state.profile?.currentProfile || 'default';
@@ -480,6 +490,132 @@ export const patchCurrentUserProfile = createAsyncThunk(
   }
 );
 
+/**
+ * NEW AUTH PROFILE ENDPOINTS (/auth/v1/profiles)
+ * These replace legacy /auth/v1/me usage for multi-profile operations.
+ * Legacy thunks above remain temporarily for backward compatibility and are DEPRECATED.
+ */
+
+// List all profiles for authenticated user (no client/portfolio scoping)
+export const fetchAuthProfiles = createAsyncThunk<
+  { profiles: UserProfile[]; context: string },
+  { force?: boolean },
+  { state: RootState }
+>(
+  'profile/fetchAuthProfiles',
+  async () => {
+    const resp = await apiFetch(buildApiUrl('/auth/v1/profiles'), { contextLabel: 'ProfileList' });
+    if (!resp.ok) throw new Error('Failed to list profiles');
+    const json = await resp.json();
+  // Accept multiple shapes:
+  // 1. { profiles: [...] }
+  // 2. [ ... ]
+  // 3. { data: { profiles: [...] } }
+  // 4. { data: [ ... ] }
+  let arr: any[] = [];
+  if (Array.isArray((json as any)?.profiles)) arr = (json as any).profiles;
+  else if (Array.isArray((json as any)?.data?.profiles)) arr = (json as any).data.profiles;
+  else if (Array.isArray((json as any)?.data)) arr = (json as any).data;
+  else if (Array.isArray(json)) arr = json as any[];
+    const profiles: UserProfile[] = arr.map((p: any) => normalizeUserProfile(p));
+    // Guarantee presence of default profile even if backend omits it
+    if (!profiles.find(p => p.profile_name === 'default')) {
+      profiles.unshift(normalizeUserProfile({ profile_name: 'default' } as any));
+    }
+    return { profiles, context: 'auth' };
+  },
+  {
+    condition: ({ force }, { getState }) => {
+      if (force) return true;
+      const state = getState() as any;
+      const ts = state.profile?.contextCache?.['auth'];
+      if (!ts) return true;
+      const fresh = Date.now() - ts < 15 * 60 * 1000; // 15m TTL
+      return !fresh;
+    },
+  }
+);
+
+// Get a single profile by name
+export const fetchAuthProfile = createAsyncThunk<
+  { profile: UserProfile; context: string },
+  { profileName: string; force?: boolean },
+  { state: RootState }
+>(
+  'profile/fetchAuthProfile',
+  async ({ profileName }) => {
+    const resp = await apiFetch(buildApiUrl(`/auth/v1/profiles/${encodeURIComponent(profileName)}`), { contextLabel: 'Profile' });
+    if (!resp.ok) throw new Error('Failed to fetch profile');
+    const json = await resp.json();
+    const profile = normalizeUserProfile(json);
+    return { profile, context: 'auth' };
+  },
+  {
+    condition: ({ profileName, force }, { getState }) => {
+      if (force) return true;
+      const state = getState() as any;
+      const ts = state.profile?.individualProfileCache?.[profileName];
+      if (!ts) return true;
+      const fresh = Date.now() - ts < 30 * 60 * 1000; // 30m
+      return !fresh;
+    },
+  }
+);
+
+// Create a new profile
+export const createAuthProfile = createAsyncThunk(
+  'profile/createAuthProfile',
+  async ({ profileData }: { profileData: Partial<UserProfile> }) => {
+    const resp = await apiFetch(buildApiUrl('/auth/v1/profiles'), {
+      method: 'POST',
+      body: JSON.stringify(profileData),
+      contextLabel: 'ProfileCreate'
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to create profile');
+    }
+    const json = await resp.json();
+    const profile = normalizeUserProfile(json);
+    return { profile, context: 'auth' };
+  }
+);
+
+// Patch a profile
+export const patchAuthProfile = createAsyncThunk(
+  'profile/patchAuthProfile',
+  async ({ profileName, profileData }: { profileName: string; profileData: Partial<UserProfile> }) => {
+    const resp = await apiFetch(buildApiUrl(`/auth/v1/profiles/${encodeURIComponent(profileName)}`), {
+      method: 'PATCH',
+      body: JSON.stringify(profileData),
+      contextLabel: 'ProfilePatch'
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to patch profile');
+    }
+    const json = await resp.json();
+    const profile = normalizeUserProfile(json);
+    return { profile, context: 'auth' };
+  }
+);
+
+// Delete a profile
+export const deleteAuthProfile = createAsyncThunk(
+  'profile/deleteAuthProfile',
+  async ({ profileName }: { profileName: string }) => {
+    const resp = await apiFetch(buildApiUrl(`/auth/v1/profiles/${encodeURIComponent(profileName)}`), {
+      method: 'DELETE',
+      contextLabel: 'ProfileDelete'
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to delete profile');
+    }
+    return { profileName };
+  }
+);
+
 const profileSlice = createSlice({
   name: 'profile',
   initialState,
@@ -518,6 +654,7 @@ const profileSlice = createSlice({
       state.user = profile;
       state.currentProfile = profile.profile_name;
       upsertProfile(state, profile);
+  try { sessionStorage.setItem('sck_profile_name', profile.profile_name); } catch { /* ignore */ }
       // Update caches and membership
       state.individualProfileCache[profile.profile_name] = Date.now();
       state.contextCache['auth'] = Date.now();
@@ -557,6 +694,7 @@ const profileSlice = createSlice({
       if (profile) {
         state.user = profile;
         state.currentProfile = profileName;
+  try { sessionStorage.setItem('sck_profile_name', profileName); } catch { /* ignore */ }
         if (context) {
           state.currentContext = context;
         }
@@ -603,6 +741,82 @@ const profileSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      // NEW /auth/v1/profiles list
+      .addCase(fetchAuthProfiles.pending, (state) => {
+        state.isLoading = true; state.error = null;
+      })
+      .addCase(fetchAuthProfiles.fulfilled, (state, action) => {
+        state.isLoading = false;
+        const { profiles, context } = action.payload;
+        const ts = Date.now();
+        profiles.forEach(p => { upsertProfile(state, p); state.individualProfileCache[p.profile_name] = ts; });
+        state.contextCache[context] = ts;
+        setContextProfiles(state, context, profiles);
+        if (!state.user && profiles.length) {
+          state.user = profiles.find(p => p.profile_name === 'default') || profiles[0];
+          state.currentProfile = state.user.profile_name;
+        }
+      })
+      .addCase(fetchAuthProfiles.rejected, (state, action) => {
+        state.isLoading = false; state.error = action.error.message || 'Failed to list profiles';
+        // Fallback: ensure at least a synthetic default profile exists for UI
+        if (!state.userProfiles.find(p => p.profile_name === 'default')) {
+          const synthetic: UserProfile = { profile_name: 'default' } as any;
+          upsertProfile(state, synthetic);
+          state.individualProfileCache['default'] = Date.now();
+          const ctxSet = new Set(state.contextIndex['auth'] || []); ctxSet.add('default');
+          state.contextIndex['auth'] = Array.from(ctxSet);
+        }
+        if (!state.user) {
+          state.user = state.userProfiles.find(p => p.profile_name === 'default') || null;
+          state.currentProfile = state.user ? state.user.profile_name : null;
+        }
+      })
+      // NEW fetch single profile
+      .addCase(fetchAuthProfile.pending, (state) => { state.isLoading = true; state.error = null; })
+      .addCase(fetchAuthProfile.fulfilled, (state, action) => {
+        state.isLoading = false;
+        const { profile, context } = action.payload; const ts = Date.now();
+        upsertProfile(state, profile);
+        state.user = profile; state.currentProfile = profile.profile_name; state.currentContext = context;
+        state.individualProfileCache[profile.profile_name] = ts; state.contextCache[context] = ts;
+        const existing = new Set(state.contextIndex[context] || []); existing.add(profile.profile_name); state.contextIndex[context] = Array.from(existing);
+      })
+      .addCase(fetchAuthProfile.rejected, (state, action) => { state.isLoading = false; state.error = action.error.message || 'Failed to fetch profile'; })
+      // NEW create profile
+      .addCase(createAuthProfile.pending, (state) => { state.isLoading = true; state.error = null; })
+      .addCase(createAuthProfile.fulfilled, (state, action) => {
+        state.isLoading = false;
+        const { profile, context } = action.payload; const ts = Date.now();
+        upsertProfile(state, profile);
+        if (!state.userProfiles.length) { state.user = profile; state.currentProfile = profile.profile_name; }
+        state.individualProfileCache[profile.profile_name] = ts; state.contextCache[context] = ts;
+        const existing = new Set(state.contextIndex[context] || []); existing.add(profile.profile_name); state.contextIndex[context] = Array.from(existing);
+      })
+      .addCase(createAuthProfile.rejected, (state, action) => { state.isLoading = false; state.error = action.error.message || 'Failed to create profile'; })
+      // NEW patch profile
+      .addCase(patchAuthProfile.pending, (state) => { state.isLoading = true; state.error = null; })
+      .addCase(patchAuthProfile.fulfilled, (state, action) => {
+        state.isLoading = false; const { profile, context } = action.payload; const ts = Date.now();
+        upsertProfile(state, profile); if (state.user?.profile_name === profile.profile_name) state.user = profile;
+        state.individualProfileCache[profile.profile_name] = ts; state.contextCache[context] = ts;
+        const existing = new Set(state.contextIndex[context] || []); existing.add(profile.profile_name); state.contextIndex[context] = Array.from(existing);
+      })
+      .addCase(patchAuthProfile.rejected, (state, action) => { state.isLoading = false; state.error = action.error.message || 'Failed to patch profile'; })
+      // NEW delete profile
+      .addCase(deleteAuthProfile.pending, (state) => { state.isLoading = true; state.error = null; })
+      .addCase(deleteAuthProfile.fulfilled, (state, action) => {
+        state.isLoading = false; const { profileName } = action.payload;
+        state.userProfiles = state.userProfiles.filter(p => p.profile_name !== profileName);
+        Object.keys(state.contextIndex).forEach(ctx => { state.contextIndex[ctx] = (state.contextIndex[ctx]||[]).filter(n => n !== profileName); });
+        delete state.individualProfileCache[profileName];
+        if (state.user?.profile_name === profileName) {
+          const fallback = state.userProfiles.find(p => p.profile_name === 'default') || state.userProfiles[0] || null;
+          state.user = fallback; state.currentProfile = fallback ? fallback.profile_name : null;
+        }
+      })
+      .addCase(deleteAuthProfile.rejected, (state, action) => { state.isLoading = false; state.error = action.error.message || 'Failed to delete profile'; })
+      // LEGACY (DEPRECATED) SECTION BELOW
       // CREATE Profile
       .addCase(createUserProfile.pending, (state) => {
         state.isLoading = true
@@ -642,6 +856,7 @@ const profileSlice = createSlice({
         state.user = action.payload.profile
   state.currentProfile = action.payload.profile.profile_name
         state.currentContext = action.payload.context
+  state.lastAuthMeFetched = Date.now()
         
   // Update in profiles list
   upsertProfile(state, action.payload.profile)
@@ -811,6 +1026,7 @@ const profileSlice = createSlice({
         const addSet = new Set(state.contextIndex[action.payload.context] || [])
         addSet.add(action.payload.profile.profile_name)
         state.contextIndex[action.payload.context] = Array.from(addSet)
+  state.lastAuthMeFetched = Date.now()
   // no storage persistence
       })
       .addCase(putCurrentUserProfile.rejected, (state, action) => {
@@ -834,6 +1050,7 @@ const profileSlice = createSlice({
         const addSet = new Set(state.contextIndex[action.payload.context] || [])
         addSet.add(action.payload.profile.profile_name)
         state.contextIndex[action.payload.context] = Array.from(addSet)
+  state.lastAuthMeFetched = Date.now()
   // no storage persistence
       })
       .addCase(patchCurrentUserProfile.rejected, (state, action) => {

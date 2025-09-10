@@ -1,8 +1,11 @@
+import { selectUser as selectProfileUser, selectUserProfiles, selectCurrentProfile, switchToProfile, fetchAuthProfiles, fetchAuthProfile, patchAuthProfile, createAuthProfile } from '@/store/slices/profileSlice'
 import { useEffect, useMemo, useState } from "react";
 import { useAppSelector } from "@/store";
+import { AlertTriangle } from "lucide-react";
 import { selectUser } from "@/store/slices/authSlice";
 import { Link, useNavigate } from "react-router-dom";
 import { User as UserIcon, Save, Edit, Camera, Calendar, Building2, Trash2, Cloud, LogOut, ArrowLeftRight, Plus } from "lucide-react";
+import { deleteAuthProfile } from '@/store/slices/profileSlice';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,15 +40,8 @@ import { refreshAccessToken } from "@/store/slices/authSlice";
 import { useAuth as useAuthRedux } from "@/hooks/useAuth";
 import { useAuth as useAuthContext } from "@/contexts/useAuth";
 import { useReduxData } from "@/hooks/useReduxData";
-import {
-  fetchUserProfile as fetchUserProfileThunk,
-  patchCurrentUserProfile,
-  putCurrentUserProfile,
-  selectUser as selectProfileUser,
-  selectProfileLoading,
-  switchToProfile,
-} from "@/store/slices/profileSlice";
-import { selectUserProfiles, selectCurrentProfile, setCurrentProfile } from "@/store/slices/profileSlice";
+// Removed deprecated /auth/v1/me imports (fetchUserProfileThunk, patchCurrentUserProfile, etc.)
+import { selectProfileLoading } from '@/store/slices/profileSlice'
 import {
   selectCurrentActiveClient,
   selectClientBySlug,
@@ -62,23 +58,15 @@ import { authAPI } from "@/lib/auth-api";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 // ...existing imports...
 
-// Helper to POST new profile (clone pattern)
-async function createProfileClone(base: any, newName: string) {
+// Helper to create new profile via new /auth/v1/profiles endpoint
+async function createProfileClone(base: any, newName: string, dispatch: any) {
   const payload = { ...(base || {}), profile_name: newName };
-  delete (payload as any).created_at;
-  delete (payload as any).updated_at;
-  delete (payload as any).last_login;
-  const res = await fetch('/auth/v1/me', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    const msg = await res.text();
-    throw new Error(msg || 'Profile create failed');
+  delete payload.created_at; delete payload.updated_at; delete payload.last_login; delete (payload as any).credentials;
+  const action = await dispatch(createAuthProfile({ profileData: payload }));
+  if (createAuthProfile.rejected.match(action)) {
+    throw new Error(action.payload as any || 'Profile create failed');
   }
-  return await res.json();
+  return (action as any).payload?.profile;
 }
 
 export default function Profile() {
@@ -112,6 +100,10 @@ export default function Profile() {
   const [newProfileName, setNewProfileName] = useState('');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  // Delete profile dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   // Derive client context from available sources (prefer explicit fields, fallback to JWT claim)
   const jwtClient = useMemo(() => authAPI.getCurrentClient(), []);
@@ -133,20 +125,7 @@ export default function Profile() {
 
   // ProtectedRoute already handles access control.
 
-  // Hydrate-first: do NOT fetch if Redux already has a profile.
-  // This runs only to backfill after hard reloads on /profile.
-  useEffect(() => {
-    // If no profile in store, fetch. If profile exists but missing names, force a refetch
-    if (!profileUser) {
-      dispatch(fetchUserProfileThunk({}));
-    } else {
-      const fn = (profileUser as any)?.first_name;
-      const ln = (profileUser as any)?.last_name;
-      if (!fn || !ln) {
-        dispatch(fetchUserProfileThunk({ force: true } as any));
-      }
-    }
-  }, [dispatch, profileUser]);
+  // Removed local initial profiles fetch; centralized in ProfileBootstrap to avoid duplicate network calls.
 
   // Ensure clients are fetched for header controls
   useEffect(() => {
@@ -309,9 +288,9 @@ export default function Profile() {
       return;
     }
     try {
-      const minimal = { profile_name: editData.profile_name || 'default', preferred_region: regionCode } as any;
-      const action = await dispatch(patchCurrentUserProfile(minimal));
-      if (patchCurrentUserProfile.rejected.match(action)) {
+  const minimal = { profile_name: editData.profile_name || 'default', preferred_region: regionCode } as any;
+  const action = await dispatch(patchAuthProfile({ profileName: minimal.profile_name, profileData: minimal }));
+  if (patchAuthProfile.rejected.match(action)) {
         const err = action.payload as string | undefined;
         toast({ title: 'Update failed', description: err || 'Failed to update preferred region', variant: 'destructive' });
         return;
@@ -333,7 +312,7 @@ export default function Profile() {
     return out as Record<string, any>;
   }
 
-  // Save handler: PATCH /auth/v1/me (send only changed fields)
+  // Save handler: PATCH /auth/v1/profiles/{profile_name} (send only changed fields)
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -379,8 +358,8 @@ export default function Profile() {
         return;
       }
 
-      const action = await dispatch(patchCurrentUserProfile({ profile_name: editData.profile_name || 'default', ...(diff as any) }));
-      if (patchCurrentUserProfile.rejected.match(action)) {
+  const action = await dispatch(patchAuthProfile({ profileName: editData.profile_name || 'default', profileData: diff as any }));
+  if (patchAuthProfile.rejected.match(action)) {
         const msg = (action.payload as string) || 'Failed to save profile';
         toast({ title: 'Save failed', description: msg, variant: 'destructive' });
         setSaving(false);
@@ -519,9 +498,8 @@ export default function Profile() {
                       onClick={() => {
                         const name = String((profileUser as any)?.profile_name || currentProfileName || 'default');
                         if (name === 'default') return;
-                        const ok = confirm(`Delete profile "${name}"? This cannot be undone.`);
-                        if (!ok) return;
-                        toast({ title: 'Delete not available', description: 'Profile deletion is not supported in this view yet.', variant: 'destructive' });
+                        setDeleteTarget(name);
+                        setDeleteDialogOpen(true);
                       }}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -888,12 +866,20 @@ export default function Profile() {
                     try {
                       setAdding(true);
                       const base = profileUser || profiles.find(p => (p as any)?.profile_name === currentProfileName) || {};
-                      await createProfileClone(base, newProfileName);
-                      // Refetch profile list / current user data
-                      await dispatch(fetchUserProfileThunk({ force: true }) as any);
-                      // Switch to new profile in Redux + sessionStorage
-                      dispatch(switchToProfile({ profileName: newProfileName }) as any);
-                      try { sessionStorage.setItem('current_profile', newProfileName); } catch { /* ignore storage errors */ }
+                      const created = await createProfileClone(base, newProfileName, dispatch);
+                      // Refetch profiles list to include the newly created one (force bypass cache)
+                      await dispatch(fetchAuthProfiles({ force: true }) as any);
+                      // Fetch full profile details (authoritative) then switch; fallback to local switch if fetch fails
+                      try {
+                        const act: any = await dispatch(fetchAuthProfile({ profileName: newProfileName, force: true }) as any);
+                        if (fetchAuthProfile.rejected.match(act)) {
+                          // fallback local switch
+                          dispatch(switchToProfile({ profileName: newProfileName }) as any);
+                        }
+                      } catch {
+                        dispatch(switchToProfile({ profileName: newProfileName }) as any);
+                      }
+                      try { sessionStorage.setItem('sck_profile_name', newProfileName); } catch { /* ignore storage errors */ }
                       toast({ title: 'Profile created', description: `Switched to ${newProfileName}` });
                       setAddOpen(false);
                       setNewProfileName('');
@@ -905,6 +891,51 @@ export default function Profile() {
                   }}
                 >
                   {adding ? 'Saving...' : 'Save'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          {/* Delete Profile Confirmation Dialog */}
+          <Dialog open={deleteDialogOpen} onOpenChange={(o) => { if(!deleting) { setDeleteDialogOpen(o); if(!o){ setDeleteTarget(null); } } }}>
+            <DialogContent className="w-[92vw] max-w-sm p-4 sm:p-6">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="h-5 w-5" />
+                  Delete Profile
+                </DialogTitle>
+                <DialogDescription>
+                  You are deleting your current profile{deleteTarget ? ` "${deleteTarget}"` : ''}. This action cannot be undone. Are you sure you wish to continue?
+                </DialogDescription>
+              </DialogHeader>
+              <div className="text-sm text-muted-foreground space-y-2">
+                <p>The application will switch to the default profile before deletion.</p>
+              </div>
+              <DialogFooter className="pt-4 gap-2">
+                <Button variant="ghost" disabled={deleting} onClick={() => { setDeleteDialogOpen(false); setDeleteTarget(null); }}>No</Button>
+                <Button
+                  variant="destructive"
+                  disabled={deleting || !deleteTarget}
+                  onClick={async () => {
+                    if (!deleteTarget) return;
+                    setDeleting(true);
+                    try {
+                      // Switch to default first (if not already)
+                      if (deleteTarget !== 'default') {
+                        dispatch(switchToProfile({ profileName: 'default' }) as any);
+                      }
+                      // Perform deletion
+                      await dispatch(deleteAuthProfile({ profileName: deleteTarget }) as any).unwrap();
+                      toast({ title: 'Profile deleted', description: `Profile ${deleteTarget} removed.` });
+                      setDeleteDialogOpen(false);
+                      setDeleteTarget(null);
+                    } catch (e:any) {
+                      toast({ title: 'Delete failed', description: e?.message || 'Error deleting profile', variant: 'destructive' });
+                    } finally {
+                      setDeleting(false);
+                    }
+                  }}
+                >
+                  {deleting ? 'Deleting...' : 'Yes, Delete'}
                 </Button>
               </DialogFooter>
             </DialogContent>
