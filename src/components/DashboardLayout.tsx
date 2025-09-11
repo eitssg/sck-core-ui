@@ -21,7 +21,8 @@ import {
 } from 'lucide-react'
 import { useSelector, useDispatch } from 'react-redux'
 import { RootState, useAppDispatch } from '@/store'
-import { selectSelectedClient, selectClients, selectSelectedClientName, setSelectedClient, fetchClients } from '@/store/slices/clientsSlice'
+import { selectSelectedClient, selectClients, selectSelectedClientName, setSelectedClient, fetchClients, switchToClient, selectClientContext } from '@/store/slices/clientsSlice'
+import { refreshAccessToken, selectTokens } from '@/store/slices/authSlice'
 import { selectUser as selectProfileUser, selectUserProfiles, selectCurrentProfile, switchToProfile } from '@/store/slices/profileSlice'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -98,11 +99,42 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
   const currentClientName = useSelector((s: RootState) => selectSelectedClientName(s)) as string
   // const { selectClient } = useReduxData()
   const dispatchTyped = useAppDispatch()
+  // Access tokens reside only in Redux (not sessionStorage). Use them for tenant (cnm) detection.
+  const tokens = useSelector((s: RootState) => selectTokens(s) as any)
 
   // Ensure client list is available after login (cached & TTL guarded by thunk)
   useEffect(() => {
     dispatchTyped(fetchClients({ limit: 100 }))
   }, [dispatchTyped])
+
+  // Tenant alignment logic: ensure access token scope (cnm) matches selected client.
+  // Avoid unnecessary /auth/v1/token calls when simply navigating between pages.
+  useEffect(() => {
+    // Decode current Redux access token (if any)
+    let tokenClient: string | null = null
+    try {
+      const access = tokens?.access_token
+      if (access && access.split('.').length === 3) {
+        const payload = JSON.parse(atob(access.split('.')[1]))
+        tokenClient = (payload as any)?.cnm || null
+      }
+    } catch { /* ignore decode errors */ }
+
+    // 1. If both selectedClient and token client exist and differ, perform a scoped switch (refresh with state)
+    if (selectedClient && tokenClient && selectedClient !== tokenClient) {
+      dispatchTyped(switchToClient(selectedClient) as any)
+      return
+    }
+
+    // 2. If user selected a client but we have no access token yet (fresh tab / reload), attempt a refresh specifying desired client.
+    // Guard: only if refresh_token exists (sessionStorage) to avoid spurious call.
+    const haveAccess = Boolean(tokens?.access_token)
+    const haveRefresh = (() => { try { return Boolean(sessionStorage.getItem('refresh_token')) } catch { return false } })()
+    if (selectedClient && !haveAccess && haveRefresh) {
+      dispatchTyped(refreshAccessToken(`client=${selectedClient}`) as any)
+    }
+    // Otherwise do nothing – navigation alone should not trigger refresh.
+  }, [dispatchTyped, selectedClient, tokens?.access_token])
 
   // Inject fallback Core client if list empty or failed
   const effectiveClients = useMemo<Client[]>(() => {
@@ -251,7 +283,7 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
               <div className="flex items-center">
                 <Select
                   value={selectedClient ?? ''}
-                  onValueChange={(value) => dispatchTyped(setSelectedClient(value || null))}
+                  onValueChange={(value) => dispatchTyped(selectClientContext(value || null))}
                 >
                   <SelectTrigger className="w-56">
                     <SelectValue placeholder="Select client..." >{currentClientName}</SelectValue>

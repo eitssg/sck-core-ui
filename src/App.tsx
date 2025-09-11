@@ -134,9 +134,9 @@ const AppRoutes = () => (
     {createProtectedRoute('/register-client', RegisterClient, 'form')}
 
     {/* Zone routes */}
-    {createProtectedRoute('/zones', Zones, 'list')}
-    {createProtectedRoute('/zones/create', CreateZone, 'form')}
-    {createProtectedRoute('/zones/:id', ZoneDetails, 'dashboard')}
+  {createProtectedRoute('/zones', Zones, 'list')}
+  {createProtectedRoute('/zones/create', CreateZone, 'form')}
+  {createProtectedRoute('/zones/:client/:zone', ZoneDetails, 'dashboard')}
 
     {/* Deployment routes */}
     {createProtectedRoute('/deployments', Deployments, 'list')}

@@ -68,16 +68,17 @@ const Clients = () => {
         {/* Header */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Clients</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Management Accounts</h1>
             <p className="text-muted-foreground">Manage your client organizations and their configurations.</p>
           </div>
-          <Link
-            to="/clients/create"
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground hover:underline"
-          >
-            <Plus className="h-4 w-4" />
-            <span>New</span>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm" className="gap-1">
+              <Link to="/clients/create">
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">New</span>
+              </Link>
+            </Button>
+          </div>
 
   </div>
 

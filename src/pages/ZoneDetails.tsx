@@ -59,14 +59,12 @@ const ZoneDetails = () => {
     [clientItems, zone]
   );
 
+  // Delete disabled - placeholder only
   const handleDelete = () => {
-    if (!zone) return;
-    removeZone({ client: zone.client, zone: zone.zone });
     toast({
-      title: "Zone deleted",
-      description: `Zone ${zone.zone} has been deleted successfully.`,
+      title: "Delete Not Supported",
+      description: "Zone deletion is not yet supported.",
     });
-    navigate("/zones");
   };
 
   if (!zone) {
@@ -113,33 +111,27 @@ const ZoneDetails = () => {
         </div>
         <div className="flex gap-2">
           <Button variant={isDark ? "secondary" : "outline"} asChild>
-            <Link to={`/zones/${zone.zone}/edit${zone.client ? `?client=${zone.client}` : ""}`}>
+            <Link to={`/zones/${encodeURIComponent(zone.client)}/${encodeURIComponent(zone.zone)}/edit`}>
               <Edit className="mr-2 h-4 w-4" />
               Edit Zone
             </Link>
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="destructive">
+              <Button variant="outline">
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Zone
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Delete Zone</AlertDialogTitle>
+                <AlertDialogTitle>Delete Not Supported</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Are you sure you want to delete the zone “{zone.zone}”? This action cannot be undone.
+                  Zone deletion is not yet supported. This dialog is a placeholder.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleDelete}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  Delete
-                </AlertDialogAction>
+                <AlertDialogAction>Close</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>

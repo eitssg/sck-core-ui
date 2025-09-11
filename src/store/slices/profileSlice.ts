@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
 import { logoutUser } from '@/store/slices/authSlice'
 import { API_CONFIG, buildApiUrl } from '@/lib/api-config'
 import { apiFetch } from '@/lib/api-fetch'
+import { parseApiEnvelope } from '@/store/api/envelope'
 import type { RootState } from '@/store'
 import type { UserProfile } from '@/store/types'
 
@@ -139,8 +140,8 @@ export const createUserProfile = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to create profile');
       }
       
-      const result = await response.json();
-      const profile = normalizeUserProfile(result);
+  const { data } = await parseApiEnvelope<any>(response);
+  const profile = normalizeUserProfile(data);
       
       return {
         profile,
@@ -187,8 +188,15 @@ export const fetchUserProfile = createAsyncThunk<
         throw new Error('Failed to fetch profile');
       }
       
-      const result = await response.json();
-      const profile = normalizeUserProfile(result);
+      // Use envelope only for /api context; /auth/me stays tolerant
+      let profileJson: any;
+      if (client && portfolio) {
+        const { data } = await parseApiEnvelope<any>(response);
+        profileJson = data;
+      } else {
+        profileJson = await response.json();
+      }
+      const profile = normalizeUserProfile(profileJson);
       
       return {
         profile,
@@ -266,8 +274,8 @@ export const fetchUserProfiles = createAsyncThunk<
         throw new Error('Failed to fetch profiles');
       }
       
-  const result = await response.json();
-  const rawList = result.data || result || [];
+  const { data } = await parseApiEnvelope<any>(response);
+  const rawList = Array.isArray(data) ? data : (data || []);
   const profiles: UserProfile[] = rawList.map((p: any) => normalizeUserProfile(p));
       
       return { profiles, context };
@@ -318,8 +326,8 @@ export const updateUserProfile = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to update profile');
       }
       
-      const result = await response.json();
-      const profile = normalizeUserProfile(result);
+  const { data } = await parseApiEnvelope<any>(response);
+  const profile = normalizeUserProfile(data);
       
       return {
         profile,
@@ -350,8 +358,8 @@ export const patchUserProfile = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to patch profile');
       }
       
-      const result = await response.json();
-      const profile = normalizeUserProfile(result);
+  const { data } = await parseApiEnvelope<any>(response);
+  const profile = normalizeUserProfile(data);
       
       return {
         profile,

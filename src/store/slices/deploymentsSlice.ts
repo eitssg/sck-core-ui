@@ -1,14 +1,8 @@
 import { createSlice, type PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
-import { buildApiUrl, getAuthHeaders } from '@/lib/api-config';
+import { buildApiUrl } from '@/lib/api-config';
 import { apiFetch } from '@/lib/api-fetch';
+import { parseApiEnvelope } from '@/store/api/envelope';
 import type { AppDeploymentBuild } from '@/store/types';
-
-type ApiResponse<T> = {
-  data: T | T[];
-  metadata?: { total?: number; cursor?: string | null };
-  message?: string;
-  status?: string;
-};
 
 function toArray<T>(v: T | T[] | null | undefined): T[] {
   if (!v) return [];
@@ -93,8 +87,9 @@ export const fetchBuilds = createAsyncThunk<
       }
       throw new Error(msg);
     }
-    const json = (await res.json()) as ApiResponse<AppDeploymentBuild>;
-    const builds = toArray(json.data);
+  // All /api endpoints return an envelope: { data, metadata: { cursor } }
+  const { data } = await parseApiEnvelope<AppDeploymentBuild[] | AppDeploymentBuild>(res);
+  const builds = Array.isArray(data) ? data : toArray(data);
     return { builds, when: Date.now() };
   },
   {

@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { API_CONFIG, buildApiUrl, getAuthHeaders } from '@/lib/api-config';
 import { apiFetch } from '@/lib/api-fetch';
+import { parseApiEnvelope } from '@/store/api/envelope';
 import type { RootState, AppDispatch } from '@/store';
 import type { ApiResponse } from '../shared';
 import { toArray } from '../shared';
@@ -168,8 +169,8 @@ export const createPortfolio = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to create portfolio');
       }
 
-      const result = await response.json();
-      return { portfolio: transformPortfolioForUI(result.data, client), client };
+  const { data } = await parseApiEnvelope<Portfolio>(response);
+  return { portfolio: transformPortfolioForUI(data as Portfolio, client), client };
     } catch (error) {
       return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -184,10 +185,10 @@ export const fetchPortfolios = createAsyncThunk<
   { state: RootState }
 >(
   'portfolios/fetchList',
-  async ({ client, limit = 50, cursor = null, append = false }) => { // Reduced default limit for pagination
+  async ({ client, limit = 50, cursor: reqCursor = null, append = false }) => { // Reduced default limit for pagination
     const url = new URL(buildApiUrl(`/api/v1/registry/${client}/portfolios`));
     url.searchParams.set('limit', String(limit));
-    if (cursor) url.searchParams.set('cursor', cursor);
+    if (reqCursor) url.searchParams.set('cursor', reqCursor);
 
   const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: `portfolios-${client}-401`, contextLabel: 'Portfolios' });
 
@@ -195,8 +196,10 @@ export const fetchPortfolios = createAsyncThunk<
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const json = await response.json() as ApiResponse<PortfolioSummary>;
-    return { data: json, client, append };
+  const { data, cursor: apiCursor } = await parseApiEnvelope<PortfolioSummary[] | any>(response);
+  // Construct ApiResponse-like shape expected by reducers
+  const shaped: ApiResponse<PortfolioSummary> = { data: Array.isArray(data) ? (data as any) : [], metadata: { cursor: apiCursor } } as any;
+  return { data: shaped, client, append };
   },
   {
     condition: ({ client, force, cursor }, { getState }) => {
@@ -241,8 +244,8 @@ export const fetchPortfolio = createAsyncThunk<
         throw new Error('Failed to fetch portfolio');
       }
 
-      const result = await response.json();
-      return { portfolio: transformPortfolioForUI(result.data, client), client };
+  const { data } = await parseApiEnvelope<Portfolio>(response);
+  return { portfolio: transformPortfolioForUI(data as Portfolio, client), client };
     } catch (error) {
       throw new Error(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -287,8 +290,8 @@ export const updatePortfolio = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to update portfolio');
       }
 
-      const result = await response.json();
-      return { portfolio: transformPortfolioForUI(result.data, client), client };
+  const { data } = await parseApiEnvelope<Portfolio>(response);
+  return { portfolio: transformPortfolioForUI(data as Portfolio, client), client };
     } catch (error) {
       return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }

@@ -389,24 +389,27 @@ export interface RegionFacts {
 }
 
 export interface ZoneList {
-  items: Zone[];
+  items: ZoneFact[];
   totalCount: number;
   currentPage: number;
   pageSize: number;
 }
 
-// Replace Zone with model-accurate interface
-export interface Zone {
+// Canonical Zone fact interface (backend-aligned)
+export interface ZoneFact {
   client: string;  // required client slug to group by client
   zone: string;    // Zone identifier.  keep it short, lowercase, and slug-like...but this is not a slug
 
-  account_facts: AccountFacts; // Defines which aws accounts to deploy to, and kms keys
-  region_facts: Record<string, RegionFacts>; // defines the regions, networks, and vpcs, etc.
-  tags?: Record<string, any>;  // Defines tags to add to all components in the deployment
+  account_facts: AccountFacts; // AWS account & kms configuration
+  region_facts: Record<string, RegionFacts>; // Regions, network & security per region
+  tags?: Record<string, any>;  // Global tags for zone resources
 
   created_at?: string;
   updated_at?: string;
 }
+
+// Backward compatibility alias (old name). Remove once all imports use ZoneFact directly.
+export type Zone = ZoneFact;
 
 /* Above is the registry of clients (AWS Organization), zones, applications deployment units and application definitions
 
@@ -535,4 +538,7 @@ export interface AppDeploymentComponent {
   created_at: string;
   updated_at: string;
 }
+
+// ============================================================================
+// (Removed duplicate strict variants; this single ZoneFact interface is canonical.)
 

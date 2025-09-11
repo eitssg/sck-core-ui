@@ -4,9 +4,35 @@ import { apiFetch } from '@/lib/api-fetch';
 import type { OAuthTokenRequest, OAuthTokenResponse } from '@/store/types';
 import type { RootState, AppDispatch } from '@/store';
 import type { ApiResponse } from '../shared';
+import { parseApiEnvelope } from '@/store/api/envelope';
 import { toArray } from '../shared';
 import type { Client } from '@/store/types'; // use shared type
 import { authAPI } from '@/lib/auth-api';
+import type { ThunkAction } from 'redux-thunk';
+import type { AnyAction } from 'redux';
+
+// Cross-slice clear action creators (lazy import types to avoid cycles)
+const CLEAR_DEPENDENT_SLICES = {
+  zones: 'zones/resetZonesPaging',
+  deployments: 'deployments/clear',
+  applications: 'applications/setApplications', // will set empty array
+  portfolios: 'portfolios/clearAll' // to be added if not existing
+};
+
+// Thunk to encapsulate client context switch from UI (without token refresh).
+// This performs cross-slice invalidation so no stale tenant data persists after a client switch.
+// NOTE: Any slice that caches tenant-specific data should add a lightweight clear/reset action
+// and be invoked here to guarantee isolation between clients.
+export const selectClientContext = (clientSlug: string | null): ThunkAction<void, RootState, unknown, AnyAction> => (dispatch) => {
+  // 1. Set selected client
+  dispatch(setSelectedClient(clientSlug));
+  // 2. Clear/Reset dependent slices (fire-and-forget; ignore unknown types)
+  try { dispatch({ type: CLEAR_DEPENDENT_SLICES.zones }); } catch { /* ignore */ }
+  try { dispatch({ type: CLEAR_DEPENDENT_SLICES.deployments }); } catch { /* ignore */ }
+  try { dispatch({ type: CLEAR_DEPENDENT_SLICES.applications, payload: [] }); } catch { /* ignore */ }
+  // portfolios may not yet have a clearAll reducer; safe-guard
+  try { dispatch({ type: CLEAR_DEPENDENT_SLICES.portfolios }); } catch { /* ignore */ }
+};
 
 // Summary interface for list operations (matches ClientSummary from your API)
 export interface ClientSummary {
@@ -35,6 +61,15 @@ interface ClientsState {
   switchError: string | null; // Error during client switching
 }
 
+// Hydrate selected client from localStorage.
+// The "selectedClient" must reflect the tenant encoded in the current access token's JWT (cnm).
+// We keep it in localStorage so authentication bootstrap (prior to full Redux init) can reference it.
+let persistedSelected: string | null = null;
+try {
+  const raw = localStorage.getItem('sck.selectedClient');
+  if (raw && typeof raw === 'string' && raw.trim() !== '') persistedSelected = raw;
+} catch (_) { /* ignore */ }
+
 const initialState: ClientsState = {
   items: [],
   byId: {},
@@ -43,7 +78,7 @@ const initialState: ClientsState = {
   error: null,
   cursor: null,
   lastFetched: null,
-  selectedClient: null,
+  selectedClient: persistedSelected,
   defaultClient: null,
   individualClientCache: {},
   fullClientDataCache: {},
@@ -70,8 +105,8 @@ export const createClient = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to create client');
       }
 
-      const result = await response.json();
-      return normalizeClient(result.data as Client);
+  const { data } = await parseApiEnvelope<Client>(response);
+  return normalizeClient(data as Client);
     } catch (error) {
       return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -86,12 +121,12 @@ export const fetchClients = createAsyncThunk<
 >(
   'clients/fetchList',
   async (args) => {
-    const limit = args?.limit ?? 100;
-    const cursor = args?.cursor ?? null;
+  const limit = args?.limit ?? 100;
+  const reqCursor = args?.cursor ?? null;
 
     const url = new URL(buildApiUrl('/api/v1/registry/clients'));
     url.searchParams.set('limit', String(limit));
-    if (cursor) url.searchParams.set('cursor', cursor);
+  if (reqCursor) url.searchParams.set('cursor', reqCursor);
 
     // Prefer cookie-based auth (no Authorization header) to avoid CORS preflight;
     // then gracefully fall back to Bearer if the server rejects (401).
@@ -100,9 +135,11 @@ export const fetchClients = createAsyncThunk<
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-
-  const json = await response.json() as ApiResponse<Client>;
-    return json;
+  const { data, cursor: apiCursor } = await parseApiEnvelope<Client[] | Client>(response);
+  // Server returns array in data for list
+  const normalized: ApiResponse<Client> = { data: (Array.isArray(data) ? data : (data ? [data] : [])) as any, metadata: { cursor: apiCursor } } as any;
+  // Keep backward shape for reducers that expect ApiResponse<Client>
+  return normalized;
   },
   {
     condition: (args, { getState }) => {
@@ -142,8 +179,8 @@ export const fetchClient = createAsyncThunk<
       throw new Error('Failed to fetch client');
     }
 
-    const result = await response.json();
-    return normalizeClient(result.data as Client);
+  const { data } = await parseApiEnvelope<Client>(response);
+  return normalizeClient(data as Client);
   },
   {
     condition: ({ clientSlug, force }, { getState }) => {
@@ -376,7 +413,12 @@ const clientsSlice = createSlice({
       });
     },
     setSelectedClient(state, action: PayloadAction<string | null>) {
-      state.selectedClient = action.payload ?? null;
+      const value = action.payload ?? null;
+      state.selectedClient = value;
+      try {
+        if (value) localStorage.setItem('sck.selectedClient', value);
+        else localStorage.removeItem('sck.selectedClient');
+      } catch (_) { /* ignore */ }
     },
     setDefaultClient(state, action: PayloadAction<string | null>) {
       state.defaultClient = action.payload ?? null;
