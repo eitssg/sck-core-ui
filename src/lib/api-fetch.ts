@@ -82,6 +82,18 @@ export async function apiFetch(input: string, options: ApiFetchOptions = {}): Pr
 
 function handle401(res: Response, options: ApiFetchOptions) {
   if (res.status !== 401) return;
+  try {
+    const path = extractPathFromUrl(String(res.url || ''));
+    if (path.startsWith('/auth/v1/me')) {
+      // Force immediate navigation to login; do not rely on passive refresh here.
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams({ reason: 'me_unauthorized' });
+        // Preserve current path for potential return
+        try { params.set('returnTo', window.location.pathname + window.location.search); } catch { /* ignore */ }
+        window.location.replace(`/login?${params.toString()}`);
+      }
+    }
+  } catch { /* ignore redirect errors */ }
   // Caller hook first
   try {
     options.onUnauthorized?.();

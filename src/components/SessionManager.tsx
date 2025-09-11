@@ -12,7 +12,7 @@ type AuthTokens = OAuthTokenResponse & { expires_at?: number };
  * - Listens for global 'sck:api401' events and performs a one-time refresh_token exchange.
  *   Does NOT retry the failed request; only refreshes tokens for subsequent calls.
  *   Controlled by VITE_ENABLE_AUTO_REFRESH_ON_401 (default: false).
- * - Optionally pings /auth/v1/refresh to rotate cookies while the app is active.
+ * - Optionally POSTs /auth/v1/refresh (sliding window) to rotate session cookie while the app is active.
  *   Controlled by VITE_ENABLE_COOKIE_REFRESH_PING (default: false) and interval VITE_REFRESH_PING_INTERVAL_MS.
  */
 // Minimal JWT decode to read exp claim
@@ -48,7 +48,26 @@ export const SessionManager = () => {
   const enableAutoRefreshOn401 = String((import.meta as any)?.env?.VITE_ENABLE_AUTO_REFRESH_ON_401 || 'false') === 'true';
   // Session cookie window and access token leeway
   const sessionWindowMinutes = Number((import.meta as any)?.env?.VITE_SESSION_WINDOW_MINUTES ?? 30);
-  const sessionRefreshAtMinutes = Number((import.meta as any)?.env?.VITE_SESSION_REFRESH_AT_MINUTES ?? Math.max(0, (sessionWindowMinutes - 5)));
+  const sessionRefreshAtMinutesEnv = Number((import.meta as any)?.env?.VITE_SESSION_REFRESH_AT_MINUTES ?? Math.max(0, (sessionWindowMinutes - 5)));
+  // Dynamic refresh-at minutes: if backend supplies X-Session-Refresh-After (epoch ms), convert into minutes remaining
+  const computeRefreshAtMinutes = () => {
+    try {
+      const refreshAfterStr = sessionStorage.getItem('sck_session_refresh_after');
+      const sessionExpStr = sessionStorage.getItem('sck_session_expires_at');
+      if (refreshAfterStr && sessionExpStr) {
+        const now = Date.now();
+        const refreshAfter = Number(refreshAfterStr);
+        const sessionExp = Number(sessionExpStr);
+        if (refreshAfter > 0 && sessionExp > refreshAfter) {
+          // Return a pseudo refresh-at minutes = (refreshAfter - (sessionExp - window)) / 60k not precise; just schedule based on epoch directly later.
+          // We'll actually use epoch scheduling; this value is only for diagnostics.
+          return Math.max(1, Math.round((refreshAfter - now) / 60000));
+        }
+      }
+    } catch { /* ignore */ }
+    return sessionRefreshAtMinutesEnv;
+  };
+  const sessionRefreshAtMinutes = computeRefreshAtMinutes();
   const refreshLeewayMs = Number((import.meta as any)?.env?.VITE_ACCESS_REFRESH_LEEWAY_MS ?? 5 * 60 * 1000); // refresh 5m before exp by default
   const minScheduleMs = 5_000; // avoid ultra-short loops
 
@@ -61,39 +80,89 @@ export const SessionManager = () => {
   const token = getAccessToken();
   const rtoken = getRefreshToken();
     currentTokenRef.current = token;
-
-  if (!token || !rtoken) return; // nothing to schedule
+  if (!token || !rtoken) {
+    try { console.log('[sck:auth:schedule:skip]', { reason: 'missing_token_or_refresh', has_access: !!token, has_refresh: !!rtoken }); } catch { /* ignore */ }
+    return; // nothing to schedule
+  }
   const claims = decodeJwtClaims(token) || {};
-  if (!claims.exp && !tokens?.expires_at) return; // cannot schedule without exp
+  if (!claims.exp && !tokens?.expires_at) {
+    try { console.log('[sck:auth:schedule:skip]', { reason: 'no_exp_claim', has_claim_exp: !!claims.exp, has_tokens_expires_at: !!tokens?.expires_at }); } catch { /* ignore */ }
+    return; // cannot schedule without exp
+  }
 
   const nowMs = Date.now();
   const expMsFromJwt = claims.exp ? claims.exp * 1000 : 0;
-  const expMs = typeof tokens?.expires_at === 'number' && tokens!.expires_at! > 0 ? tokens!.expires_at! : expMsFromJwt;
+  // Prefer authoritative header-based access exp if present
+  const expMs = (typeof tokens?.expires_at === 'number' && tokens!.expires_at! > 0 ? tokens!.expires_at! : expMsFromJwt);
+    try {
+      // Diagnostic: compare access token exp vs session age window
+      const issuedAtStr = sessionStorage.getItem('session_issued_at');
+      const sessionIssuedNum = issuedAtStr ? Number(issuedAtStr) : 0;
+      const sessionExpHeader = Number(sessionStorage.getItem('sck_session_expires_at') || '0');
+      const refreshAfterHeader = Number(sessionStorage.getItem('sck_session_refresh_after') || '0');
+      if (sessionIssuedNum && expMs) {
+        const now = Date.now();
+        const accessRemaining = expMs - now;
+        const sessionElapsed = now - sessionIssuedNum;
+        console.log('[sck:auth:diag]', {
+          access_remaining_s: Math.round(accessRemaining/1000),
+          session_elapsed_s: Math.round(sessionElapsed/1000),
+          session_window_min: sessionWindowMinutes,
+          access_leeway_s: Math.round(refreshLeewayMs/1000),
+          source: {
+            access_exp_from: (typeof tokens?.expires_at === 'number' && tokens.expires_at > 0) ? 'oauth_expires_at_field_or_claim' : (claims.exp ? 'jwt_claim' : 'unknown'),
+            session_exp_source: sessionExpHeader ? 'header' : 'heuristic',
+            session_refresh_after_source: refreshAfterHeader ? 'header' : 'heuristic'
+          }
+        });
+      }
+    } catch { /* ignore diag errors */ }
 
     // Compute access-refresh due
   const accessDueMs = Math.max(0, expMs - refreshLeewayMs - nowMs);
 
     // Compute session-refresh due based on issued at + configured window
-  let issuedAt = Number(sessionStorage.getItem('session_issued_at') || '0');
-  if (!issuedAt) {
-    // Backfill: treat current moment as start of session window if refresh_token present
-    try {
-      if (rtoken) {
-        issuedAt = Date.now();
-        sessionStorage.setItem('session_issued_at', String(issuedAt));
-      }
-    } catch { /* ignore */ }
-  }
-    const sessionWindowMs = sessionWindowMinutes * 60 * 1000;
-    const sessionRefreshAtMs = sessionRefreshAtMinutes * 60 * 1000;
+  // New session scheduling: derive from backend-provided epochs if available
   let sessionDueMs = Number.POSITIVE_INFINITY;
+  const sessionExpHdr = (() => { try { return Number(sessionStorage.getItem('sck_session_expires_at') || ''); } catch { return 0; } })();
+  const sessionRefreshAfterHdr = (() => { try { return Number(sessionStorage.getItem('sck_session_refresh_after') || ''); } catch { return 0; } })();
+  if (sessionExpHdr > 0 && sessionRefreshAfterHdr > 0) {
+    // If we're already past refreshAfter but before exp, schedule immediate (minScheduleMs)
+    if (nowMs >= sessionRefreshAfterHdr && nowMs < sessionExpHdr) {
+      sessionDueMs = 0;
+    } else if (nowMs < sessionRefreshAfterHdr) {
+      sessionDueMs = Math.max(0, sessionRefreshAfterHdr - nowMs);
+    } else {
+      // past expiry or invalid window
+      sessionDueMs = 0;
+    }
+  } else {
+    // Fallback legacy heuristic using issued_at if headers absent
+    let issuedAt = Number(sessionStorage.getItem('session_issued_at') || '0');
+    if (!issuedAt) {
+      try { if (rtoken) { issuedAt = Date.now(); sessionStorage.setItem('session_issued_at', String(issuedAt)); } } catch { /* ignore */ }
+    }
     if (issuedAt > 0) {
+      const sessionRefreshAtMs = sessionRefreshAtMinutes * 60 * 1000;
       const sessionTarget = issuedAt + sessionRefreshAtMs;
       sessionDueMs = Math.max(0, sessionTarget - nowMs);
     }
+  }
 
-    // Desired delay is min(accessDueMs, sessionDueMs) respecting minimum
-    const rawDelay = Math.min(accessDueMs, sessionDueMs);
+    // Desired delay is min(accessDueMs, sessionDueMs)
+    let rawDelay = Math.min(accessDueMs, sessionDueMs);
+    // Guard: if this is an initial schedule (no existing timer) and rawDelay === 0 but token just issued recently,
+    // push delay to at least (exp - leeway) boundary instead of firing instantly.
+    if (!refreshTimerRef.current && rawDelay === 0) {
+      const issuedStr = sessionStorage.getItem('access_issued_at');
+      const issuedNum = issuedStr ? Number(issuedStr) : Date.now();
+      const ageMs = Date.now() - issuedNum;
+      // If age < 5s, treat as freshly issued and defer to minScheduleMs
+      if (ageMs < 5000) {
+        try { console.log('[sck:auth:adjust]', { reason: 'fresh_token_defer', age_ms: ageMs }); } catch { /* ignore */ }
+        rawDelay = minScheduleMs; // small deferral; subsequent scheduling will normalize
+      }
+    }
     const delay = Math.max(minScheduleMs, rawDelay);
 
     const targetAt = Date.now() + delay;
@@ -116,10 +185,23 @@ export const SessionManager = () => {
       }
     }
 
-    // Clear existing timer before scheduling new one
+    // Clear existing timer before scheduling new one (log diagnostic)
     if (refreshTimerRef.current) {
+      try {
+        const existingFiresIn = plannedFireAtRef.current ? Math.max(0, plannedFireAtRef.current - Date.now()) : null;
+        console.log('[sck:auth:timer_reset]', {
+          reason: 'reschedule',
+          clearing_existing: true,
+          existing_fire_in_s: existingFiresIn !== null ? Math.round(existingFiresIn / 1000) : null,
+          existing_fire_at: plannedFireAtRef.current ? new Date(plannedFireAtRef.current).toISOString() : null,
+        });
+      } catch { /* ignore */ }
       window.clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = undefined;
+    } else {
+      try {
+        console.log('[sck:auth:timer_reset]', { reason: 'new_timer', clearing_existing: false });
+      } catch { /* ignore */ }
     }
     plannedFireAtRef.current = targetAt;
     try {
@@ -134,13 +216,13 @@ export const SessionManager = () => {
       const accessTokenExpMs = nowMs + accessDueMs + refreshLeewayMs;
       const sessionIssuedNum = Number(sessionStorage.getItem('session_issued_at') || '0');
       const sessionIssuedIso = sessionIssuedNum ? new Date(sessionIssuedNum).toISOString() : null;
-      const sessionExpiresAtNum = sessionIssuedNum ? (sessionIssuedNum + (sessionWindowMinutes * 60 * 1000)) : 0;
-      const sessionExpiresAtIso = sessionExpiresAtNum ? new Date(sessionExpiresAtNum).toISOString() : null;
+  const sessionExpiresAtHeaderNum = sessionExpHdr || 0;
+  const sessionExpiresAtIso = sessionExpiresAtHeaderNum ? new Date(sessionExpiresAtHeaderNum).toISOString() : (sessionIssuedNum ? new Date(sessionIssuedNum + (sessionWindowMinutes * 60 * 1000)).toISOString() : null);
       const accessIssuedIso = sessionStorage.getItem('access_issued_at');
       const refreshIssuedIso = sessionStorage.getItem('refresh_issued_at');
 
       // Structured diagnostic object
-      console.log('[sck:auth:schedule]', {
+  console.log('[sck:auth:schedule]', {
   scheduled_in_s: Math.round(delay / 1000), // backward compat
   scheduled_at: new Date(targetAt).toISOString(), // backward compat
   timer_next_fire_at: new Date(targetAt).toISOString(),
@@ -158,7 +240,7 @@ export const SessionManager = () => {
           },
           session: sessionIssuedIso ? {
             issued_at: sessionIssuedIso,
-            expires_in_s: sessionIssuedNum ? Math.round((sessionExpiresAtNum - nowMs) / 1000) : null,
+            expires_in_s: sessionExpiresAtIso ? Math.round(((sessionExpHdr || (sessionIssuedNum + (sessionWindowMinutes * 60 * 1000))) - nowMs) / 1000) : null,
             expires_at: sessionExpiresAtIso,
             next_refresh_in_s: isFinite(sessionDueMs) ? Math.round(sessionDueMs / 1000) : null,
             next_refresh_at: isFinite(sessionDueMs) ? new Date(nowMs + sessionDueMs).toISOString() : null,
@@ -184,6 +266,12 @@ export const SessionManager = () => {
     } catch { /* ignore */ }
 
   refreshTimerRef.current = window.setTimeout(async () => {
+      try {
+        console.log('[sck:auth:timer_fire]', {
+          planned_fire_at: plannedFireAtRef.current ? new Date(plannedFireAtRef.current).toISOString() : null,
+          firing_at: new Date().toISOString(),
+        });
+      } catch { /* ignore */ }
       // Single-flight and recheck token presence
   if (refreshingRef.current) return;
   const stillToken = getAccessToken();
@@ -206,24 +294,42 @@ export const SessionManager = () => {
   plannedFireAtRef.current = null; // consuming
       try {
         // If session refresh is due sooner or equal, do it first (cookie-only)
-        const doSessionFirst = sessionDueMs <= accessDueMs;
+  const doSessionFirst = sessionDueMs <= accessDueMs;
   if (doSessionFirst && Number(sessionStorage.getItem('session_issued_at') || '0') > 0) {
           // Respect idleness: if user has been idle beyond refresh threshold, let cookie expire
           const idleMs = Date.now() - lastActivityRef.current;
           const maxIdleBeforeRefreshMs = (sessionRefreshAtMinutes - 1) * 60 * 1000; // user must have interacted recently (~within refresh window)
           if (idleMs <= Math.max(0, maxIdleBeforeRefreshMs)) {
-            console.log('[session] refreshing session cookie');
+            // Derive session issuance / expiry details for logging (lazy compute)
+            let _sessionIssuedNum = 0; let _sessionIssuedIso: string | null = null; let _sessionExpiresAtIso: string | null = null;
+            try {
+              _sessionIssuedNum = Number(sessionStorage.getItem('session_issued_at') || '0');
+              if (_sessionIssuedNum) {
+                _sessionIssuedIso = new Date(_sessionIssuedNum).toISOString();
+                const _sessionExpiresAtNum = _sessionIssuedNum + (sessionWindowMinutes * 60 * 1000);
+                _sessionExpiresAtIso = new Date(_sessionExpiresAtNum).toISOString();
+              }
+            } catch { /* ignore */ }
+            console.log('[session] refreshing session cookie', {
+              issued_at: _sessionIssuedIso,
+              expires_at: _sessionExpiresAtIso,
+              refresh_at_minutes: sessionRefreshAtMinutes,
+              window_minutes: sessionWindowMinutes,
+            });
             const ok = await authAPI.refreshSession();
       if (ok) {
+              try { sessionStorage.setItem('session_issued_at', Date.now().toString()); } catch { /* ignore */ }
               // give the backend a brief moment to persist/rotate cookies before hitting /token
               try { console.log('[session] session cookie refreshed, waiting briefly before token refresh'); } catch (e) { /* no-op */ }
               try {
                 sessionStorage.removeItem('sck_schedule_next_fire_at');
                 sessionStorage.removeItem('sck_schedule_created_at');
                 sessionStorage.removeItem('sck_schedule_delay_ms');
-        sessionStorage.setItem('session_issued_at', Date.now().toString());
               } catch { /* ignore */ }
               await new Promise((r) => setTimeout(r, 150));
+            } else {
+              // If backend lacks endpoint (404) or refresh failed transiently, just proceed to access token logic.
+              try { console.log('[session] session cookie refresh skipped or unsupported'); } catch { /* ignore */ }
             }
           } else {
             console.log(
@@ -254,6 +360,12 @@ export const SessionManager = () => {
           const payload = action.payload as any;
           currentTokenRef.current = payload?.access_token || getAccessToken();
           fireLog.status = 'succeeded';
+          try {
+            const newToken = (action as any)?.payload?.access_token;
+            const newClaims = newToken ? decodeJwtClaims(newToken) : null;
+            fireLog.new_access_exp_at = newClaims?.exp ? new Date(newClaims.exp * 1000).toISOString() : null;
+            fireLog.new_access_issued_at = sessionStorage.getItem('access_issued_at') || null;
+          } catch { /* ignore */ }
           console.log('[sck:auth:fire]', fireLog);
           try {
             sessionStorage.removeItem('sck_schedule_next_fire_at');
@@ -277,8 +389,8 @@ export const SessionManager = () => {
         const idleMs = now - lastActivityRef.current;
         const maxIdleBeforeRefreshMs = (sessionRefreshAtMinutes - 1) * 60 * 1000; // same threshold as above
   const issuedAt = Number(sessionStorage.getItem('session_issued_at') || '0');
-        const sessionWindowMs = sessionWindowMinutes * 60 * 1000;
-        const cookieExpired = issuedAt > 0 ? (now - issuedAt) >= sessionWindowMs : false;
+        const sessionExpHdrNow = (() => { try { return Number(sessionStorage.getItem('sck_session_expires_at') || ''); } catch { return 0; } })();
+        const cookieExpired = sessionExpHdrNow > 0 ? now >= sessionExpHdrNow : (issuedAt > 0 ? (now - issuedAt) >= (sessionWindowMinutes * 60 * 1000) : false);
         // Check access token expiry (prefer stored, fallback to JWT exp)
         let accessExpired = false;
         try {
@@ -293,21 +405,23 @@ export const SessionManager = () => {
           }
         } catch { /* no-op */ }
 
-        if ((cookieExpired || accessExpired) && idleMs > Math.max(0, maxIdleBeforeRefreshMs)) {
-          try {
-            console.log('[session] session cookie expired and user idle; logging out');
-          } catch { /* no-op */ }
-          try { await dispatch(logoutUser()).unwrap(); } catch { /* ignore */ }
-          const path = location.pathname;
-          const isAuthFlow = path.startsWith('/authorized') || path.startsWith('/login') || path.startsWith('/signup');
-          if (!isAuthFlow) navigate('/login?reason=session_expired', { replace: true });
-        } else {
-          // Active user or cookie not past window: do not auto-logout; reschedule and continue
-          try {
-            console.log('[session] refresh invalid but user active or window not expired; not logging out');
-          } catch { /* no-op */ }
-          scheduleProactiveRefresh();
-        }
+        // NEW BEHAVIOR: Always logout on refresh failure if tokens are missing or refresh endpoint invalidated
+        const stillToken = getAccessToken();
+        const stillRefresh = getRefreshToken();
+        const reason = !stillRefresh ? 'missing_refresh_token' : (!stillToken ? 'missing_access_token' : 'refresh_failure');
+        try {
+          console.log('[session] forcing logout after refresh failure', {
+            reason,
+            cookieExpired,
+            accessExpired,
+            idle_s: Math.round(idleMs/1000),
+            idle_threshold_s: Math.round(Math.max(0, maxIdleBeforeRefreshMs)/1000),
+          });
+        } catch { /* ignore */ }
+        try { await dispatch(logoutUser()).unwrap(); } catch { /* ignore */ }
+        const path = location.pathname;
+        const isAuthFlow = path.startsWith('/authorized') || path.startsWith('/login') || path.startsWith('/signup');
+        if (!isAuthFlow) navigate('/login?reason=session_refresh_failed', { replace: true });
       } finally {
         refreshingRef.current = false;
       }
@@ -394,10 +508,20 @@ export const SessionManager = () => {
         }
       }
     } catch { /* ignore */ }
-    if (!restored) scheduleProactiveRefresh();
+    if (!restored) {
+      try { console.log('[sck:auth:init]', { action: 'initial_schedule_attempt' }); } catch { /* ignore */ }
+      scheduleProactiveRefresh();
+    }
     // Do NOT depend on pathname to avoid rescheduling on navigation
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Schedule when tokens first become available or change access token reference
+  useEffect(() => {
+    if (!tokens?.access_token) return;
+    try { console.log('[sck:auth:tokens]', { event: 'tokens_updated', have_access: !!tokens?.access_token, expires_at: tokens?.expires_at || null }); } catch { /* ignore */ }
+    scheduleProactiveRefresh();
+  }, [tokens?.access_token, tokens?.expires_at, scheduleProactiveRefresh]);
 
   useEffect(() => {
     // React to token updates from other tabs and optional custom events

@@ -1,3 +1,4 @@
+// Canonical AWS regions list (unified)
 export type AwsRegion = {
   code: string;
   name: string;
@@ -60,3 +61,9 @@ export const AWS_REGIONS: AwsRegion[] = [
 ];
 
 export const AWS_REGION_NAME_BY_CODE = new Map(AWS_REGIONS.map(r => [r.code, r.name] as const));
+
+export function searchAwsRegions(query: string): AwsRegion[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return AWS_REGIONS;
+  return AWS_REGIONS.filter(r => r.code.includes(q) || r.name.toLowerCase().includes(q));
+}

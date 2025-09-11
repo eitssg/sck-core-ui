@@ -1,31 +1,35 @@
 import { useState, useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
-import { Plus, Search, MoreHorizontal, Edit, Trash2, Eye, Building2, Globe, Mail, Users } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Plus, Search, ChevronRight, Building2, Globe, Users, Circle } from "lucide-react";
 
 import DashboardLayout from "@/components/DashboardLayout";
 import { useReduxData } from "@/hooks/useReduxData";
 import { useTheme } from "@/hooks/useTheme";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+// Removed row dropdown actions
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 import type { Client } from "@/store/types";
 
 const Clients = () => {
   const { clients, actions } = useReduxData();
+  const navigate = useNavigate();
   const { isDark } = useTheme();
   const [searchTerm, setSearchTerm] = useState("");
 
-  // Load clients on mount (cached by slice)
+  // Load clients on mount if stale (>5m) or empty
+  const lastFetched = (clients as any).lastFetched as number | null;
   useEffect(() => {
-    if (actions?.clients?.fetch) {
+    if (!actions?.clients?.fetch) return;
+    const hasAny = Array.isArray(clients.items) && clients.items.length > 0;
+    const stale = !lastFetched || (Date.now() - lastFetched) > (5 * 60 * 1000);
+    if (!hasAny || stale) {
       actions.clients.fetch({ limit: 100 });
     }
-  }, [actions?.clients]);
+  }, [actions?.clients, clients.items, lastFetched]);
 
   const filteredClients = useMemo<Client[]>(() => {
     const list = Array.isArray(clients.items) ? (clients.items as Client[]) : ([] as Client[]);
@@ -40,24 +44,22 @@ const Clients = () => {
     );
   }, [clients.items, searchTerm]);
 
-  const handleDelete = (clientSlug: string) => {
-    if (!clientSlug) return;
-    if (window.confirm("Are you sure you want to delete this client?")) {
-      if (actions?.clients?.remove) {
-        actions.clients.remove(clientSlug);
-      }
-    }
-  };
+  // Deletion now only available from details (submenu removed)
 
-  const getStatusBadge = (status?: string) => {
-    const s = (status ?? "active").toLowerCase();
-    const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" }> = {
-      active: { label: "Active", variant: "default" },
-      inactive: { label: "Inactive", variant: "secondary" },
-      suspended: { label: "Suspended", variant: "destructive" },
+  const renderStatus = (status?: string) => {
+    const s = (status ?? 'active').toLowerCase();
+    const map: Record<string, { color: string; label: string }> = {
+      active: { color: 'text-emerald-500', label: 'active' },
+      inactive: { color: 'text-muted-foreground', label: 'inactive' },
+      suspended: { color: 'text-amber-500', label: 'suspended' },
     };
-    const m = statusMap[s] ?? statusMap.active;
-    return <Badge variant={m.variant}>{m.label}</Badge>;
+    const meta = map[s] ?? map.active;
+    return (
+      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        <Circle className={`h-2 w-2 ${meta.color}`} />
+        <span className="uppercase tracking-wide">{meta.label}</span>
+      </span>
+    );
   };
 
   return (
@@ -69,31 +71,15 @@ const Clients = () => {
             <h1 className="text-3xl font-bold tracking-tight">Clients</h1>
             <p className="text-muted-foreground">Manage your client organizations and their configurations.</p>
           </div>
-          <Button asChild>
-            <Link to="/clients/create">
-              <Plus className="mr-2 h-4 w-4" />
-              Add Client
-            </Link>
-          </Button>
-        </div>
+          <Link
+            to="/clients/create"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground hover:underline"
+          >
+            <Plus className="h-4 w-4" />
+            <span>New</span>
+          </Link>
 
-        {/* Search */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search clients by name, description, domain..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9"
-                  aria-label="Search clients"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+  </div>
 
   {/* Content */}
         {clients.loading ? (
@@ -155,8 +141,30 @@ const Clients = () => {
                     .slice(0, 2)
                     .join('')
                     .toUpperCase();
+
+                  const goDetails = () => navigate(`/clients/${client.client}`);
+                  const handleRowClick = (e: React.MouseEvent) => {
+                    const target = e.target as HTMLElement;
+                    if (target.closest('a,button,[role="menuitem"],[data-no-rownav]')) return; // ignore interactive elements
+                    goDetails();
+                  };
+                  const handleKeyDown = (e: React.KeyboardEvent) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      goDetails();
+                    }
+                  };
+
                   return (
-                    <li key={client.client} className="py-3">
+                    <li
+                      key={client.client}
+                      className="py-3 px-2 -mx-2 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 hover:bg-muted/40 cursor-pointer"
+                      onClick={handleRowClick}
+                      onKeyDown={handleKeyDown}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Open details for client ${title}`}
+                    >
                       <div className="flex items-center gap-4">
                         <Avatar className="h-9 w-9">
                           <AvatarFallback className="bg-muted text-foreground font-semibold">
@@ -167,10 +175,12 @@ const Clients = () => {
                           <div className="flex items-center justify-between gap-2">
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
-                                <Link to={`/clients/${client.client}`} className="font-medium hover:underline truncate">
-                                  {title}
-                                </Link>
-                                {getStatusBadge(client.client_status)}
+                                <div className="flex flex-col">
+                                  <Link to={`/clients/${client.client}`} className="font-medium hover:underline truncate" data-no-rownav>
+                                    {title}
+                                  </Link>
+                                  {renderStatus(client.client_status)}
+                                </div>
                               </div>
                               <div className="text-sm text-muted-foreground truncate">
                                 {subtitle}
@@ -185,6 +195,12 @@ const Clients = () => {
                                     <span className="truncate max-w-[240px]">{org}</span>
                                   </div>
                                 )}
+                                {client.organization_account && (
+                                  <div className="flex items-center gap-1">
+                                    <span className="font-medium text-foreground">AWS Billing Account:</span>
+                                    <span className="truncate max-w-[160px] text-muted-foreground">{client.organization_account}</span>
+                                  </div>
+                                )}
                                 {client.domain && (
                                   <div className="flex items-center gap-1">
                                     <Globe className="h-3 w-3" />
@@ -194,31 +210,13 @@ const Clients = () => {
                                 {created && <span>Created {created}</span>}
                               </div>
                             </div>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" aria-label="Client actions">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem asChild>
-                                  <Link to={`/clients/${client.client}`}>
-                                    <Eye className="mr-2 h-4 w-4" />
-                                    View Details
-                                  </Link>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem asChild>
-                                  <Link to={`/clients/${client.client}/edit`}>
-                                    <Edit className="mr-2 h-4 w-4" />
-                                    Edit
-                                  </Link>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(client.client)}>
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                            <div className="flex items-center gap-1" data-no-rownav>
+                              <Button variant="ghost" size="icon" asChild aria-label="Open details" data-no-rownav>
+                                <Link to={`/clients/${client.client}`} data-no-rownav>
+                                  <ChevronRight className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       </div>

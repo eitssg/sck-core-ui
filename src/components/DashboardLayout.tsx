@@ -104,13 +104,30 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
     dispatchTyped(fetchClients({ limit: 100 }))
   }, [dispatchTyped])
 
+  // Inject fallback Core client if list empty or failed
+  const effectiveClients = useMemo<Client[]>(() => {
+    if (clients && clients.length > 0) return clients
+    return [
+      {
+        client: 'core',
+        client_name: 'Core',
+        client_status: 'active',
+        client_description: 'Core default context',
+        organization_name: 'Core',
+        created_at: undefined as any,
+      } as Client,
+    ]
+  }, [clients])
 
-  // Auto-select first client if none selected and we have data
+  // Auto-select first (or fallback Core) if none selected
   useEffect(() => {
-    if (!selectedClient && clients.length > 0) {
-      dispatchTyped(setSelectedClient(clients[0].client))
+    if (!selectedClient && effectiveClients.length > 0) {
+      dispatchTyped(setSelectedClient(effectiveClients[0].client))
     }
-  }, [selectedClient, clients, dispatchTyped])
+  }, [selectedClient, effectiveClients, dispatchTyped])
+
+
+  // (Replaced by fallback aware auto-select above)
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: Home },
@@ -230,30 +247,23 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
             </div>
 
             <div className="flex items-center gap-4">
-              {/* Client Selection: only show when multiple clients exist */}
-              {clients.length > 1 && (
-                <div className="flex items-center gap-2">
-                  <Select
-                    value={selectedClient ?? ''}
-                    onValueChange={(value) => dispatchTyped(setSelectedClient(value || null))}
-                  >
-                    <SelectTrigger className="w-56">
-                      <SelectValue placeholder="Select client..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {clients.map((client) => (
-                        <SelectItem key={client.client} value={client.client}>
-                          {client.client_name || client.client}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {/* Current client display */}
-              <div className="hidden sm:flex items-center px-2 py-1 rounded-md bg-muted/60 text-muted-foreground max-w-[200px]">
-                <span className="truncate" title={currentClientName}>{currentClientName}</span>
+              {/* Unified Client Selector (always visible; fallback Core) */}
+              <div className="flex items-center">
+                <Select
+                  value={selectedClient ?? ''}
+                  onValueChange={(value) => dispatchTyped(setSelectedClient(value || null))}
+                >
+                  <SelectTrigger className="w-56">
+                    <SelectValue placeholder="Select client..." >{currentClientName}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {effectiveClients.map((client) => (
+                      <SelectItem key={client.client} value={client.client}>
+                        {client.client_name || client.client}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Profile/avatar dropdown */}

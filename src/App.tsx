@@ -128,8 +128,9 @@ const AppRoutes = () => (
     {/* Client routes */}
     {createProtectedRoute('/clients', Clients, 'list')}
     {createProtectedRoute('/clients/create', CreateClient, 'form')}
-    {createProtectedRoute('/clients/:id', ClientDetails, 'dashboard')}
-    {createProtectedRoute('/clients/:id/edit', CreateClient, 'form')}
+  {createProtectedRoute('/clients/:client', ClientDetails, 'dashboard')}
+
+    {/* Register OAUTH client_id SPA or Client App */}
     {createProtectedRoute('/register-client', RegisterClient, 'form')}
 
     {/* Zone routes */}

@@ -1,687 +1,389 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useSelector } from "react-redux";
-import type { RootState } from "@/store";
-import { selectIsAuthenticated } from "@/store/slices/authSlice";
+import React, { useEffect, useState, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
+import { AWS_REGIONS, AWS_REGION_NAME_BY_CODE, searchAwsRegions } from '@/constants/aws-regions';
+import { ChevronsUpDown, Check } from 'lucide-react';
 
-import { z } from "zod";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+// Minimal classnames helper
+function cx(...parts: any[]) { return parts.filter(Boolean).join(' '); }
 
-import { buildApiUrl, getAuthHeaders, API_CONFIG } from "@/lib/api-config";
-import { useReduxData } from "@/hooks/useReduxData";
-import { useTheme } from "@/hooks/useTheme";
-import { useToast } from "@/hooks/use-toast";
-
-import type { Application, Portfolio, Zone } from "@/store/types";
-
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import {
-  Form,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormControl,
-  FormDescription,
-  FormMessage,
-} from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-
-import {
-  ArrowLeft,
-  Globe,
-  Package2,
-  Plus,
-  Settings2,
-  Sparkles,
-  Tag,
-  GitBranch,
-} from "lucide-react";
-
-const envOptions = ["development", "staging", "testing", "production"] as const;
-
-const schema = z.object({
-  client: z.string().min(1, "Client is required"),
-  portfolio: z.string().min(1, "Portfolio is required"),
-  name: z.string().min(2, "Name is required"),
-  slug: z
-    .string()
-    .min(2, "Slug is required")
-    .regex(/^[a-z0-9-]+$/, "Only lowercase letters, numbers, and dashes"),
-  app_regex: z
-    .string()
-    .min(2, "Regex is required")
-    .regex(/^\^.*$/, "Regex should typically start with ^"),
-  environment: z.enum(envOptions),
-  region: z.string().min(2, "Region is required"),
-  zone: z.string().min(1, "Zone is required"),
-  repository: z.string().optional(),
-  enforce_validation: z.enum(["true", "false"]).default("true"),
-  image_aliases: z.record(z.string()).default({}),
-  tags: z.record(z.string()).default({}),
-  description: z.string().optional(),
-});
-
-type FormData = z.infer<typeof schema>;
-
-function slugify(v: string) {
-  return v.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-}
-
-export default function CreateApplication() {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const { isDark } = useTheme();
-  const { toast } = useToast();
-
-  // Auth guard
-  const isAuthenticated = useSelector((s: RootState) => selectIsAuthenticated(s));
-  useEffect(() => {
-    if (!isAuthenticated) navigate("/login", { replace: true });
-  }, [isAuthenticated, navigate]);
-
-  // Redux-backed data
-  const { selectedClient, portfolios, zones, actions } = useReduxData();
-
-  // Current client from URL or selected
-  const currentClient = useMemo(
-    () => searchParams.get("client") || (typeof selectedClient === "string" ? selectedClient : ""),
-    [searchParams, selectedClient]
-  );
-
-  // Load portfolios for current client (unconditional hook)
-  useEffect(() => {
-    if (!currentClient) return;
-    if (portfolios.currentClient !== currentClient) {
-      actions.portfolios.setCurrentClient(currentClient);
-    }
-    if (portfolios.status === "idle" || portfolios.currentClient !== currentClient) {
-      actions.portfolios.fetch(currentClient, { force: false });
-    }
-  }, [currentClient, portfolios.status, portfolios.currentClient, actions.portfolios]);
-
-  // Lists
-  const portfoliosList = useMemo<Portfolio[]>(
-    () => (Array.isArray((portfolios as any)?.items) ? ((portfolios as any).items as Portfolio[]) : []),
-  [portfolios]
-  );
-  const clientPortfolios = useMemo(
-    () => (currentClient ? portfoliosList.filter((p) => p.client === currentClient) : portfoliosList),
-    [portfoliosList, currentClient]
-  );
-
-  const zonesList = useMemo<Zone[]>(
-    () => (Array.isArray(zones) ? (zones as Zone[]) : []),
-    [zones]
-  );
-  const clientZones = useMemo(
-    () => (currentClient ? zonesList.filter((z) => z.client === currentClient) : zonesList),
-    [zonesList, currentClient]
-  );
-
-  // Regions derived from zones (keys of region_facts)
-  const regionOptions = useMemo(() => {
-    const set = new Set<string>();
-    clientZones.forEach((z) => Object.keys(z.region_facts || {}).forEach((r) => set.add(r)));
-    return Array.from(set.size ? set : new Set(["us-east-1", "us-west-2", "eu-west-1"]));
-  }, [clientZones]);
-
-  // Form
-  const form = useForm<FormData>({
-    resolver: zodResolver(schema),
-    defaultValues: {
-      client: currentClient,
-      portfolio: searchParams.get("portfolio") || "",
-      name: "",
-      slug: "",
-      app_regex: "",
-      environment: "development",
-      region: regionOptions[0] || "us-east-1",
-      zone: searchParams.get("zone") || "",
-      repository: "",
-      enforce_validation: "true",
-      image_aliases: {},
-      tags: {},
-      description: "",
-    },
-    mode: "onChange",
-  });
-
-  // Keep client default in sync when url/selection changes
-  useEffect(() => {
-    if (currentClient && form.getValues("client") !== currentClient) {
-      form.setValue("client", currentClient, { shouldDirty: false });
-    }
-  }, [currentClient, form]);
-
-  // If zone changes, pre-fill environment if available
-  const zoneValue = form.watch("zone");
-  useEffect(() => {
-    const z = clientZones.find((cz) => cz.zone === zoneValue);
-    const env = z?.account_facts?.environment;
-    if (env && (envOptions as readonly string[]).includes(env)) {
-      form.setValue("environment", env as FormData["environment"], { shouldDirty: true });
-    }
-  }, [zoneValue, clientZones, form]);
-
-  // Auto-derive slug/app_regex from name until user edits slug manually
-  const slugEditedRef = useRef(false);
-  const nameValue = form.watch("name");
-  const slugValue = form.watch("slug");
-  useEffect(() => {
-    if (!nameValue) return;
-    if (!slugEditedRef.current) {
-      const s = slugify(nameValue);
-      form.setValue("slug", s, { shouldDirty: true, shouldValidate: true });
-      if (!form.getValues("app_regex")) {
-        form.setValue("app_regex", `^${s}.*$`, { shouldDirty: true, shouldValidate: true });
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nameValue]);
-
-  useEffect(() => {
-    if (slugValue) slugEditedRef.current = true;
-  }, [slugValue]);
-
-  const onSubmit = async (data: FormData) => {
-    const payload: Application = {
-      portfolio: data.portfolio,
-      app_regex: data.app_regex,
-      name: data.name || undefined,
-      environment: data.environment,
-      region: data.region,
-      zone: data.zone,
-      repository: data.repository || undefined,
-      enforce_validation: data.enforce_validation,
-      image_aliases: Object.keys(data.image_aliases).length ? data.image_aliases : undefined,
-      tags: Object.keys(data.tags).length ? data.tags : undefined,
-      metadata: data.description ? { description: data.description } : undefined,
-    };
-
-    try {
-      const url = `${buildApiUrl(API_CONFIG.ENDPOINTS.API.APPLICATIONS)}?client=${encodeURIComponent(
-        data.client
-      )}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        let msg = `Failed to create application (HTTP ${res.status})`;
-        try {
-          const j = await res.json();
-          msg = j?.message || msg;
-        } catch {
-          // ignore
-        }
-        throw new Error(msg);
-      }
-
-      toast({
-        title: "Application created",
-        description: `"${data.name}" was added to ${data.portfolio}.`,
-      });
-      navigate("/applications");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Create failed";
-      toast({ title: "Create failed", description: msg, variant: "destructive" });
-    }
-  };
-
-  // Subcomponent: simple key/value editor for maps
-  function KeyValueEditor({
-    label,
-    values,
-    onChange,
-    placeholderKey = "key",
-    placeholderValue = "value",
-    icon,
-  }: {
-    label: string;
-    values: Record<string, string>;
-    onChange: (next: Record<string, string>) => void;
-    placeholderKey?: string;
-    placeholderValue?: string;
-    icon?: React.ReactNode;
-  }) {
-    const [k, setK] = useState("");
-    const [v, setV] = useState("");
-    const keyRef = useRef<HTMLInputElement>(null);
-
-    const add = () => {
-      const key = k.trim();
-      const val = v.trim();
-      if (!key || !val) return;
-      if (values[key] === val) return;
-      onChange({ ...values, [key]: val });
-      setK("");
-      setV("");
-      keyRef.current?.focus();
-    };
-
-    const remove = (rk: string) => {
-      const { [rk]: _, ...rest } = values;
-      onChange(rest);
-    };
-
+interface RegionFieldProps { label: string; value?: string; onChange?: (v: string)=>void; editing: boolean }
+const RegionField: React.FC<RegionFieldProps> = ({ label, value, onChange, editing }) => {
+  if (!editing) {
+    const name = value ? AWS_REGION_NAME_BY_CODE.get(value) : '';
     return (
-      <div className="space-y-2">
-        <FormLabel className="text-sm flex items-center gap-2">
-          {icon}
-          {label}
-        </FormLabel>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <Input
-            ref={keyRef}
-            placeholder={placeholderKey}
-            value={k}
-            onChange={(e) => setK(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                add();
-              }
-            }}
-          />
-          <Input
-            placeholder={placeholderValue}
-            value={v}
-            onChange={(e) => setV(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                add();
-              }
-            }}
-          />
-          <Button type="button" variant="outline" onClick={add} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Add
-          </Button>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(values).length === 0 && (
-            <div className="text-xs text-muted-foreground">No items added</div>
-          )}
-          {Object.entries(values).map(([key, val]) => (
-            <Badge key={key} variant="secondary" className="gap-2">
-              <span className="font-mono">{key}</span>
-              <span className="opacity-70">=</span>
-              <span className="font-mono">{val}</span>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-4 w-4 p-0"
-                onClick={() => remove(key)}
-                aria-label={`Remove ${key}`}
-              >
-                ×
-              </Button>
-            </Badge>
-          ))}
+      <div className="space-y-1">
+        <Label className="text-xs uppercase tracking-wide text-muted-foreground">{label}</Label>
+        <div className="text-sm min-h-[1.5rem] flex items-center gap-2">
+          {value ? (<>
+            <code className="px-1.5 py-0.5 rounded bg-muted font-mono text-xs">{value}</code>
+            <span className="text-muted-foreground text-xs truncate">{name}</span>
+          </>) : <span className="opacity-50">—</span>}
         </div>
       </div>
     );
   }
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs uppercase tracking-wide text-muted-foreground">{label}</Label>
+      <RegionSelect value={value} onChange={onChange} />
+    </div>
+  );
+};
 
-  if (!isAuthenticated || !currentClient) return null;
+interface RegionSelectProps { value?: string; onChange?: (v: string)=>void }
+const RegionSelect: React.FC<RegionSelectProps> = ({ value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const results = searchAwsRegions(query).slice(0, 25);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-mono text-xs">
+          {value ? `${value}` : 'Select region'}
+          <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-80">
+  <Command>
+          <CommandInput value={query} onValueChange={setQuery} placeholder="Search regions..." className="text-xs" />
+          <CommandList>
+            <CommandEmpty>No region found.</CommandEmpty>
+            <CommandGroup heading="Regions">
+              {results.map(r => {
+                const selected = r.code === value;
+                return (
+                  <CommandItem
+                    key={r.code}
+                    value={r.code}
+                    onSelect={() => { onChange?.(r.code); setOpen(false); }}
+                    className="flex items-center gap-2"
+                  >
+                    <Check className={cx('h-3 w-3', selected ? 'opacity-100' : 'opacity-0')} />
+                    <span className="font-mono text-xs">{r.code}</span>
+                    <span className="text-muted-foreground text-[11px] truncate">{r.name}</span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+};
+import { Label } from '@/components/ui/label';
+import { selectClientBySlug, fetchClient, selectIsClientCachedWithFullData, patchClient } from '@/store/slices/clientsSlice';
+import { useToast } from '@/components/ui/use-toast';
+import type { RootState } from '@/store';
+import type { Client } from '@/store/types';
+import { ArrowLeft, Pencil, Save, X, Shield, Network, KeyRound, Repeat2, FileSearch, UserCheck } from 'lucide-react';
+
+interface FieldProps { label: string; value?: string; onChange?: (v: string)=>void; readOnly?: boolean; mono?: boolean; placeholder?: string }
+const Field: React.FC<FieldProps> = ({ label, value, onChange, readOnly, mono, placeholder }) => (
+  <div className="space-y-1">
+    <Label className="text-xs uppercase tracking-wide text-muted-foreground">{label}</Label>
+    {readOnly ? (
+      <div className={`text-sm ${mono? 'font-mono':''} min-h-[1.5rem]`}>{value || <span className="opacity-50">—</span>}</div>
+    ) : (
+      <Input value={value || ''} placeholder={placeholder} onChange={(e)=>onChange?.(e.target.value)} className={mono? 'font-mono':''} />
+    )}
+  </div>
+);
+
+const grid = 'grid gap-6 sm:grid-cols-2 lg:grid-cols-3';
+// Icon + semantics mapping for account fields
+const ACCOUNT_ICON_META: Record<string, { Icon: any; title: string; desc: string }> = {
+  iam_account: { Icon: UserCheck, title: 'IAM / Identity', desc: 'Identity & access management, credentials, federation.' },
+  audit_account: { Icon: FileSearch, title: 'Audit / Logging', desc: 'Centralized logging, monitoring, trail aggregation.' },
+  automation_account: { Icon: Repeat2, title: 'Automation / DevOps', desc: 'Pipelines, build/deploy automation, repeatability.' },
+  network_account: { Icon: Network, title: 'Network / Connectivity', desc: 'Shared networking, transit, peering, routing.' },
+  security_account: { Icon: Shield, title: 'Security / Compliance', desc: 'KMS encryption, guard duty, security hub, compliance.' },
+};
+
+interface AccountFieldRowProps { field: keyof Client; value?: string; editing: boolean; setField: (k: keyof Client, v: any)=>void; error?: string }
+const AccountFieldRow: React.FC<AccountFieldRowProps> = ({ field, value, editing, setField, error }) => {
+  const meta = ACCOUNT_ICON_META[field as string];
+  const labelBase = field.replace(/_/g,' ').replace(/\b\w/g, c=>c.toUpperCase());
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+        {meta && <meta.Icon className="h-4 w-4 text-muted-foreground" />}
+        <span>{labelBase}</span>
+      </Label>
+      {editing ? (
+        <Input
+          value={value || ''}
+          onChange={(e)=> setField(field, e.target.value)}
+          placeholder={meta?.title || labelBase}
+          className="font-mono"
+        />
+      ) : (
+        <div className="text-sm min-h-[1.5rem] font-mono flex items-center gap-2">
+          {value ? <code className="px-1.5 py-0.5 rounded bg-muted text-xs">{value}</code> : <span className="opacity-50">—</span>}
+        </div>
+      )}
+      {error && error !== '' && (
+        <p className="mt-1 text-xs error-text">{error}</p>
+      )}
+      {!editing && meta?.desc && value && (
+        <p className="text-[11px] text-muted-foreground leading-snug line-clamp-2">{meta.desc}</p>
+      )}
+    </div>
+  );
+};
+
+const isAwsAccount = (v?: string) => !!v && /^[0-9]{12}$/.test(v);
+
+const ClientDetails: React.FC = () => {
+  const { client: slug } = useParams<{client: string}>();
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const client = useSelector((s:RootState)=> slug? selectClientBySlug(s, slug): undefined) as Client | undefined;
+  const full = useSelector((s:RootState)=> slug? selectIsClientCachedWithFullData(s, slug): false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<Client|undefined>(client);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string|null>(null);
+  const [saving, setSaving] = useState(false);
+  const [acctErrors, setAcctErrors] = useState<Record<string,string>>({});
+  const { toast } = useToast();
+
+  // Fetch full details if needed
+  useEffect(()=> {
+    if (slug && !full) {
+      setLoading(true);
+      (dispatch(fetchClient({ clientSlug: slug, force: true }) as any).unwrap?.() ?? Promise.resolve())
+        .catch((e:any)=> { setError(String(e)); toast({ variant: 'destructive', title: 'Load failed', description: String(e) }); })
+        .finally(()=> setLoading(false));
+    }
+  }, [slug, full, dispatch, toast]);
+
+  // Removed retainOnlyClient call to preserve full clients list in memory when returning to /clients.
+
+  // Sync draft when client changes
+  useEffect(()=> { if (client) setDraft(client); }, [client]);
+
+  const setField = (k: keyof Client, v: any) => {
+    setDraft(d => d? { ...d, [k]: v }: d);
+    // Live validation for AWS account number fields
+    const acctFields: (keyof Client)[] = [
+      'organization_account','iam_account','audit_account','automation_account','security_account','network_account'
+    ];
+    if (acctFields.includes(k)) {
+      const raw = String(v || '').replace(/[^0-9]/g,'').slice(0,12);
+      setDraft(d => d? { ...d, [k]: raw }: d);
+      setAcctErrors(e => ({ ...e, [k]: raw.length === 0 ? '' : (raw.length === 12 && isAwsAccount(raw) ? '' : 'Must be exactly 12 digits (0-9)') }));
+    }
+  };
+
+  const calcPatch = useCallback(() => {
+    if (!client || !draft) return {};
+    const diff: Record<string, any> = {};
+    (Object.keys(draft) as (keyof Client)[]).forEach(k => {
+      if (draft[k] !== client[k]) diff[k as string] = draft[k];
+    });
+    delete diff.client; // never patch primary key
+    return diff;
+  }, [client, draft]);
+
+  const handleSave = async () => {
+    // Prevent save if any AWS account number invalid
+    const acctFields: (keyof Client)[] = [
+      'organization_account','iam_account','audit_account','automation_account','security_account','network_account'
+    ];
+    const bad = acctFields.filter(f => {
+      const val = (draft as any)?.[f];
+      if (!val) return false; // allow empty optional fields
+      return !isAwsAccount(val);
+    });
+    if (bad.length) {
+      bad.forEach(f => setAcctErrors(e => ({ ...e, [f]: 'Must be exactly 12 digits (0-9)' })));
+      toast({ variant:'destructive', title:'Invalid AWS Account', description:`Fix ${bad.length} account field${bad.length>1?'s':''} before saving.` });
+      return;
+    }
+    if (!slug || !draft) return;
+    const payload = calcPatch();
+    if (Object.keys(payload).length === 0) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      await (dispatch(patchClient({ clientSlug: slug, clientData: payload }) as any).unwrap?.() ?? Promise.resolve());
+      setEditing(false);
+      toast({ title: 'Client updated', description: `${slug} changes saved successfully.` });
+    } catch (e:any) {
+      const msg = String(e);
+      setError(msg);
+      toast({ variant: 'destructive', title: 'Update failed', description: msg });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Defensive redirect if param missing
+  useEffect(()=> {
+    if (!slug) navigate('/clients');
+  }, [slug, navigate]);
+  if (!slug) return <div className="p-6 text-sm text-destructive">Client identifier missing – redirecting…</div>;
+  if (loading) return (
+    <div className="p-6 space-y-4">
+      <div className="h-6 w-40 bg-muted animate-pulse rounded" />
+      <div className="h-4 w-72 bg-muted animate-pulse rounded" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="h-20 bg-muted animate-pulse rounded" />
+        ))}
+      </div>
+    </div>
+  );
+  if (error) return <div className="p-6 text-sm text-destructive">{error}</div>;
+  if (!client) return <div className="p-6">Client not found.</div>;
+
+  const status = client.client_status || 'active';
+  const statusColor = status === 'active' ? 'bg-emerald-500' : status === 'inactive' ? 'bg-muted-foreground' : 'bg-amber-500';
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Ambient header with theme accents */}
-      <div className="relative overflow-hidden rounded-xl border bg-card/80 shadow-medium">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -top-24 -left-20 h-64 w-64 rounded-full bg-primary/15 blur-3xl" />
-          <div className="absolute -bottom-24 -right-20 h-64 w-64 rounded-full bg-accent/20 blur-3xl" />
-        </div>
-        <div className="relative flex items-center justify-between p-6">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-medium flex items-center justify-center">
-              <Sparkles className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Create Application</h1>
-              <p className="text-sm text-muted-foreground">
-                Onboard a new application into your portfolio
-              </p>
-            </div>
+    <div className="space-y-6 p-4 md:p-6 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="font-mono text-sm px-2 py-1 rounded bg-muted">{client.client}</span>
+            <span className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+              <span className={`h-2 w-2 rounded-full ${statusColor}`}></span>{status}
+            </span>
           </div>
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/applications">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Applications
-            </Link>
-          </Button>
+          <h1 className="text-2xl font-semibold tracking-tight break-words">{client.client_name || client.client}</h1>
+          <p className="text-sm text-muted-foreground max-w-3xl">{client.client_description || 'No description provided.'}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {editing ? (
+            <>
+              <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1"><Save className="h-4 w-4" />{saving? 'Saving...':'Save'}</Button>
+              <Button size="sm" variant="outline" onClick={()=> { setEditing(false); setDraft(client); }} className="gap-1"><X className="h-4 w-4" />Cancel</Button>
+            </>
+          ) : (
+            <Button size="sm" variant="outline" onClick={()=> setEditing(true)} className="gap-1"><Pencil className="h-4 w-4" />Edit</Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={()=> navigate('/clients')} className="gap-1"><ArrowLeft className="h-4 w-4" />Back</Button>
         </div>
       </div>
 
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {/* Basic */}
-          <Card className="shadow-soft">
+  <Tabs defaultValue="overview">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="accounts">Accounts</TabsTrigger>
+          <TabsTrigger value="buckets">Buckets</TabsTrigger>
+          <TabsTrigger value="metadata">Metadata</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview">
+          <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Package2 className="h-5 w-5 text-primary" />
-                Application Details
-              </CardTitle>
-              <CardDescription>Core identifiers and placement</CardDescription>
+              <CardTitle>Overview</CardTitle>
+              <CardDescription>Identity & organization basics.</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              {/* Client (read-only) */}
-              <FormField
-                control={form.control}
-                name="client"
-                render={() => (
-                  <FormItem>
-                    <FormLabel>Client</FormLabel>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="font-mono">{currentClient}</Badge>
-                      <span className="text-xs text-muted-foreground">From header context</span>
-                    </div>
-                    <FormDescription>The application will be created under this client.</FormDescription>
-                  </FormItem>
+            <CardContent className={grid}>
+              <Field label="Client Name" value={draft?.client_name} onChange={(v)=> setField('client_name', v)} readOnly={!editing} />
+              <Field label="Organization Name" value={draft?.organization_name} onChange={(v)=> setField('organization_name', v)} readOnly={!editing} />
+              <div>
+                <Field label="Organization Account" value={draft?.organization_account} onChange={(v)=> setField('organization_account', v)} readOnly={!editing} mono />
+                {editing && acctErrors.organization_account && acctErrors.organization_account !== '' && (
+                  <p className="mt-1 text-xs error-text">{acctErrors.organization_account}</p>
                 )}
-              />
+              </div>
+              <Field label="Organization Email" value={draft?.organization_email} onChange={(v)=> setField('organization_email', v)} readOnly={!editing} />
+              <Field label="Scope Prefix" value={draft?.scope} onChange={(v)=> setField('scope', v)} readOnly={!editing} />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-              {/* Portfolio */}
-              <FormField
-                control={form.control}
-                name="portfolio"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Portfolio</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select portfolio" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {clientPortfolios.map((p) => (
-                          <SelectItem key={`${p.client}/${p.portfolio}`} value={p.portfolio}>
-                            {p.project?.name || p.portfolio}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
+        <TabsContent value="accounts">
+          <Card>
+            <CardHeader>
+              <CardTitle>AWS Accounts</CardTitle>
+              <CardDescription>Landing zone account mapping.</CardDescription>
+            </CardHeader>
+            <CardContent className={grid}>
+              <RegionField
+                label="Master Region"
+                value={draft?.master_region}
+                onChange={(v)=> setField('master_region', v)}
+                editing={editing}
               />
-
-              {/* Name */}
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Application Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Order Service" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Slug + Regex */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:col-span-2">
-                <FormField
-                  control={form.control}
-                  name="slug"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Slug</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="order-service"
-                          {...field}
-                          onChange={(e) => {
-                            slugEditedRef.current = true;
-                            field.onChange(e);
-                          }}
-                        />
-                      </FormControl>
-                      <FormDescription>Used for app_regex and identifiers</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+              {(['iam_account','audit_account','automation_account','network_account','security_account'] as (keyof Client)[]).map(f => (
+                <AccountFieldRow
+                  key={f}
+                  field={f}
+                  value={(draft as any)?.[f]}
+                  editing={editing}
+                  setField={setField}
+                  error={acctErrors[f]}
                 />
+              ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-                <FormField
-                  control={form.control}
-                  name="app_regex"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Application Regex</FormLabel>
-                      <FormControl>
-                        <Input placeholder="^order-service.*$" {...field} />
-                      </FormControl>
-                      <FormDescription>Regex to match deployment names for this app</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+        <TabsContent value="buckets">
+          <Card>
+            <CardHeader>
+              <CardTitle>S3 Buckets</CardTitle>
+              <CardDescription>Artifact & UI storage.</CardDescription>
+            </CardHeader>
+            <CardContent className={grid}>
+              <Field label="Automation Bucket" value={draft?.bucket_name} onChange={(v)=> setField('bucket_name', v)} readOnly={!editing} mono />
+              <Field label="Docs Bucket" value={draft?.docs_bucket_name} onChange={(v)=> setField('docs_bucket_name', v)} readOnly={!editing} mono />
+              <Field label="Artefact Bucket" value={draft?.artefact_bucket_name} onChange={(v)=> setField('artefact_bucket_name', v)} readOnly={!editing} mono />
+              <Field label="UI Bucket" value={draft?.ui_bucket_name || draft?.ui_bucket} onChange={(v)=> setField('ui_bucket_name', v)} readOnly={!editing} mono />
+              <RegionField
+                label="Bucket Region"
+                value={draft?.bucket_region}
+                onChange={(v)=> setField('bucket_region', v)}
+                editing={editing}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+  {/* Security tab removed per request */}
+
+        <TabsContent value="metadata">
+          <Card>
+            <CardHeader>
+              <CardTitle>Metadata</CardTitle>
+              <CardDescription>Additional descriptors.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground">Description</Label>
+                {editing ? (
+                  <Textarea rows={5} value={draft?.client_description || ''} onChange={(e)=> setField('client_description', e.target.value)} />
+                ) : <div className="text-sm whitespace-pre-wrap min-h-[4rem]">{draft?.client_description || <span className="opacity-50">No description</span>}</div>}
+              </div>
+              <div className={grid}>
+                <Field label="Domain" value={draft?.domain} onChange={(v)=> setField('domain', v)} readOnly={!editing} />
+                <Field label="Homepage" value={draft?.homepage} onChange={(v)=> setField('homepage', v)} readOnly={!editing} />
+                <Field label="Created At" value={draft?.created_at} readOnly />
+                <Field label="Updated At" value={draft?.updated_at} readOnly />
+                <RegionField
+                  label="Client Region"
+                  value={draft?.client_region}
+                  onChange={(v)=> setField('client_region', v)}
+                  editing={editing}
                 />
               </div>
             </CardContent>
           </Card>
-
-          {/* Placement */}
-          <Card className="shadow-soft">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Globe className="h-5 w-5 text-primary" />
-                Environment & Placement
-              </CardTitle>
-              <CardDescription>Environment, region, and zone</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-3">
-              {/* Environment */}
-              <FormField
-                control={form.control}
-                name="environment"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Environment</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select environment" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {envOptions.map((env) => (
-                          <SelectItem key={env} value={env}>
-                            {env}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Region */}
-              <FormField
-                control={form.control}
-                name="region"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Region</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select region" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {regionOptions.map((r) => (
-                          <SelectItem key={r} value={r}>
-                            {r}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Zone */}
-              <FormField
-                control={form.control}
-                name="zone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Zone</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select zone" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {clientZones.map((z) => (
-                          <SelectItem key={`${z.client}/${z.zone}`} value={z.zone}>
-                            {z.zone} {z.account_facts?.environment ? `(${z.account_facts.environment})` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Advanced */}
-          <Card className="shadow-soft">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings2 className="h-5 w-5 text-primary" />
-                Advanced Settings
-              </CardTitle>
-              <CardDescription>Repository, validation, aliases, and tags</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Repository + validation */}
-              <div className="grid gap-4 md:grid-cols-3">
-                <FormField
-                  control={form.control}
-                  name="repository"
-                  render={({ field }) => (
-                    <FormItem className="md:col-span-2">
-                      <FormLabel>Repository URL (optional)</FormLabel>
-                      <FormControl>
-                        <Input placeholder="https://github.com/org/repo" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="enforce_validation"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Enforce Validation</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="true">True</SelectItem>
-                          <SelectItem value="false">False</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>Require validation before releases</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              {/* Image Aliases */}
-              <FormField
-                control={form.control}
-                name="image_aliases"
-                render={({ field }) => (
-                  <FormItem>
-                    <KeyValueEditor
-                      label="Image Aliases"
-                      values={(field.value || {}) as Record<string, string>}
-                      onChange={(next) => field.onChange(next)}
-                      placeholderKey="alias (e.g., app)"
-                      placeholderValue="image:tag"
-                      icon={<GitBranch className="h-4 w-4 text-primary" />}
-                    />
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Tags */}
-              <FormField
-                control={form.control}
-                name="tags"
-                render={({ field }) => (
-                  <FormItem>
-                    <KeyValueEditor
-                      label="Tags"
-                      values={(field.value || {}) as Record<string, string>}
-                      onChange={(next) => field.onChange(next)}
-                      placeholderKey="key"
-                      placeholderValue="value"
-                      icon={<Tag className="h-4 w-4 text-primary" />}
-                    />
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Description */}
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (optional)</FormLabel>
-                    <FormControl>
-                      <Textarea rows={3} placeholder="Describe this application’s purpose" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between">
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/applications">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Cancel
-              </Link>
-            </Button>
-            <div className="flex items-center gap-3">
-              <Separator className="hidden md:block w-32" />
-              <Button type="submit" disabled={!form.formState.isValid || form.formState.isSubmitting} variant={isDark ? "secondary" : "default"}>
-                {form.formState.isSubmitting ? "Creating..." : "Create Application"}
-              </Button>
-            </div>
-          </div>
-        </form>
-      </Form>
+        </TabsContent>
+      </Tabs>
     </div>
   );
-}
+};
+
+export default ClientDetails;

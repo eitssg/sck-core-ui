@@ -235,6 +235,23 @@ export const authAPI = {
         return { error: message, error_description: mapped } as OAuthErrorResponse;
       }
       const loginData: LoginResponse = await response.json();
+      // NEW: capture session timing headers (authoritative from backend) if present
+      try {
+        const hdr = (name: string) => response.headers.get(name) || response.headers.get(name.toLowerCase());
+        // Backend emits: X-Session-Exp (exp epoch seconds), X-Session-Abs (absolute max seconds), X-Session-Refresh-Threshold (epoch seconds when rotation allowed)
+        const expSec = hdr('X-Session-Exp');
+        const refreshAtSec = hdr('X-Session-Refresh-Threshold');
+        if (expSec) {
+          const ms = /\d+/.test(expSec) ? String(Number(expSec) * 1000) : expSec; // assume seconds -> ms
+          sessionStorage.setItem('sck_session_expires_at', ms);
+        }
+        if (refreshAtSec) {
+          const ms = /\d+/.test(refreshAtSec) ? String(Number(refreshAtSec) * 1000) : refreshAtSec;
+          sessionStorage.setItem('sck_session_refresh_after', ms);
+        }
+        sessionStorage.removeItem('session_issued_at');
+        if (DEBUG_AUTH) console.log('[authAPI] captured session headers', { expSec, refreshAtSec });
+      } catch { /* ignore header capture errors */ }
       return loginData;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'network_error';
@@ -567,12 +584,12 @@ export const authAPI = {
     }
   },
 
-  // Rotate the session cookie before it expires; cookie-first GET
+  // Rotate the session cookie before it expires (sliding window POST endpoint returning 204 on success / no-op)
   async refreshSession(): Promise<boolean> {
     try {
-  try { if (DEBUG_AUTH) console.log('[authAPI] refreshSession: calling /auth/v1/refresh'); } catch (e) { /* no-op */ }
+  try { if (DEBUG_AUTH) console.log('[authAPI] refreshSession: POST /auth/v1/refresh'); } catch (e) { /* no-op */ }
       const res = await fetch(buildApiUrl('/auth/v1/refresh'), {
-        method: 'GET',
+        method: 'POST',
         credentials: 'include',
         headers: { 'Accept': 'application/json' },
       });
@@ -582,6 +599,22 @@ export const authAPI = {
       }
   // No persistence of session issuance time
   try { console.log('session cookie refreshed'); } catch (e) { /* noop */ }
+      // Capture updated timing headers if provided
+      try {
+        const hdr = (name: string) => res.headers.get(name) || res.headers.get(name.toLowerCase());
+        const expSec = hdr('X-Session-Exp');
+        const refreshAtSec = hdr('X-Session-Refresh-Threshold');
+        if (expSec) {
+          const ms = /\d+/.test(expSec) ? String(Number(expSec) * 1000) : expSec;
+          sessionStorage.setItem('sck_session_expires_at', ms);
+        }
+        if (refreshAtSec) {
+          const ms = /\d+/.test(refreshAtSec) ? String(Number(refreshAtSec) * 1000) : refreshAtSec;
+          sessionStorage.setItem('sck_session_refresh_after', ms);
+        }
+        sessionStorage.removeItem('session_issued_at');
+        if (DEBUG_AUTH) console.log('[authAPI] refresh captured session headers', { expSec, refreshAtSec });
+      } catch { /* ignore */ }
       return true;
     } catch {
       return false;

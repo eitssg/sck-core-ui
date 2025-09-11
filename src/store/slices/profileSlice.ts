@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
+import { logoutUser } from '@/store/slices/authSlice'
 import { API_CONFIG, buildApiUrl } from '@/lib/api-config'
 import { apiFetch } from '@/lib/api-fetch'
 import type { RootState } from '@/store'
@@ -177,7 +178,11 @@ export const fetchUserProfile = createAsyncThunk<
       }
         
   const response = await apiFetch(url, { contextLabel: 'Profile' });
-      
+      if (response.status === 401) {
+        try { console.log('[profile] 401 on /auth/v1/me (legacy) -> forcing logout'); } catch { /* ignore */ }
+        queueMicrotask(() => { try { (window as any).store?.dispatch?.(logoutUser() as any); } catch { /* ignore */ } });
+        throw new Error('unauthorized');
+      }
       if (!response.ok) {
         throw new Error('Failed to fetch profile');
       }
@@ -505,6 +510,13 @@ export const fetchAuthProfiles = createAsyncThunk<
   'profile/fetchAuthProfiles',
   async () => {
     const resp = await apiFetch(buildApiUrl('/auth/v1/profiles'), { contextLabel: 'ProfileList' });
+    if (resp.status === 401) {
+      try { console.log('[profile] 401 on /auth/v1/profiles -> forcing logout'); } catch { /* ignore */ }
+      // Dispatch logout side-effect in a fire-and-forget manner (no state passed here)
+      // Using a microtask to avoid interfering with current reducer queue
+      queueMicrotask(() => { try { (window as any).store?.dispatch?.(logoutUser() as any); } catch { /* ignore */ } });
+      throw new Error('unauthorized');
+    }
     if (!resp.ok) throw new Error('Failed to list profiles');
     const json = await resp.json();
   // Accept multiple shapes:
@@ -545,6 +557,11 @@ export const fetchAuthProfile = createAsyncThunk<
   'profile/fetchAuthProfile',
   async ({ profileName }) => {
     const resp = await apiFetch(buildApiUrl(`/auth/v1/profiles/${encodeURIComponent(profileName)}`), { contextLabel: 'Profile' });
+    if (resp.status === 401) {
+      try { console.log('[profile] 401 on /auth/v1/profiles/:name -> forcing logout'); } catch { /* ignore */ }
+      queueMicrotask(() => { try { (window as any).store?.dispatch?.(logoutUser() as any); } catch { /* ignore */ } });
+      throw new Error('unauthorized');
+    }
     if (!resp.ok) throw new Error('Failed to fetch profile');
     const json = await resp.json();
     const profile = normalizeUserProfile(json);

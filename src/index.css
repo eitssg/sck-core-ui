@@ -93,8 +93,10 @@ All colors MUST be HSL.
     --accent: 217.2 32.6% 17.5%;
     --accent-foreground: 210 40% 98%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+  /* Original dark destructive was too low-contrast; bump lightness & add vivid variant */
+  --destructive: 0 70% 40%; /* used for backgrounds (buttons) */
+  --destructive-foreground: 210 40% 98%;
+  --destructive-bright: 0 85% 60%; /* for inline error text on dark surfaces */
 
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
@@ -147,4 +149,8 @@ All colors MUST be HSL.
   .bg-theme-gradient {
     background-image: var(--gradient-primary);
   }
+
+  /* High-contrast error text for dark mode */
+  .error-text { color: hsl(var(--destructive)); }
+  .dark .error-text { color: hsl(var(--destructive-bright, var(--destructive))); }
 }

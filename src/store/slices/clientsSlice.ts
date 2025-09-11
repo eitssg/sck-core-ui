@@ -16,6 +16,9 @@ export interface ClientSummary {
 
 interface ClientsState {
   items: Client[];
+  // Normalized structures for O(1) lookups
+  byId: Record<string, Client>;
+  ids: string[];
   status: 'idle' | 'loading' | 'succeeded' | 'failed';
   error?: string | null;
   cursor: string | null;
@@ -34,6 +37,8 @@ interface ClientsState {
 
 const initialState: ClientsState = {
   items: [],
+  byId: {},
+  ids: [],
   status: 'idle',
   error: null,
   cursor: null,
@@ -122,7 +127,7 @@ export const fetchClients = createAsyncThunk<
   }
 );
 
-// READ - Get single client (GET /api/v1/registry/client/{client}) - CACHE INDIVIDUAL CLIENTS
+// READ - Get single client (GET /api/v1/registry/clients/{client}) - CACHE INDIVIDUAL CLIENTS (plural canonical)
 export const fetchClient = createAsyncThunk<
   Client,
   { clientSlug: string; force?: boolean },
@@ -131,7 +136,7 @@ export const fetchClient = createAsyncThunk<
   'clients/fetchSingle',
   async ({ clientSlug }) => {
     // Same CORS-friendly approach for single-client fetch.
-  const response = await apiFetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), { cookieFirst: true, dedupeKey: `client-${clientSlug}-401`, contextLabel: 'Clients' });
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${clientSlug}`), { cookieFirst: true, dedupeKey: `client-${clientSlug}-401`, contextLabel: 'Clients' });
 
     if (!response.ok) {
       throw new Error('Failed to fetch client');
@@ -173,12 +178,12 @@ export const fetchClient = createAsyncThunk<
   }
 );
 
-// UPDATE - Full update client (PUT /api/v1/registry/client/{client})
+// UPDATE - Full update client (PUT /api/v1/registry/clients/{client})
 export const updateClient = createAsyncThunk(
   'clients/update',
   async ({ clientSlug, clientData }: { clientSlug: string; clientData: Client }, thunkAPI) => {
     try {
-  const response = await apiFetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${clientSlug}`), {
         method: 'PUT',
         body: JSON.stringify(clientData),
       });
@@ -196,12 +201,12 @@ export const updateClient = createAsyncThunk(
   }
 );
 
-// PATCH - Partial update client (PATCH /api/v1/registry/client/{client})
+// PATCH - Partial update client (PATCH /api/v1/registry/clients/{client})
 export const patchClient = createAsyncThunk(
   'clients/patch',
   async ({ clientSlug, clientData }: { clientSlug: string; clientData: Partial<Client> }, thunkAPI) => {
     try {
-  const response = await apiFetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${clientSlug}`), {
         method: 'PATCH',
         body: JSON.stringify(clientData),
       });
@@ -219,12 +224,12 @@ export const patchClient = createAsyncThunk(
   }
 );
 
-// DELETE - Delete client (DELETE /api/v1/registry/client/{client})
+// DELETE - Delete client (DELETE /api/v1/registry/clients/{client})
 export const deleteClient = createAsyncThunk(
   'clients/delete',
   async (clientSlug: string, thunkAPI) => {
     try {
-  const response = await apiFetch(buildApiUrl(`/api/v1/registry/client/${clientSlug}`), {
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${clientSlug}`), {
         method: 'DELETE',
       });
 
@@ -337,6 +342,8 @@ const clientsSlice = createSlice({
   reducers: {
     clear(state) {
       state.items = [];
+  state.byId = {};
+  state.ids = [];
       state.cursor = null;
       state.lastFetched = null;
       state.status = 'idle';
@@ -354,6 +361,12 @@ const clientsSlice = createSlice({
     },
     setClients(state, action: PayloadAction<Client[]>) {
       state.items = action.payload ?? [];
+      state.byId = {};
+      state.ids = [];
+      (action.payload || []).forEach(c => {
+        state.byId[c.client] = c;
+        state.ids.push(c.client);
+      });
       state.lastFetched = Date.now();
       state.status = 'succeeded';
       state.error = null;
@@ -373,6 +386,8 @@ const clientsSlice = createSlice({
       const existingIndex = state.items.findIndex(c => c.client === client.client);
       if (existingIndex >= 0) state.items[existingIndex] = client;
       else state.items.push(client);
+  state.byId[client.client] = client;
+  if (!state.ids.includes(client.client)) state.ids.push(client.client);
       state.individualClientCache[client.client] = Date.now();
       state.fullClientDataCache[client.client] = true;
     },
@@ -394,7 +409,9 @@ const clientsSlice = createSlice({
           state.items.push(client);
           state.individualClientCache[client.client] = timestamp;
           state.fullClientDataCache[client.client] = true;
+          state.ids.push(client.client);
         }
+        state.byId[client.client] = state.items.find(x => x.client === client.client) || client;
       });
     },
     // NEW: Optimize cache by removing very old entries
@@ -429,6 +446,8 @@ const clientsSlice = createSlice({
     // Clear all caches when switching clients (important for multi-tenant data isolation)
     clearAllCachesForClientSwitch(state) {
       state.items = [];
+  state.byId = {};
+  state.ids = [];
       state.cursor = null;
       state.lastFetched = null;
       state.individualClientCache = {};
@@ -436,6 +455,7 @@ const clientsSlice = createSlice({
       state.status = 'idle';
       state.error = null;
     },
+  // Removed retainOnlyClient (was deprecated); full list is always retained.
   },
   extraReducers: (builder) => {
     builder
@@ -479,12 +499,17 @@ const clientsSlice = createSlice({
                 client_name: (c as any).client_name || (c as any).Name,
                 client_description: (c as any).client_description,
                 organization_name: (c as any).organization_name,
+                organization_account: (c as any).organization_account,
                 created_at: (c as any).created_at,
               };
               state.fullClientDataCache[slug] = false;
               state.individualClientCache[slug] = now;
               return minimal;
             });
+            // Rebuild maps
+            state.byId = {};
+            state.ids = [];
+            state.items.forEach(c => { state.byId[c.client] = c; state.ids.push(c.client); });
 
             state.cursor = action.payload.metadata?.cursor ?? null;
             state.status = 'succeeded';
@@ -510,7 +535,9 @@ const clientsSlice = createSlice({
           state.items[existingIndex] = action.payload;
         } else {
           state.items.push(action.payload);
+          state.ids.push(action.payload.client);
         }
+        state.byId[action.payload.client] = action.payload;
 
         // Update individual cache timestamp and mark as full data
         state.individualClientCache[action.payload.client] = Date.now();
@@ -532,6 +559,7 @@ const clientsSlice = createSlice({
         const slug = action.payload.client.client;
         const index = state.items.findIndex(c => c.client === slug);
         if (index >= 0) state.items[index] = action.payload.client;
+  state.byId[slug] = action.payload.client;
         state.individualClientCache[slug] = Date.now();
         state.lastFetched = Date.now();
       })
@@ -550,6 +578,7 @@ const clientsSlice = createSlice({
         const slug = action.payload.client.client;
         const index = state.items.findIndex(c => c.client === slug);
         if (index >= 0) state.items[index] = action.payload.client;
+  state.byId[slug] = action.payload.client;
         state.individualClientCache[slug] = Date.now();
         state.lastFetched = Date.now();
       })
@@ -568,6 +597,8 @@ const clientsSlice = createSlice({
 
         // Remove the client from the list
         state.items = state.items.filter(c => c.client !== action.payload);
+  state.ids = state.ids.filter(id => id !== action.payload);
+  delete state.byId[action.payload];
 
         // Clear selection if deleted client was selected
         if (state.selectedClient === action.payload) {
@@ -605,6 +636,8 @@ const clientsSlice = createSlice({
 
         // Clear all caches since we're in new client context
         state.items = [];
+  state.byId = {};
+  state.ids = [];
         state.cursor = null;
         state.lastFetched = null;
         state.individualClientCache = {};
@@ -673,7 +706,7 @@ export const {
   // NEW exports
   setCurrentActiveClient,
   clearSwitchError,
-  clearAllCachesForClientSwitch
+  clearAllCachesForClientSwitch,
 } = clientsSlice.actions;
 
 // Selectors
@@ -685,7 +718,7 @@ export const selectClientsLastFetched = (state: RootState) => state.clients.last
 export const selectSelectedClient = (state: RootState) => state.clients.selectedClient;
 export const selectDefaultClient = (state: RootState) => state.clients.defaultClient;
 export const selectClientBySlug = (state: RootState, clientSlug: string) =>
-  state.clients.items.find(c => c.client === clientSlug);
+  state.clients.byId[clientSlug];
 export const selectClientsLoading = (state: RootState) => state.clients.status === 'loading';
 
 // Enhanced selectors for cache optimization
