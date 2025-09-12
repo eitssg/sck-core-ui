@@ -121,11 +121,11 @@ export const fetchClients = createAsyncThunk<
 >(
   'clients/fetchList',
   async (args) => {
-  const limit = args?.limit ?? 100;
+  const limit = args?.limit;
   const reqCursor = args?.cursor ?? null;
 
     const url = new URL(buildApiUrl('/api/v1/registry/clients'));
-    url.searchParams.set('limit', String(limit));
+    if (typeof limit === 'number') url.searchParams.set('limit', String(limit));
   if (reqCursor) url.searchParams.set('cursor', reqCursor);
 
     // Prefer cookie-based auth (no Authorization header) to avoid CORS preflight;

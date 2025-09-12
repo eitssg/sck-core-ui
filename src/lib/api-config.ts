@@ -1,5 +1,10 @@
-import { store } from '@/store';
-import { selectTokens } from '@/store/slices/authSlice';
+// Avoid importing the Redux store here to prevent circular deps.
+// We'll accept a lazy selector registered by the store at startup.
+type TokenSelector = () => { access_token?: string } | null;
+let tokenSelector: TokenSelector | null = null;
+export function registerTokenSelector(fn: TokenSelector) {
+  tokenSelector = fn;
+}
 
 const DEBUG_AUTH = Boolean((import.meta as any)?.env?.VITE_DEBUG);
 
@@ -27,6 +32,7 @@ export const API_CONFIG = {
     // Auth endpoints
     AUTH: {
       LOGIN: '/auth/v1/login',
+  SIGNUP: '/auth/v1/signup',
       LOGOUT: '/auth/v1/logout',
       ME: '/auth/v1/me',
   ORGANIZATIONS: '/auth/v1/organizations',
@@ -156,9 +162,7 @@ export function getAuthHeaders(): Record<string, string> {
 
   // Read access token from Redux store (in-memory) only
   try {
-    const state = store.getState();
-    const tokens = selectTokens(state as any);
-    const accessToken = tokens?.access_token;
+  const accessToken = tokenSelector ? tokenSelector()?.access_token : undefined;
     if (accessToken) {
       headers['Authorization'] = `Bearer ${accessToken}`;
     }

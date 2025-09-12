@@ -11,7 +11,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { buildApiUrl, buildOAuthAuthorizeUrl, API_CONFIG } from "@/lib/api-config";
 import { apiFetch } from "@/lib/api-fetch";
 import { authAPI } from "@/lib/auth-api";
-import { clearError, setError, logoutUser } from "@/store/slices/authSlice";
+import { clearError, setError, logoutUser, selectLogoutReason, clearLogoutReason } from "@/store/slices/authSlice";
 import { useReduxData } from "@/hooks/useReduxData";
 import type { RootState } from "@/store";
 
@@ -70,60 +70,20 @@ export default function Login() {
   const errorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    // If user navigates to /login while authenticated, force a logout then remain on /login
-    if (isAuthenticated) {
-      (async () => {
-        try { await dispatch(logoutUser()).unwrap(); } catch { /* ignore */ }
-      })();
-    }
-    dispatch(clearError());
-  }, [isAuthenticated, dispatch]);
-
-  // HARD LOGOUT on entering /login: clear cookie + local/session storage to avoid dangling state
-  // Skip when we're in the middle of OAuth callback processing to prevent races
-  // Also allow disabling via env flag in development to avoid disruptive loops
-  useEffect(() => {
+    // Unconditional hard logout on entering /login, regardless of auth state
     let cancelled = false;
     (async () => {
-      if (sessionStorage.getItem('oauth_processing') === '1') {
-        return;
-      }
-      // In dev, respect an opt-in flag to enable hard logout, default to off
-      const allowHardLogout = !import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_HARD_LOGOUT === 'true';
-      if (!allowHardLogout) {
-        return;
-      }
       try {
-        // Try server-side logout to clear HttpOnly session cookie
-        // Attempt POST first; if not supported, fall back to GET
-        const logoutUrl = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGOUT);
-        try {
-          await apiFetch(logoutUrl, { method: "POST", cookieFirst: true, notify401: false, noToast401: true });
-        } catch {
-          try { await apiFetch(logoutUrl, { method: "GET", cookieFirst: true, notify401: false, noToast401: true }); } catch { /* ignore */ }
-        }
-      } finally {
-        // Revoke token + clear local storage via thunk (also calls authAPI.logout)
-        if (!cancelled) {
-          try { await dispatch(logoutUser()).unwrap(); } catch { /* ignore */ }
-        }
-        // Ensure local cleanup regardless
-        try {
-          localStorage.removeItem("access_token");
-          localStorage.removeItem("refresh_token");
-          localStorage.removeItem("token");
-        } catch { /* ignore */ }
-        try {
-          sessionStorage.removeItem('refresh_token');
-          sessionStorage.removeItem("oauth_session_token");
-          sessionStorage.removeItem("oauth_token_type");
-          sessionStorage.removeItem('session_issued_at');
-          sessionStorage.removeItem('auth_session_active');
-        } catch { /* ignore */ }
-      }
+        // Broadcast to other tabs
+        try { new BroadcastChannel('sck-auth-sync').postMessage({ type: 'auth:logout' }); } catch { /* no-op */ }
+        await dispatch(logoutUser()).unwrap();
+      } catch { /* ignore */ }
+      if (!cancelled) dispatch(clearError());
     })();
     return () => { cancelled = true; };
   }, [dispatch]);
+
+  // Remove previous custom hard-logout block; centralized in the effect above
 
   // Read ?err=code or ?error=code placed by the authorization server
   useEffect(() => {
@@ -235,8 +195,18 @@ export default function Login() {
     }
   };
 
-  const params = new URLSearchParams(location.search || '');
-  const reason = params.get('reason');
+  // Read and immediately clear a one-shot logout reason from Redux
+  const reasonFromRedux = useSelector(selectLogoutReason);
+  const [reason, setReason] = useState<string | null>(null);
+  useEffect(() => {
+    if (reasonFromRedux) {
+      setReason(reasonFromRedux);
+      dispatch(clearLogoutReason());
+    } else {
+      setReason(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reasonFromRedux]);
 
   const banner = (() => {
     if (!reason) return null;

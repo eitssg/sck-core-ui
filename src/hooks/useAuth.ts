@@ -8,6 +8,7 @@ import {
   selectTokens,
   refreshAccessToken,
   logoutUser,
+  setLogoutReason,
 } from '@/store/slices/authSlice';
 import { authAPI } from '@/lib/auth-api';
 
@@ -108,10 +109,9 @@ export const useAuth = () => {
   const onIdle = async () => {
       clearIdleTimer();
       bestEffortClearCookies();
-      isLoggingOutRef.current = true;
-      try { bcRef.current?.postMessage({ type: 'auth:logout' }); } catch { /* no-op */ }
-      await dispatch(logoutUser());
-      navigate('/login?reason=idle_timeout', { replace: true });
+      // Do not clear storage or dispatch logout here. Navigate to /login and let the Login page perform unconditional logout.
+  try { dispatch(setLogoutReason('idle_timeout')); } catch { /* ignore */ }
+  navigate('/login?reason=idle_timeout', { replace: true });
     };
 
   const resetIdleTimer = () => {
@@ -141,6 +141,7 @@ export const useAuth = () => {
     isLoggingOutRef.current = true;
     try { bcRef.current?.postMessage({ type: 'auth:logout' }); } catch { /* no-op */ }
     try { sessionStorage.removeItem('refresh_token'); } catch { /* ignore */ }
+    try { dispatch(setLogoutReason('manual')); } catch { /* ignore */ }
     dispatch(logoutUser()).finally(() => {
       navigate('/login?reason=manual', { replace: true });
     });
@@ -151,7 +152,17 @@ export const useAuth = () => {
   };
 
   const refreshSessionCookie = async () => {
-    await authAPI.refreshSession();
+    try {
+      await authAPI.refreshSession();
+    } catch (e) {
+      const status = (e as any)?.status;
+      if (status === 401 || (e instanceof Error && e.message === 'session_cookie_invalid')) {
+        try { dispatch(setLogoutReason('session_expired')); } catch { /* ignore */ }
+        navigate('/login?reason=session_expired', { replace: true });
+        return;
+      }
+      // otherwise ignore as transient
+    }
   };
 
   return {

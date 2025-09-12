@@ -386,4 +386,9 @@ export const makeSelectZonesByClient = (client: string) =>
 export const makeSelectZoneByKey = (client: string, zone: string) =>
   createSelector([selectZones], (zones) => zones.find((z) => z.client === client && z.zone === zone) || null);
 
+// Since the UI only holds data for the current client (server-scoped by JWT),
+// a simple zone-by-slug lookup is sufficient.
+export const makeSelectZoneBySlug = (zone: string) =>
+  createSelector([selectZones], (zones) => zones.find((z) => z.zone === zone) || null);
+
 export default zonesSlice.reducer;

@@ -351,63 +351,6 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Quick Actions */}
-        <Card className="shadow-soft">
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>Move faster with common workflows</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {[
-                {
-                  title: "Create Client",
-                  description: "Add a new organization",
-                  href: "/clients/create",
-                  icon: Users,
-                },
-                {
-                  title: "Create Portfolio",
-                  description: "Set up a new portfolio",
-                  href: currentClient ? `/portfolios/create?client=${currentClient}` : "/portfolios",
-                  icon: Briefcase,
-                },
-                {
-                  title: "Create Application",
-                  description: "Onboard an application",
-                  href: "/applications/create",
-                  icon: Server,
-                },
-                {
-                  title: "View Deployments",
-                  description: "Monitor health and status",
-                  href: "/deployments",
-                  icon: Activity,
-                },
-              ].map((a, idx) => {
-                const Icon = a.icon;
-                return (
-                  <Link
-                    key={idx}
-                    to={a.href}
-                    className="group relative overflow-hidden rounded-lg border p-4 hover:bg-accent/50 transition-colors"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="rounded-md p-2 bg-primary/90 text-primary-foreground">
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-semibold group-hover:text-primary transition-colors">{a.title}</h3>
-                        <p className="text-sm text-muted-foreground">{a.description}</p>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Errors */}
         {(clients.error || portfolios.error) && (
           <Card className="border-destructive">

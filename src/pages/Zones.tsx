@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Building2, ExternalLink, Edit, Trash2, Search, X, Loader2 } from 'lucide-react';
+import { Building2, ChevronRight, Search, X, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useReduxData } from '@/hooks/useReduxData';
 import { useToast } from '@/hooks/use-toast';
@@ -87,11 +86,6 @@ const Zones = () => {
   const removeFilterTerm = (term: string) => setFilterTerms(filterTerms.filter(t => t !== term));
   const handleKeyPress = (e: React.KeyboardEvent) => { if (e.key === 'Enter') addFilterTerm(); };
 
-  // Delete disabled per request
-  const handleDeleteZone = (_zone: Zone) => {
-    /* intentionally no-op */
-  };
-
   const loadMore = () => {
     if (!selectedClientKey || nextCursor === null) return;
     dispatch(fetchZonesPage({ client: selectedClientKey, limit, cursor: nextCursor, append: true }));
@@ -146,7 +140,7 @@ const Zones = () => {
                   onKeyPress={handleKeyPress}
                   className="flex-1"
                 />
-                <Button onClick={addFilterTerm} disabled={!newFilterTerm.trim()}>Add Filter</Button>
+                <Button variant="outline" onClick={addFilterTerm} disabled={!newFilterTerm.trim()}>Add Filter</Button>
               </div>
             </div>
             {filterTerms.length > 0 && (
@@ -212,58 +206,36 @@ const Zones = () => {
         <div className="space-y-2">
           {filteredZones.map(zone => {
             const af = zone.account_facts ?? ({} as any);
+            const to = `/zones/${encodeURIComponent(zone.client)}/${encodeURIComponent(zone.zone)}`;
             return (
-              <Card key={`${zone.client}:${zone.zone}`}>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-3 mb-1">
-                        <span className="font-medium truncate" title={`${zone.client} • ${zone.zone}`}>{zone.zone}</span>
-                        <Badge variant={af.environment === 'production' ? 'destructive' : 'secondary'} className="uppercase">{af.environment || '-'}</Badge>
+              <Link
+                key={`${zone.client}:${zone.zone}`}
+                to={to}
+                className="block focus:outline-none focus:ring-2 focus:ring-ring rounded-md"
+                aria-label={`View zone ${zone.zone}`}
+              >
+                <Card className="transition-colors hover:bg-muted/30 group">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-3 mb-1">
+                          <span className="font-medium truncate contrast-value" title={`${zone.client} • ${zone.zone}`}>{zone.zone}</span>
+                          <Badge variant={af.environment === 'production' ? 'destructive' : 'secondary'} className="uppercase">{af.environment || '-'}</Badge>
+                        </div>
+                        <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+                          <span className="truncate contrast-value" title={af.organizational_unit || ''}>{af.organizational_unit || '—'}</span>
+                          <span className="font-mono contrast-value">{af.aws_account_id || '—'}</span>
+                          <span className="truncate contrast-value" title={af.account_name || ''}>{af.account_name || '—'}</span>
+                          {af.resource_namespace && <span className="truncate contrast-value" title={af.resource_namespace}>NS: {af.resource_namespace}</span>}
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
-                        <span className="truncate" title={af.organizational_unit || ''}>{af.organizational_unit || '—'}</span>
-                        <span className="font-mono">{af.aws_account_id || '—'}</span>
-                        <span className="truncate" title={af.account_name || ''}>{af.account_name || '—'}</span>
-                        {af.resource_namespace && <span className="truncate" title={af.resource_namespace}>NS: {af.resource_namespace}</span>}
+                      <div className="flex items-center gap-1 shrink-0 text-muted-foreground group-hover:text-foreground">
+                        <ChevronRight className="h-4 w-4" aria-hidden="true" />
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" asChild title="Details">
-                        <Link to={`/zones/${encodeURIComponent(zone.client)}/${encodeURIComponent(zone.zone)}`}><ExternalLink className="h-4 w-4" /></Link>
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" asChild title="Edit">
-                        <Link to={`/zones/${encodeURIComponent(zone.client)}/${encodeURIComponent(zone.zone)}/edit`}><Edit className="h-4 w-4" /></Link>
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground"
-                            title="Delete (disabled)"
-                            onClick={(e) => {
-                              // Ensure the trigger doesn't retain focus when dialog opens (prevents aria-hidden focus warning)
-                              (e.currentTarget as HTMLButtonElement).blur();
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Not Supported</AlertDialogTitle>
-                            <AlertDialogDescription>Zone deletion is not yet supported. This dialog is a placeholder.</AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogAction autoFocus>Close</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </Link>
             );
           })}
         </div>

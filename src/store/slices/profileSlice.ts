@@ -214,7 +214,7 @@ export const fetchUserProfile = createAsyncThunk<
       if (!state.profile) return true;
       
       const context = generateContextKey(client, portfolio);
-      // Prevent multiple rapid /auth/v1/me calls during bootstrap: if using auth context and fetched within 5s, skip
+  // Prevent multiple rapid /auth/v1/me calls during bootstrap: if using auth context and fetched within 5s, skip
       if (!client && !portfolio && !profileName) {
         const last = (state.profile as any).lastAuthMeFetched;
         if (last && Date.now() - last < 5000) {
@@ -673,13 +673,14 @@ const profileSlice = createSlice({
       if (profile) {
         state.user = profile;
       }
+  try { localStorage.setItem('sck.profileName', action.payload); } catch { /* ignore */ }
     },
     syncFromAuth: (state, action: PayloadAction<UserProfile>) => {
       const profile = action.payload;
       state.user = profile;
       state.currentProfile = profile.profile_name;
       upsertProfile(state, profile);
-  try { sessionStorage.setItem('sck_profile_name', profile.profile_name); } catch { /* ignore */ }
+  try { localStorage.setItem('sck.profileName', profile.profile_name); } catch { /* ignore */ }
       // Update caches and membership
       state.individualProfileCache[profile.profile_name] = Date.now();
       state.contextCache['auth'] = Date.now();
@@ -719,7 +720,7 @@ const profileSlice = createSlice({
       if (profile) {
         state.user = profile;
         state.currentProfile = profileName;
-  try { sessionStorage.setItem('sck_profile_name', profileName); } catch { /* ignore */ }
+  try { localStorage.setItem('sck.profileName', profileName); } catch { /* ignore */ }
         if (context) {
           state.currentContext = context;
         }

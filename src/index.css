@@ -69,47 +69,56 @@ All colors MUST be HSL.
     --sidebar-border: 220 13% 91%;
 
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+  /* Overlay scrim color + default alpha */
+  --scrim-color: 0 0% 0%;
+  --scrim-alpha: 0.4;
+
+  /* Subtle border alpha (used by border-subtle utility) */
+  --border-subtle-alpha: 0.5;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+  /* Dark base: slightly lighter bg; neutral foreground for max readability */
+  --background: 222 28% 10%; /* was 4.9% — too close to black */
+  --foreground: 210 15% 96%; /* reduce saturation for neutral white */
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+  --card: 222 28% 12%;
+  --card-foreground: var(--foreground);
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+  --popover: 222 28% 12%;
+  --popover-foreground: var(--foreground);
 
-    --primary: 210 80% 60%;
-    --primary-foreground: 0 0% 100%;
+  --primary: 210 70% 58%;
+  --primary-foreground: 0 0% 100%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+  --secondary: 220 20% 20%;
+  --secondary-foreground: var(--foreground);
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+  /* Muted gets dimmer and cooler; increase contrast gap vs foreground */
+  --muted: 220 18% 18%;
+  --muted-foreground: 215 14% 62%; /* was 65.1% — slightly darker for labels */
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+  --accent: 220 22% 22%;
+  --accent-foreground: var(--foreground);
 
-  /* Original dark destructive was too low-contrast; bump lightness & add vivid variant */
-  --destructive: 0 70% 40%; /* used for backgrounds (buttons) */
+  /* Destructive tuned for dark */
+  --destructive: 0 72% 44%;
   --destructive-foreground: 210 40% 98%;
-  --destructive-bright: 0 85% 60%; /* for inline error text on dark surfaces */
+  --destructive-bright: 0 86% 62%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+  --border: 220 16% 24%;
+  --input: 220 16% 24%;
+  --ring: 212 20% 72%;
     
     /* Dashboard specific colors - dark mode */
-    --dashboard-bg: 222.2 84% 4.9%;
-    --dashboard-header: 222.2 84% 4.9%;
-    --dashboard-sidebar: 222.2 84% 4.9%;
+  --dashboard-bg: var(--background);
+  --dashboard-header: 222 28% 11%;
+  --dashboard-sidebar: 222 28% 11%;
     
     /* Gradients - dark mode */
-    --gradient-primary: linear-gradient(135deg, hsl(210 80% 60%), hsl(220 75% 65%));
-    --gradient-card: linear-gradient(to bottom, hsl(222.2 84% 4.9%), hsl(217.2 32.6% 17.5%));
+  --gradient-primary: linear-gradient(135deg, hsl(210 70% 58%), hsl(218 65% 60%));
+  --gradient-card: linear-gradient(to bottom, hsl(222 28% 12%), hsl(220 18% 18%));
     
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
@@ -119,6 +128,12 @@ All colors MUST be HSL.
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+  /* Slightly stronger scrim in dark mode */
+  --scrim-alpha: 0.5;
+
+  /* Fine-tuned subtle border alpha for dark mode if needed */
+  --border-subtle-alpha: 0.5;
   }
 }
 
@@ -150,7 +165,21 @@ All colors MUST be HSL.
     background-image: var(--gradient-primary);
   }
 
+  /* Overlay scrim that respects theme */
+  .bg-scrim {
+    background-color: hsl(var(--scrim-color) / var(--scrim-alpha));
+  }
+
+  /* Subtle themed border (uses theme border color with alpha) */
+  .border-subtle {
+    border-color: hsl(var(--border) / var(--border-subtle-alpha));
+  }
+
   /* High-contrast error text for dark mode */
   .error-text { color: hsl(var(--destructive)); }
   .dark .error-text { color: hsl(var(--destructive-bright, var(--destructive))); }
+
+  /* Optional: slightly boost read contrast for displayed values in view mode */
+  .contrast-value { color: hsl(var(--foreground)); }
+  .dark .contrast-value { color: hsl(210 20% 96%); }
 }

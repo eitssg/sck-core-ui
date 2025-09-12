@@ -595,6 +595,12 @@ export const authAPI = {
       });
       if (!res.ok) {
   try { console.log('[authAPI] refreshSession: non-OK status', res.status); } catch (e) { /* no-op */ }
+        // If the session cookie is invalid/expired, surface a specific error so callers can navigate to /login
+        if (res.status === 401) {
+          const err: any = new Error('session_cookie_invalid');
+          err.status = 401;
+          throw err;
+        }
         return false;
       }
   // No persistence of session issuance time
@@ -616,20 +622,22 @@ export const authAPI = {
         if (DEBUG_AUTH) console.log('[authAPI] refresh captured session headers', { expSec, refreshAtSec });
       } catch { /* ignore */ }
       return true;
-    } catch {
+    } catch (e) {
+      // Rethrow explicit invalid session errors; otherwise indicate transient failure
+      if (e instanceof Error && e.message === 'session_cookie_invalid') throw e;
       return false;
     }
   },
 
-  // Update signup to include client_id
+  // Update signup to include client_id and correct endpoint
   async signup(userData: SignupRequest): Promise<OAuthTokenResponse | OAuthErrorResponse> {
     try {
-      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGIN), {
+      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.SIGNUP), {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...userData,
-          client_id: API_CONFIG.OAUTH.CLIENT_ID  // Add client_id for signup
+          client_id: API_CONFIG.OAUTH.CLIENT_ID
         }),
       });
 
@@ -653,14 +661,26 @@ export const authAPI = {
 
   async logout(): Promise<void> {
     try {
-  const accessToken = undefined; // access token is not persisted in storage under Option B
+      // Best-effort revoke (no-op if server ignores)
+      const accessToken = undefined; // access token is not persisted in storage under Option B
       if (accessToken) {
-        // Revoke token on server
         await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.REVOKE), {
           method: 'POST',
           headers: getAuthHeaders(),
           body: JSON.stringify({ token: accessToken }),
+        }).catch(() => undefined);
+      }
+
+      // Always call server logout to delete the secure session cookie
+      // Use credentials: 'include' so the cookie is sent and cleared server-side
+      try {
+        await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGOUT), {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' },
         });
+      } catch {
+        // Ignore network errors; client will still clear local storage
       }
     } catch (error) {
       console.error('Logout error:', error);

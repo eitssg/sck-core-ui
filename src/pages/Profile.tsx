@@ -33,6 +33,7 @@ import UserMenu from "@/components/UserMenu";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTheme } from "@/hooks/useTheme";
+import { getThemesList } from "@/lib/themes";
 import { useToast } from "@/hooks/use-toast";
 import { useDispatch } from "react-redux";
 import { AppDispatch } from "@/store";
@@ -104,20 +105,25 @@ export default function Profile() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  // Theme presets selection (per profile)
+  const allPresetThemes = useMemo(() => getThemesList(), []);
+  const lightThemes = useMemo(() => allPresetThemes.filter((t:any) => !t.isDark), [allPresetThemes]);
+  const darkThemes = useMemo(() => allPresetThemes.filter((t:any) => t.isDark), [allPresetThemes]);
+  const currentLightPresetId = String(((profileUser as any)?.preferences?.ui?.lightThemeId) || '');
+  const currentDarkPresetId = String(((profileUser as any)?.preferences?.ui?.darkThemeId) || '');
 
-  // Derive client context from available sources (prefer explicit fields, fallback to JWT claim)
+  // Derive client context (prefer selected client, then active slice, then profile, then JWT)
   const jwtClient = useMemo(() => authAPI.getCurrentClient(), []);
-  // Resolve client context via profile -> active client slice -> JWT
-  const clientSlug = useMemo(() => {
+  const effectiveClientSlug = useMemo(() => {
     const p: any = profileUser || {};
-    return p.client || activeClientSlug || jwtClient || "";
-  }, [profileUser, activeClientSlug, jwtClient]);
-  // Pull client details from clients slice if available
-  const clientObj = useAppSelector((state) => selectClientBySlug(state as any, clientSlug || ""));
+    return selectedClientSlug || activeClientSlug || p.client || jwtClient || "";
+  }, [selectedClientSlug, activeClientSlug, profileUser, jwtClient]);
+  // Pull client details for effective client
+  const clientObj = useAppSelector((state) => selectClientBySlug(state as any, effectiveClientSlug || ""));
   const clientName = useMemo(() => {
     const p: any = profileUser || {};
-    return (clientObj as any)?.client_name || p.client_name || "";
-  }, [clientObj, profileUser]);
+    return (clientObj as any)?.client_name || selectedClientName || p.client_name || "";
+  }, [clientObj, selectedClientName, profileUser]);
   const organizationName = useMemo(() => {
     const p: any = profileUser || {};
     return (clientObj as any)?.organization_name || p.organization_name || "";
@@ -136,12 +142,12 @@ export default function Profile() {
 
   // Ensure client details are loaded when we have a slug
   useEffect(() => {
-    const slug = clientSlug;
+    const slug = effectiveClientSlug;
     if (!slug) return;
     if (!clientObj) {
       dispatch(fetchClient({ clientSlug: slug } as any));
     }
-  }, [dispatch, clientSlug, clientObj]);
+  }, [dispatch, effectiveClientSlug, clientObj]);
 
   // Build initial form state from remote user (fallback to store user)
   const initialForm: UserProfile = useMemo(() => {
@@ -328,6 +334,8 @@ export default function Profile() {
         "avatar_url",
         "profile_description",
         "aws_account_id",
+        // include preferences so theme presets can be saved with Save button
+        "preferences" as any,
       ];
       const diff = diffFields(editData as any, initialForm as any, allowed as any);
 
@@ -449,10 +457,7 @@ export default function Profile() {
               </div>
             )}
 
-            {/* Current client display */}
-            <div className="hidden sm:flex items-center px-2 py-1 rounded-md bg-muted/60 text-muted-foreground max-w-[200px]">
-              <span className="truncate" title={selectedClientName}>{selectedClientName}</span>
-            </div>
+            {/* Removed redundant current client label; dropdown above is sufficient */}
 
             {/* Shared avatar menu */}
             <UserMenu />
@@ -552,8 +557,8 @@ export default function Profile() {
                     <FieldView
                       label="Client"
                       value={String(
-                        (clientName || clientSlug)
-                          ? `${clientName || clientSlug}${clientSlug ? ` (${clientSlug})` : ''}`
+                        (clientName || effectiveClientSlug)
+                          ? `${clientName || effectiveClientSlug}${effectiveClientSlug ? ` (${effectiveClientSlug})` : ''}`
                           : '—'
                       )}
                     />
@@ -604,6 +609,12 @@ export default function Profile() {
                   </div>
                   <Separator />
                   <FieldView label="Profile Description" value={String(editData.profile_description || "No description")} />
+
+                  {/* Theme Preferences (view mode, shows current presets) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FieldView label="Light Theme Preset" value={String(currentLightPresetId || 'Default')} />
+                    <FieldView label="Dark Theme Preset" value={String(currentDarkPresetId || 'Default')} />
+                  </div>
                 </div>
               ) : (
                  <div className="space-y-4">
@@ -612,8 +623,8 @@ export default function Profile() {
                       <FieldView
                         label="Client"
                         value={String(
-                          (clientName || clientSlug)
-                            ? `${clientName || clientSlug}${clientSlug ? ` (${clientSlug})` : ''}`
+                          (clientName || effectiveClientSlug)
+                            ? `${clientName || effectiveClientSlug}${effectiveClientSlug ? ` (${effectiveClientSlug})` : ''}`
                             : '—'
                         )}
                       />
@@ -734,6 +745,56 @@ export default function Profile() {
                     />
                   </div>
                   <div className="space-y-2">
+
+                    {/* Theme Preferences (edit mode) */}
+                    <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Light Theme Preset</Label>
+                        <Select
+                          value={String((editData as any)?.preferences?.ui?.lightThemeId || currentLightPresetId || 'default')}
+                          onValueChange={(value) => {
+                            const nextPrefs = { ...((editData as any)?.preferences || {}) } as any;
+                            const ui = { ...(nextPrefs.ui || {}) };
+                            if (value === 'default') delete ui.lightThemeId; else ui.lightThemeId = value;
+                            nextPrefs.ui = ui;
+                            setEditData((s) => ({ ...s, preferences: nextPrefs } as any));
+                          }}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Default (base light)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="default">Default (base light)</SelectItem>
+                            {lightThemes.map((t:any) => (
+                              <SelectItem key={t.name} value={t.name}>{t.displayName || t.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Dark Theme Preset</Label>
+                        <Select
+                          value={String((editData as any)?.preferences?.ui?.darkThemeId || currentDarkPresetId || 'default')}
+                          onValueChange={(value) => {
+                            const nextPrefs = { ...((editData as any)?.preferences || {}) } as any;
+                            const ui = { ...(nextPrefs.ui || {}) };
+                            if (value === 'default') delete ui.darkThemeId; else ui.darkThemeId = value;
+                            nextPrefs.ui = ui;
+                            setEditData((s) => ({ ...s, preferences: nextPrefs } as any));
+                          }}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Default (base dark)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="default">Default (base dark)</SelectItem>
+                            {darkThemes.map((t:any) => (
+                              <SelectItem key={t.name} value={t.name}>{t.displayName || t.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
                     <Label htmlFor="profile_description">Profile Description</Label>
                     <Textarea
                       id="profile_description"
@@ -972,7 +1033,7 @@ function FieldView({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <Label className="text-sm font-medium text-muted-foreground">{label}</Label>
-      <p className="mt-1 text-sm">{value || "—"}</p>
+  <p className="mt-1 text-sm contrast-value">{value || "—"}</p>
     </div>
   );
 }
@@ -1025,7 +1086,7 @@ function Row({
         {icon}
         <span className="text-sm">{label}</span>
       </div>
-      <span className={`text-sm font-medium ${muted ? 'text-muted-foreground' : ''}`}>{children}</span>
+  <span className={`text-sm font-medium ${muted ? 'text-muted-foreground' : 'contrast-value'}`}>{children}</span>
     </div>
   );
 }

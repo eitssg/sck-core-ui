@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import { useSelector, useDispatch } from 'react-redux'
 import { RootState, useAppDispatch } from '@/store'
-import { selectSelectedClient, selectClients, selectSelectedClientName, setSelectedClient, fetchClients, switchToClient, selectClientContext } from '@/store/slices/clientsSlice'
+import { selectSelectedClient, selectClients, selectSelectedClientName, switchToClient, selectClientContext } from '@/store/slices/clientsSlice'
 import { refreshAccessToken, selectTokens } from '@/store/slices/authSlice'
 import { selectUser as selectProfileUser, selectUserProfiles, selectCurrentProfile, switchToProfile } from '@/store/slices/profileSlice'
 import { Button } from '@/components/ui/button'
@@ -59,14 +59,15 @@ import type { Client } from '@/store/types'
 
 type DashboardLayoutProps = PropsWithChildren<{
   activeItem?: string
+  navMode?: 'full' | 'onboarding'
 }>
 
-export default function DashboardLayout({ children, activeItem }: DashboardLayoutProps) {
-  // Persist sidebar collapsed state across reloads (session-scoped)
+export default function DashboardLayout({ children, activeItem, navMode = 'full' }: DashboardLayoutProps) {
+  // Persist sidebar collapsed state across reloads (localStorage, durable)
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
     try {
-      return sessionStorage.getItem('sidebar_collapsed') === '1'
+      return localStorage.getItem('sck.sidebarCollapsed') === '1'
     } catch {
       return false
     }
@@ -102,10 +103,7 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
   // Access tokens reside only in Redux (not sessionStorage). Use them for tenant (cnm) detection.
   const tokens = useSelector((s: RootState) => selectTokens(s) as any)
 
-  // Ensure client list is available after login (cached & TTL guarded by thunk)
-  useEffect(() => {
-    dispatchTyped(fetchClients({ limit: 100 }))
-  }, [dispatchTyped])
+  // Client bootstrap moved to ClientsBootstrap at app root
 
   // Tenant alignment logic: ensure access token scope (cnm) matches selected client.
   // Avoid unnecessary /auth/v1/token calls when simply navigating between pages.
@@ -151,24 +149,24 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
     ]
   }, [clients])
 
-  // Auto-select first (or fallback Core) if none selected
-  useEffect(() => {
-    if (!selectedClient && effectiveClients.length > 0) {
-      dispatchTyped(setSelectedClient(effectiveClients[0].client))
-    }
-  }, [selectedClient, effectiveClients, dispatchTyped])
+  // Client selection handled by ClientsBootstrap
 
 
-  // (Replaced by fallback aware auto-select above)
-
-  const navigation = [
+  // Navigation definitions
+  const fullNavigation = [
     { name: 'Dashboard', href: '/dashboard', icon: Home },
     { name: 'Zones', href: '/zones', icon: GitBranch },
     { name: 'Portfolios', href: '/portfolios', icon: Briefcase },
     { name: 'Applications', href: '/applications', icon: FolderOpen },
-  { name: 'Deployments', href: '/deployments', icon: GitBranch },
-  { name: 'Documentation', href: '/docs', icon: List },
+    { name: 'Deployments', href: '/deployments', icon: GitBranch },
+    { name: 'Documentation', href: '/docs', icon: List },
   ]
+  const onboardingNavigation = [
+    { name: 'Onboarding', href: '/dashboard', icon: Home },
+    { name: 'Profile', href: '/profile', icon: User },
+    { name: 'Documentation', href: '/docs', icon: List },
+  ]
+  const navigation = navMode === 'onboarding' ? onboardingNavigation : fullNavigation
 
   const isActive = (href: string) =>
     location.pathname === href || location.pathname.startsWith(href + '/')
@@ -228,7 +226,7 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
         const collapsed = !open
         setSidebarCollapsed(collapsed)
         try {
-          sessionStorage.setItem('sidebar_collapsed', collapsed ? '1' : '0')
+          localStorage.setItem('sck.sidebarCollapsed', collapsed ? '1' : '0')
         } catch {
           // ignore persistence errors
         }
@@ -260,7 +258,7 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
                     onClick={() => setSidebarCollapsed(c => {
                       const next = !c
                       try {
-                        sessionStorage.setItem('sidebar_collapsed', next ? '1' : '0')
+                        localStorage.setItem('sck.sidebarCollapsed', next ? '1' : '0')
                       } catch {
                         // ignore persistence errors
                       }
@@ -321,7 +319,7 @@ export default function DashboardLayout({ children, activeItem }: DashboardLayou
           {isMobile && mobileOpen && (
             <div className="fixed inset-0 z-50 flex">
               <div
-                className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                className="absolute inset-0 bg-scrim backdrop-blur-sm"
                 onClick={() => setMobileOpen(false)}
                 aria-hidden="true"
               />
@@ -402,32 +400,22 @@ function AppSidebar({ navigation, isActive, handleLogout, collapsed }: AppSideba
         </SidebarGroup>
 
         {/* Footer actions */}
-        <div className="mt-auto p-4 border-t border-border space-y-2">
-          <Button
-            variant="gradient"
-            className={`gap-2 ${collapsed ? 'px-2' : 'w-full'}`}
-            size={collapsed ? 'icon' : 'default'}
-            title={collapsed ? 'Quick Create' : undefined}
-          >
-            <Plus className="h-4 w-4" />
-            {!collapsed && 'Quick Create'}
-          </Button>
-
+        <div className="mt-auto p-4 border-t border-border">
           <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                className={collapsed ? 'justify-center' : ''}
-                title={collapsed ? 'Logout' : undefined}
-              >
-                <button onClick={handleLogout} className="flex items-center gap-3 w-full text-left">
-                  <LogOut className="h-5 w-5 flex-shrink-0" />
-                  {!collapsed && <span>Logout</span>}
-                </button>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </div>
+             <SidebarMenuItem>
+               <SidebarMenuButton
+                 asChild
+                 className={collapsed ? 'justify-center' : ''}
+                 title={collapsed ? 'Logout' : undefined}
+               >
+                 <button onClick={handleLogout} className="flex items-center gap-3 w-full text-left">
+                   <LogOut className="h-5 w-5 flex-shrink-0" />
+                   {!collapsed && <span>Logout</span>}
+                 </button>
+               </SidebarMenuButton>
+             </SidebarMenuItem>
+           </SidebarMenu>
+         </div>
       </SidebarContent>
     </Sidebar>
   )

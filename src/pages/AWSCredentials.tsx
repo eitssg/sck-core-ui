@@ -5,6 +5,10 @@ import { useToast } from "@/hooks/use-toast";
 import { useAppSelector } from "@/store";
 import { selectUser as selectProfileUser, patchCurrentUserProfile } from "@/store/slices/profileSlice";
 import { refreshAccessToken } from "@/store/slices/authSlice";
+import { fetchClients, selectSelectedClient, setSelectedClient, selectClientContext } from "@/store/slices/clientsSlice";
+import { fetchPortfolios, setCurrentClient as setPortfoliosCurrentClient, clear as clearPortfolios } from "@/store/slices/portfoliosSlice";
+import { resetZonesPaging, fetchZonesPage } from "@/store/slices/zonesSlice";
+import { clear as clearDeployments, fetchBuilds } from "@/store/slices/deploymentsSlice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +23,7 @@ export default function AWSCredentials() {
   const navigate = useNavigate();
   const location = useLocation() as any;
   const profileUser = useAppSelector(selectProfileUser as any);
+  const selectedClient = useAppSelector(selectSelectedClient as any) as string | null;
   const profileName: string = (profileUser as any)?.profile_name || "default";
 
   const [ak, setAk] = useState("");
@@ -71,12 +76,44 @@ export default function AWSCredentials() {
       }
 
       // Refresh token for immediate API access
-  const refresh = await dispatch(refreshAccessToken('aws_credentials'));
+      const refresh = await dispatch(refreshAccessToken('aws_credentials'));
       if (refreshAccessToken.rejected.match(refresh)) {
         toast({ title: 'Saved, but token refresh failed', description: String(refresh.payload || 'You may need to reload.'), variant: 'default' });
       }
-  // Clear any previous status banner flags
-  try { sessionStorage.removeItem('aws_cred_status'); } catch { /* ignore */ }
+
+      // Kick off initial data load now that creds exist (ALWAYS reload AWS-dependent data)
+      try {
+        // 1) Refresh clients list (force)
+        await dispatch(fetchClients({ force: true }) as any);
+
+        // 2) Decide target client: keep current selection, or persisted, or fallback to 'core'
+        let target = selectedClient;
+        if (!target) {
+          try { target = localStorage.getItem('sck.selectedClient') || null; } catch { /* ignore */ }
+        }
+        if (!target) target = 'core';
+
+        // 3) Clear dependent caches and set selection using shared helper
+        await dispatch(selectClientContext(target) as any);
+
+        // 4) Portfolios: hard clear + set current client + force fetch first page
+        await dispatch(clearPortfolios() as any);
+        await dispatch(setPortfoliosCurrentClient(target) as any);
+        await dispatch(fetchPortfolios({ client: target, force: true }) as any);
+
+        // 5) Zones: reset paging and fetch first page
+        await dispatch(resetZonesPaging() as any);
+        await dispatch(fetchZonesPage({ client: target, limit: 50, append: false }) as any);
+
+        // 6) Deployments builds: clear cache and refetch latest
+        await dispatch(clearDeployments() as any);
+        await dispatch(fetchBuilds({ limit: 10 }) as any);
+      } catch {
+        // Non-fatal; dashboard will lazy-load as needed
+      }
+
+      // Clear any previous status banner flags
+      try { sessionStorage.removeItem('aws_cred_status'); } catch { /* ignore */ }
       setAk(""); setSk("");
       toast({ title: 'AWS credentials saved', description: 'Your credentials are encrypted and ready to use.' });
       const from = (location?.state && (location.state as any).from) || '/profile';

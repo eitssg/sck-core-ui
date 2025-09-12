@@ -48,15 +48,10 @@ const Clients = () => {
 
   const renderStatus = (status?: string) => {
     const s = (status ?? 'active').toLowerCase();
-    const map: Record<string, { color: string; label: string }> = {
-      active: { color: 'text-emerald-500', label: 'active' },
-      inactive: { color: 'text-muted-foreground', label: 'inactive' },
-      suspended: { color: 'text-amber-500', label: 'suspended' },
-    };
-    const meta = map[s] ?? map.active;
+    const meta = { label: s };
     return (
       <span className="flex items-center gap-1 text-xs text-muted-foreground">
-        <Circle className={`h-2 w-2 ${meta.color}`} />
+        <Circle className={`h-2 w-2 ${s === 'inactive' ? 'text-muted-foreground' : s === 'suspended' ? 'text-accent-foreground' : 'text-primary'}`} />
         <span className="uppercase tracking-wide">{meta.label}</span>
       </span>
     );
@@ -188,24 +183,24 @@ const Clients = () => {
                               </div>
                               <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                                 <div className="flex items-center gap-1">
-                                  <code className="font-mono bg-muted px-1.5 py-0.5 rounded">{client.client}</code>
+                                  <code className="font-mono bg-muted px-1.5 py-0.5 rounded contrast-value">{client.client}</code>
                                 </div>
                                 {org && (
                                   <div className="flex items-center gap-1">
                                     <Users className="h-3 w-3" />
-                                    <span className="truncate max-w-[240px]">{org}</span>
+                                    <span className="truncate max-w-[240px] contrast-value">{org}</span>
                                   </div>
                                 )}
                                 {client.organization_account && (
                                   <div className="flex items-center gap-1">
                                     <span className="font-medium text-foreground">AWS Billing Account:</span>
-                                    <span className="truncate max-w-[160px] text-muted-foreground">{client.organization_account}</span>
+                                    <span className="truncate max-w-[160px] contrast-value">{client.organization_account}</span>
                                   </div>
                                 )}
                                 {client.domain && (
                                   <div className="flex items-center gap-1">
                                     <Globe className="h-3 w-3" />
-                                    <span className="truncate max-w-[200px]">{client.domain}</span>
+                                    <span className="truncate max-w-[200px] contrast-value">{client.domain}</span>
                                   </div>
                                 )}
                                 {created && <span>Created {created}</span>}

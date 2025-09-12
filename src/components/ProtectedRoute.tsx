@@ -23,6 +23,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   // Profile hydration state (Redux is source of truth for user profile)
   const profileUser = useAppSelector(selectProfileUser as any);
   const profileLoading = useAppSelector(selectProfileLoading as any);
+  const hasAwsCreds = Boolean((profileUser as any)?.credentials?.AwsCredentials);
 
   // Short grace window while we may be refreshing access using the refresh token
   // Prevents a redirect bounce to /login during app boot on reload.
@@ -33,12 +34,29 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     if (hasRefresh && !hasAccess) {
       setWaitingForAccess(true);
       if (waitTimerRef.current) window.clearTimeout(waitTimerRef.current);
-      waitTimerRef.current = window.setTimeout(() => setWaitingForAccess(false), 2500);
+      // If a refresh just happened or is in-flight, give it a tad longer
+      let delay = 2500;
+      try {
+        const lastAt = sessionStorage.getItem('sck_last_refresh_at');
+        const inflight = sessionStorage.getItem('sck_bootstrap_refresh_inflight') === '1';
+        if (inflight) delay = 3500;
+        else if (lastAt && Date.now() - Date.parse(lastAt) < 1500) delay = 1500;
+      } catch { /* ignore */ }
+      waitTimerRef.current = window.setTimeout(() => setWaitingForAccess(false), delay);
+      // Also end early on refresh success/failure events
+      const onDone = () => {
+        if (waitTimerRef.current) window.clearTimeout(waitTimerRef.current);
+        setWaitingForAccess(false);
+      };
+      window.addEventListener('sck:tokenRefreshed', onDone as EventListener);
+      window.addEventListener('sck:tokenRefreshFailed', onDone as EventListener);
       return () => {
         if (waitTimerRef.current) {
           window.clearTimeout(waitTimerRef.current);
           waitTimerRef.current = null;
         }
+        window.removeEventListener('sck:tokenRefreshed', onDone as EventListener);
+        window.removeEventListener('sck:tokenRefreshFailed', onDone as EventListener);
       };
     }
     // Access present or no refresh token; stop waiting immediately
@@ -64,7 +82,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     );
   }
 
-  // If profile exists (Redux) or auth context user exists, allow
+  // If profile exists (Redux) or auth context user exists, continue
   if (profileUser || user) {
     return <>{children}</>;
   }

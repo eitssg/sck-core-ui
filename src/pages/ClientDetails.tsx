@@ -91,7 +91,7 @@ const Field: React.FC<FieldProps> = ({ label, value, onChange, readOnly, mono, p
   <div className="space-y-1">
     <Label className="text-xs uppercase tracking-wide text-muted-foreground">{label}</Label>
     {readOnly ? (
-      <div className={`text-sm ${mono? 'font-mono':''} min-h-[1.5rem]`}>{value || <span className="opacity-50">—</span>}</div>
+  <div className={`text-sm ${mono? 'font-mono':''} min-h-[1.5rem] contrast-value`}>{value || <span className="opacity-50">—</span>}</div>
     ) : (
       <Input value={value || ''} placeholder={placeholder} onChange={(e)=>onChange?.(e.target.value)} className={mono? 'font-mono':''} />
     )}
@@ -246,7 +246,6 @@ const ClientDetails: React.FC = () => {
   if (!client) return <div className="p-6">Client not found.</div>;
 
   const status = client.client_status || 'active';
-  const statusColor = status === 'active' ? 'bg-emerald-500' : status === 'inactive' ? 'bg-muted-foreground' : 'bg-amber-500';
 
   return (
     <div className="space-y-6 p-4 md:p-6 animate-fade-in">
@@ -255,9 +254,9 @@ const ClientDetails: React.FC = () => {
           <h1 className="text-2xl font-semibold tracking-tight break-words">{client.client_name || client.client}</h1>
           <p className="text-sm text-muted-foreground max-w-3xl">{client.client_description || 'No description provided.'}</p>
           <div className="flex items-center gap-3 flex-wrap pt-1">
-            <span className="font-mono text-sm px-2 py-1 rounded bg-muted">{client.client}</span>
+            <span className="font-mono text-sm px-2 py-1 rounded bg-muted contrast-value">{client.client}</span>
             <span className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-              <span className={`h-2 w-2 rounded-full ${statusColor}`}></span>{status}
+              <span className={`h-2 w-2 rounded-full ${status === 'inactive' ? 'bg-muted-foreground' : status === 'suspended' ? 'bg-accent-foreground' : 'bg-primary'}`}></span>{status}
             </span>
           </div>
         </div>

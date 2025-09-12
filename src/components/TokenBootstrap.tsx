@@ -20,6 +20,11 @@ export default function TokenBootstrap() {
   const location = useLocation();
 
   useEffect(() => {
+  // If a refresh just happened this tick (e.g., SessionManager or another tab), skip
+  try {
+    const lastAt = sessionStorage.getItem('sck_last_refresh_at');
+    if (lastAt && Date.now() - Date.parse(lastAt) < 750) return;
+  } catch { /* ignore */ }
   // Skip bootstrap on public routes where we intentionally hard-logout
   const pathname = location?.pathname || '/';
   const isPublicRoute = (
@@ -53,11 +58,26 @@ export default function TokenBootstrap() {
     try { hasRefresh = Boolean(sessionStorage.getItem('refresh_token')); } catch { /* ignore */ }
 
   if (!startedRef.current && hasRefresh && needsRefresh) {
+      // Dedupe across components by marking in-flight for a brief window
+      try { sessionStorage.setItem('sck_bootstrap_refresh_inflight', '1'); } catch { /* ignore */ }
       startedRef.current = true;
       // Fire and forget; SessionManager will maintain thereafter
       dispatch(refreshAccessToken('bootstrap'));
     }
   }, [dispatch, tokens, location]);
+
+  // Clear inflight marker after a refresh completes or fails
+  useEffect(() => {
+    const onDone = () => {
+      try { sessionStorage.removeItem('sck_bootstrap_refresh_inflight'); } catch { /* ignore */ }
+    };
+    window.addEventListener('sck:tokenRefreshed', onDone as EventListener);
+    window.addEventListener('sck:tokenRefreshFailed', onDone as EventListener);
+    return () => {
+      window.removeEventListener('sck:tokenRefreshed', onDone as EventListener);
+      window.removeEventListener('sck:tokenRefreshFailed', onDone as EventListener);
+    };
+  }, []);
 
   return null;
 }
