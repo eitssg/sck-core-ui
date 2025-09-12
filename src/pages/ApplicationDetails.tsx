@@ -38,15 +38,12 @@ export default function ApplicationDetails() {
   // Route params and query
   const { portfolio: portfolioParamFromPath } = useParams<{ portfolio?: string }>();
   const [searchParams] = useSearchParams();
-  const qpClient = searchParams.get("client") || "";
   const qpPortfolio = searchParams.get("portfolio") || portfolioParamFromPath || "";
   const qpRegex = searchParams.get("app_regex") || searchParams.get("regex") || searchParams.get("app") || "";
 
   // Redux data
   const { selectedClient, portfolios, applications } = useReduxData();
-  const currentClient = useMemo(() => {
-    return qpClient || (typeof selectedClient === "string" ? selectedClient : "");
-  }, [qpClient, selectedClient]);
+  const currentClient = useMemo(() => (typeof selectedClient === "string" ? selectedClient : ""), [selectedClient]);
 
   // Normalize lists
   const portfoliosList = useMemo<Portfolio[]>(() => {
@@ -102,10 +99,8 @@ export default function ApplicationDetails() {
   // Derive zone details for this application
   const zone = useMemo<Zone | null>(() => {
     if (!application?.zone) return null;
-    // If zones are cross-client, also filter by client from selection when available
-    const all = (zonesList as Zone[]).filter((z) => !currentClient || z.client === currentClient);
-    return all.find((z) => z.zone === application.zone) || null;
-  }, [application?.zone, zonesList, currentClient]);
+    return (zonesList as Zone[]).find((z) => z.zone === application.zone) || null;
+  }, [application?.zone, zonesList]);
 
   // Compile regex to match builds that belong to this application (PRN-based)
   const appRegex = useMemo<RegExp | null>(() => {
@@ -388,7 +383,7 @@ export default function ApplicationDetails() {
                 className="w-full justify-start gap-2"
                 asChild
               >
-                <Link to={`/portfolios/${encodeURIComponent(application.portfolio)}?client=${encodeURIComponent(currentClient)}`}>
+                <Link to={`/portfolios/${encodeURIComponent(application.portfolio)}`}>
                   <FolderOpen className="h-4 w-4" />
                   View Portfolio
                 </Link>

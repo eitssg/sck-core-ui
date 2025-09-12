@@ -95,10 +95,10 @@ export default function CreateApplication() {
   // Redux-backed data
   const { selectedClient, portfolios, zones, actions } = useReduxData();
 
-  // Current client from URL or selected
+  // Current client from selection only (do not read from URL)
   const currentClient = useMemo(
-    () => searchParams.get("client") || (typeof selectedClient === "string" ? selectedClient : ""),
-    [searchParams, selectedClient]
+    () => (typeof selectedClient === "string" ? selectedClient : ""),
+    [selectedClient]
   );
 
   // Load portfolios for current client (unconditional hook)
@@ -117,19 +117,13 @@ export default function CreateApplication() {
     () => (Array.isArray((portfolios as any)?.items) ? ((portfolios as any).items as Portfolio[]) : []),
   [portfolios]
   );
-  const clientPortfolios = useMemo(
-    () => (currentClient ? portfoliosList.filter((p) => p.client === currentClient) : portfoliosList),
-    [portfoliosList, currentClient]
-  );
+  const clientPortfolios = useMemo(() => portfoliosList, [portfoliosList]);
 
   const zonesList = useMemo<Zone[]>(
     () => (Array.isArray(zones) ? (zones as Zone[]) : []),
     [zones]
   );
-  const clientZones = useMemo(
-    () => (currentClient ? zonesList.filter((z) => z.client === currentClient) : zonesList),
-    [zonesList, currentClient]
-  );
+  const clientZones = useMemo(() => zonesList, [zonesList]);
 
   // Regions derived from zones (keys of region_facts)
   const regionOptions = useMemo(() => {
@@ -212,9 +206,7 @@ export default function CreateApplication() {
     };
 
     try {
-      const url = `${buildApiUrl(API_CONFIG.ENDPOINTS.API.APPLICATIONS)}?client=${encodeURIComponent(
-        data.client
-      )}`;
+  const url = `${buildApiUrl(API_CONFIG.ENDPOINTS.API.APPLICATIONS)}`;
       const res = await fetch(url, {
         method: "POST",
         headers: getAuthHeaders(),

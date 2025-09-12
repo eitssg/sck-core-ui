@@ -50,7 +50,9 @@ import {
   selectPortfoliosError,
   selectSelectedPortfolioId,
   selectCurrentClient,
-  selectPortfoliosLoading
+  selectPortfoliosLoading,
+  selectPortfoliosCursor,
+  selectHasMorePortfolios
 } from '@/store/slices/portfoliosSlice';
 
 // Import only what actually exists in themeSlice
@@ -87,7 +89,9 @@ export const useReduxData = () => {
     error: useSelector(selectPortfoliosError),
     loading: useSelector(selectPortfoliosLoading),
     selectedPortfolioId: useSelector(selectSelectedPortfolioId),
-    currentClient: useSelector(selectCurrentClient)
+    currentClient: useSelector(selectCurrentClient),
+    cursor: useSelector(selectPortfoliosCursor),
+    hasMore: useSelector(selectHasMorePortfolios),
   };
 
   const applications = useSelector((state: RootState) => state.applications || { items: [], loading: false, error: null });

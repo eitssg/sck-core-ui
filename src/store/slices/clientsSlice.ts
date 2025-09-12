@@ -16,7 +16,7 @@ const CLEAR_DEPENDENT_SLICES = {
   zones: 'zones/resetZonesPaging',
   deployments: 'deployments/clear',
   applications: 'applications/setApplications', // will set empty array
-  portfolios: 'portfolios/clearAll' // to be added if not existing
+  portfolios: 'portfolios/clear' // clear portfolios slice cache/state
 };
 
 // Thunk to encapsulate client context switch from UI (without token refresh).
@@ -296,65 +296,70 @@ export const refreshClient = (clientSlug: string) => (dispatch: AppDispatch) => 
 
 // CLIENT SWITCHING - Switch active client context using refresh token
 export const switchToClient = createAsyncThunk<
-  { user: any; tokens: any; clientSlug: string },
+  { user: any; tokens: OAuthTokenResponse; clientSlug: string },
   string,
   { state: RootState }
 >(
   'clients/switchToClient',
   async (clientSlug: string, thunkAPI) => {
     try {
-      const refreshToken = localStorage.getItem('refresh_token');
+      // Refresh token is only stored in sessionStorage per policy
+      const refreshToken = (() => { try { return sessionStorage.getItem('refresh_token'); } catch { return null; } })();
       if (!refreshToken) {
         throw new Error('No refresh token available - please login again');
       }
 
-      const tokenRequest: OAuthTokenRequest = {
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-        client_id: API_CONFIG.OAUTH.CLIENT_ID,
-        state: `client=${clientSlug}`
-      };
+      // Customization: state=client=<slug> to scope tokens to target tenant
+      const form = new URLSearchParams();
+      form.set('grant_type', 'refresh_token');
+      form.set('refresh_token', refreshToken);
+      form.set('client_id', API_CONFIG.OAUTH.CLIENT_ID);
+      form.set('state', `client=${clientSlug}`);
 
       const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
         },
-        body: JSON.stringify(tokenRequest),
+        body: form.toString(),
+        // cookie not needed; /token is OAuth endpoint and does not rely on session cookie here
       });
 
+      // 401 means unauthorized to switch to that client; do not logout, do not mutate current client
+      if (response.status === 401) {
+        const msg = 'Unauthorized to switch to the selected client.';
+        return thunkAPI.rejectWithValue(msg);
+      }
+
       if (!response.ok) {
-        const errorData = await response.json();
-
-        // Only treat 401 as session expiry
-        if (response.status === 401) {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          throw new Error('Session expired. Please login again.');
-        }
-
+        let errorData: any = {};
+        try { errorData = await response.json(); } catch { /* ignore */ }
         throw new Error(errorData.error_description || `Failed to switch to client: ${clientSlug}`);
       }
 
-      const tokens: OAuthTokenResponse = await response.json();
+  const tokens: OAuthTokenResponse = await response.json();
 
-      // Store new tokens (now scoped to new client)
-      localStorage.setItem('access_token', tokens.access_token);
-      if (tokens.refresh_token) {
-        localStorage.setItem('refresh_token', tokens.refresh_token);
-      }
+      // Persist refresh_token rotation to sessionStorage only; never persist access_token
+      try { if (tokens.refresh_token) sessionStorage.setItem('refresh_token', tokens.refresh_token); } catch { /* ignore */ }
 
-      // Fetch user profile from new client context (cached)
+      // Fetch user profile from new client context using centralized API client
       const user = await authAPI.fetchUserProfile();
       if ((user as any)?.error) {
         throw new Error('Failed to fetch user profile for new client context');
       }
 
+      // Clear tenant-scoped data and set selection immediately
+      try {
+        thunkAPI.dispatch(selectClientContext(clientSlug) as any);
+      } catch { /* ignore */ }
+
       return { user, tokens, clientSlug };
     } catch (error) {
       return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Client switch failed');
     }
-  });
+  }
+);
 
 // Helper thunk to get current client from JWT token
 export const getCurrentClientFromJWT = createAsyncThunk(

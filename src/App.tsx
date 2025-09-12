@@ -143,7 +143,7 @@ const AppRoutes = () => (
     {/* Portfolio routes */}
     {createProtectedRoute('/portfolios', Portfolios, 'list')}
     {createProtectedRoute('/portfolios/create', CreatePortfolio, 'form')}
-    {createProtectedRoute('/portfolios/:id', PortfolioDetails, 'dashboard')}
+  {createProtectedRoute('/portfolios/:portfolio', PortfolioDetails, 'dashboard')}
 
     {/* Application routes */}
     {createProtectedRoute('/applications', Applications, 'list')}

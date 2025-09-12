@@ -647,6 +647,8 @@ const ZoneDetails = () => {
             <TabsContent value="overview" className="space-y-6 pt-4">
               <Separator />
               <div className="space-y-4">
+                {/* Account section */}
+                <div className="text-sm font-medium text-muted-foreground">ACCOUNT</div>
                 <div className="grid gap-4 md:grid-cols-2">
                   {/* Environment moved to Deployments tab */}
                   <div>
@@ -681,6 +683,11 @@ const ZoneDetails = () => {
                       <div className="mt-2 text-sm contrast-value break-all">{af.resource_namespace || '—'}</div>
                     )}
                   </div>
+                </div>
+                {/* Network section */}
+                <Separator />
+                <div className="text-sm font-medium text-muted-foreground">NETWORK</div>
+                <div className="grid gap-6 md:grid-cols-2">
                   <div>
                     <label className="text-sm font-medium text-muted-foreground">Network Name</label>
                     {editing ? (
@@ -689,15 +696,37 @@ const ZoneDetails = () => {
                       <div className="mt-2 text-sm contrast-value break-all">{af.network_name || '—'}</div>
                     )}
                   </div>
-                </div>
-                <div className="grid gap-6 md:grid-cols-2">
                   <div>
+                    <div className="flex items-center justify-between mb-2 gap-2">
+                      <div className="text-sm font-medium text-muted-foreground">Subnet Aliases</div>
+                      {editing && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                          title="Sort A–Z"
+                          onClick={() => {
+                            const sorted = [...(af.subnet_aliases || [])].sort((a,b)=> a.localeCompare(b));
+                            updateAccount({ subnet_aliases: sorted });
+                          }}
+                        >
+                          A–Z
+                        </Button>
+                      )}
+                    </div>
+                    <div className="rounded-md border border-subtle p-2 max-h-64 overflow-y-auto">
+                      <StringArrayEditor
+                        readOnly={!editing}
+                        value={af.subnet_aliases}
+                        onChange={(next)=> updateAccount({ subnet_aliases: next })}
+                        addLabel="Add alias"
+                        placeholder="subnet-alias"
+                      />
+                    </div>
+                  </div>
+                  <div className="md:col-span-2">
                     <div className="text-sm font-medium text-muted-foreground mb-2">VPC Aliases</div>
                     <StringArrayEditor readOnly={!editing} value={af.vpc_aliases} onChange={(next)=> updateAccount({ vpc_aliases: next })} addLabel="Add alias" placeholder="vpc-alias" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium text-muted-foreground mb-2">Subnet Aliases</div>
-                    <StringArrayEditor readOnly={!editing} value={af.subnet_aliases} onChange={(next)=> updateAccount({ subnet_aliases: next })} addLabel="Add alias" placeholder="subnet-alias" />
                   </div>
                 </div>
                 <Separator />

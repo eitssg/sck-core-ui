@@ -436,8 +436,9 @@ export const SessionManager = () => {
         const path = location.pathname;
         const isAuthFlow = path.startsWith('/authorized') || path.startsWith('/login') || path.startsWith('/signup');
         if (!isAuthFlow) {
-          try { await dispatch(setLogoutReason('session_refresh_failed')); } catch { /* ignore */ }
-          navigate('/login?reason=session_refresh_failed', { replace: true });
+          // Treat as idle-like expiry: same UX as idle timeout per guidance
+          try { await dispatch(setLogoutReason('idle_timeout')); } catch { /* ignore */ }
+          navigate('/login?reason=idle_timeout', { replace: true });
         }
       } finally {
         refreshingRef.current = false;

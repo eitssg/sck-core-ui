@@ -3,6 +3,7 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth as useAuthRedux } from '@/hooks/useAuth'
 import { useAuth as useAuthContext } from '@/contexts/useAuth'
 import { useTheme } from '@/hooks/useTheme'
+import { useToast } from '@/hooks/use-toast'
 import {
   Home,
   User,
@@ -21,7 +22,7 @@ import {
 } from 'lucide-react'
 import { useSelector, useDispatch } from 'react-redux'
 import { RootState, useAppDispatch } from '@/store'
-import { selectSelectedClient, selectClients, selectSelectedClientName, switchToClient, selectClientContext } from '@/store/slices/clientsSlice'
+import { selectSelectedClient, selectClients, selectSelectedClientName, switchToClient, selectClientContext, selectSwitchingToClient } from '@/store/slices/clientsSlice'
 import { refreshAccessToken, selectTokens } from '@/store/slices/authSlice'
 import { selectUser as selectProfileUser, selectUserProfiles, selectCurrentProfile, switchToProfile } from '@/store/slices/profileSlice'
 import { Button } from '@/components/ui/button'
@@ -60,9 +61,11 @@ import type { Client } from '@/store/types'
 type DashboardLayoutProps = PropsWithChildren<{
   activeItem?: string
   navMode?: 'full' | 'onboarding'
+  pageTitle?: string
+  pageSubtitle?: string
 }>
 
-export default function DashboardLayout({ children, activeItem, navMode = 'full' }: DashboardLayoutProps) {
+export default function DashboardLayout({ children, activeItem, navMode = 'full', pageTitle, pageSubtitle }: DashboardLayoutProps) {
   // Persist sidebar collapsed state across reloads (localStorage, durable)
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
@@ -72,6 +75,7 @@ export default function DashboardLayout({ children, activeItem, navMode = 'full'
       return false
     }
   })
+  const { toast } = useToast()
   const [mobileOpen, setMobileOpen] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
@@ -98,6 +102,7 @@ export default function DashboardLayout({ children, activeItem, navMode = 'full'
   const clients = useSelector((s: RootState) => selectClients(s)) as Client[]
   const selectedClient = useSelector((s: RootState) => selectSelectedClient(s)) as string | null
   const currentClientName = useSelector((s: RootState) => selectSelectedClientName(s)) as string
+  const switchingToClient = useSelector((s: RootState) => selectSwitchingToClient(s)) as string | null
   // const { selectClient } = useReduxData()
   const dispatchTyped = useAppDispatch()
   // Access tokens reside only in Redux (not sessionStorage). Use them for tenant (cnm) detection.
@@ -108,6 +113,8 @@ export default function DashboardLayout({ children, activeItem, navMode = 'full'
   // Tenant alignment logic: ensure access token scope (cnm) matches selected client.
   // Avoid unnecessary /auth/v1/token calls when simply navigating between pages.
   useEffect(() => {
+    // Avoid duplicate switching/notifications while an explicit switch is in-flight
+    if (switchingToClient) return;
     // Decode current Redux access token (if any)
     let tokenClient: string | null = null
     try {
@@ -120,7 +127,18 @@ export default function DashboardLayout({ children, activeItem, navMode = 'full'
 
     // 1. If both selectedClient and token client exist and differ, perform a scoped switch (refresh with state)
     if (selectedClient && tokenClient && selectedClient !== tokenClient) {
-      dispatchTyped(switchToClient(selectedClient) as any)
+      ;(async () => {
+        try {
+          await (dispatchTyped(switchToClient(selectedClient) as any) as any).unwrap()
+        } catch (e: any) {
+          const msg = typeof e === 'string' ? e : 'You do not have permission to access this client.'
+          toast({
+            variant: 'destructive',
+            title: 'Access to client is unauthorized',
+            description: msg,
+          })
+        }
+      })()
       return
     }
 
@@ -132,7 +150,7 @@ export default function DashboardLayout({ children, activeItem, navMode = 'full'
       dispatchTyped(refreshAccessToken(`client=${selectedClient}`) as any)
     }
     // Otherwise do nothing – navigation alone should not trigger refresh.
-  }, [dispatchTyped, selectedClient, tokens?.access_token])
+  }, [dispatchTyped, selectedClient, tokens?.access_token, toast, switchingToClient])
 
   // Inject fallback Core client if list empty or failed
   const effectiveClients = useMemo<Client[]>(() => {
@@ -270,9 +288,14 @@ export default function DashboardLayout({ children, activeItem, navMode = 'full'
                     {sidebarCollapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
                   </button>
                 )}
-                <h1 className="text-xl font-bold text-foreground">
-                  {isMobile ? 'Core Automation' : 'Core Automation Portal'}
-                </h1>
+                <div>
+                  <h1 className="text-xl font-bold text-foreground">
+                    {pageTitle ?? (isMobile ? 'Core Automation' : 'Core Automation Portal')}
+                  </h1>
+                  {pageSubtitle && (
+                    <div className="text-xs text-muted-foreground">{pageSubtitle}</div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -281,7 +304,24 @@ export default function DashboardLayout({ children, activeItem, navMode = 'full'
               <div className="flex items-center">
                 <Select
                   value={selectedClient ?? ''}
-                  onValueChange={(value) => dispatchTyped(selectClientContext(value || null))}
+                  onValueChange={async (value) => {
+                    const target = value || null
+                    // No-op if selecting current
+                    if (!target || target === selectedClient) {
+                      if (!target) dispatchTyped(selectClientContext(null))
+                      return
+                    }
+                    try {
+                      // Attempt scoped token switch first; selection and clears handled inside thunk
+                      await (dispatchTyped(switchToClient(target) as any) as any).unwrap()
+                      // Proactively refresh the access token for the new client scope
+                      dispatchTyped(refreshAccessToken(`client=${target}`) as any)
+                    } catch (e: any) {
+                      const msg = typeof e === 'string' ? e : 'You do not have permission to access this client.'
+                      toast({ variant: 'destructive', title: 'Access to client is unauthorized', description: msg })
+                      // Keep previous selection (controlled value stems from Redux)
+                    }
+                  }}
                 >
                   <SelectTrigger className="w-56">
                     <SelectValue placeholder="Select client..." >{currentClientName}</SelectValue>

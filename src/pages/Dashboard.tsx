@@ -208,7 +208,7 @@ export default function Dashboard() {
   // Derived stat cards (clients/portfolios from store)
   const totalClients = clients.items?.length || 0;
   const totalPortfolios = Array.isArray((portfolios as any)?.items)
-    ? (portfolios as any).items.filter((p: any) => p.client === currentClient).length
+    ? (portfolios as any).items.length
     : 0;
 
   return (

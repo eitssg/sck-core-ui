@@ -293,16 +293,43 @@ export interface Portfolio {
   domain?: string;
   bizapp?: PortfolioProject;
   owner?: PortfolioOwner;
+  // Catalog ownership extensions
+  business_owner?: PortfolioOwner;
+  technical_owner?: PortfolioOwner;
 
   // Metadata
   tags?: Record<string, string>;
   metadata?: Record<string, string>;
   attributes?: Record<string, string>;
+  compliance?: Record<string, string>;
+  identifiers?: Record<string, string>;
   user_instantiated?: string;
+
+  // Catalog identity/presentation
+  icon_url?: string;
+  category?: string;
+  labels?: string[];
+  portfolio_version?: string;
+  lifecycle_status?: string;
+
+  // Optional integration fields
+  links?: Record<string, any> | any[];
+  dependencies?: string[] | any[];
 
   // Audit (from DatabaseRecord)
   created_at?: string;
   updated_at?: string;
+
+  // UI-derived helpers (not persisted)
+  id?: string;
+  name?: string;
+  description?: string;
+  code?: string;
+  status?: string;
+  clientId?: string;
+  applicationCount?: number;
+  lastUpdated?: string;
+  homePageUrl?: string;
 }
 
 export interface ApplicationList {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Building2, ChevronRight, Search, X, Loader2 } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Building2, ChevronRight, Search, X, Loader2, Filter as FilterIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,7 @@ import type { Zone } from '@/store/types';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/store';
 import { fetchZonesPage, resetZonesPaging, selectZonesNextCursor, selectZonesLoading } from '@/store/slices/zonesSlice';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 // Utility contains
 const contains = (v: unknown, term: string) => v != null && String(v).toLowerCase().includes(term.toLowerCase());
@@ -23,10 +24,14 @@ const Zones = () => {
   const loading = useSelector(selectZonesLoading);
   const nextCursor = useSelector(selectZonesNextCursor);
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [limit, setLimit] = useState(25);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterTerms, setFilterTerms] = useState<string[]>([]);
+  const [filterTerms, setFilterTerms] = useState<string[]>(() => {
+    const q = searchParams.get('q');
+    return q ? q.split(',').map(s => s.trim()).filter(Boolean) : [];
+  });
   const [newFilterTerm, setNewFilterTerm] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const selectedClientKey: string | null =
     typeof selectedClient === 'string' ? selectedClient : (selectedClient && (selectedClient as any).client) || null;
@@ -42,48 +47,45 @@ const Zones = () => {
   const filteredZones = useMemo<Zone[]>(() => {
     let list: Zone[] = Array.isArray(zones) ? (zones as Zone[]) : [];
     if (selectedClientKey) list = list.filter(z => z.client === selectedClientKey);
-    if (searchTerm) {
-      const t = searchTerm.toLowerCase();
-      list = list.filter(z => {
-        const af = z.account_facts ?? ({} as any);
-        const tags = z.tags ?? {};
-        return (
-          contains(z.zone, t) ||
-          contains(af.organizational_unit, t) ||
-          contains(af.aws_account_id, t) ||
-          contains(af.account_name, t) ||
-          contains(af.environment, t) ||
-          contains(af.resource_namespace, t) ||
-          Object.entries(tags).some(([k, v]) => contains(k, t) || contains(v, t))
-        );
-      });
-    }
     if (filterTerms.length > 0) {
       list = list.filter(z => {
         const af = z.account_facts ?? ({} as any);
+        const tags = z.tags ?? {};
         return filterTerms.every(term => {
           const tt = term.toLowerCase();
-            return (
-              contains(z.zone, tt) ||
-              contains(af.environment, tt) ||
-              contains(af.organizational_unit, tt) ||
-              contains(af.account_name, tt) ||
-              contains(af.resource_namespace, tt)
-            );
+          return (
+            contains(z.zone, tt) ||
+            contains(af.organizational_unit, tt) ||
+            contains(af.aws_account_id, tt) ||
+            contains(af.account_name, tt) ||
+            contains(af.environment, tt) ||
+            contains(af.resource_namespace, tt) ||
+            Object.entries(tags).some(([k, v]) => contains(k, tt) || contains(v, tt))
+          );
         });
       });
     }
     return list;
-  }, [zones, selectedClientKey, searchTerm, filterTerms]);
+  }, [zones, selectedClientKey, filterTerms]);
 
   const addFilterTerm = () => {
     const val = newFilterTerm.trim();
     if (val && !filterTerms.includes(val)) {
-      setFilterTerms([...filterTerms, val]);
+      const next = [...filterTerms, val];
+      setFilterTerms(next);
+      const sp = new URLSearchParams(searchParams);
+      sp.set('q', next.join(','));
+      setSearchParams(sp, { replace: true });
       setNewFilterTerm('');
     }
   };
-  const removeFilterTerm = (term: string) => setFilterTerms(filterTerms.filter(t => t !== term));
+  const removeFilterTerm = (term: string) => {
+    const next = filterTerms.filter(t => t !== term);
+    setFilterTerms(next);
+    const sp = new URLSearchParams(searchParams);
+    if (next.length > 0) sp.set('q', next.join(',')); else sp.delete('q');
+    setSearchParams(sp, { replace: true });
+  };
   const handleKeyPress = (e: React.KeyboardEvent) => { if (e.key === 'Enter') addFilterTerm(); };
 
   const loadMore = () => {
@@ -119,22 +121,32 @@ const Zones = () => {
           {/* Avatar / profile menu is provided by DashboardLayout top bar */}
         </div>
 
-  <Card className="shadow-soft">
+      {/* Mobile Filters trigger */}
+    <div className="sm:hidden">
+        <Button variant="outline" className="gap-2" onClick={() => setFiltersOpen(true)}>
+          <FilterIcon className="h-4 w-4" />
+      Filters{filterTerms.length ? ` (${filterTerms.length})` : ''}
+        </Button>
+      </div>
+
+      {/* Desktop Filters */}
+      <Card className="shadow-soft hidden sm:block">
         <CardContent className="p-4">
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* chips-style only; remove live search box on desktop to match unified pattern */}
               <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search zones, accounts, environments..."
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  placeholder="Add filter term (environment, org unit, etc)..."
+                  value={newFilterTerm}
+                  onChange={e => setNewFilterTerm(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  className="pl-3"
                 />
               </div>
               <div className="flex gap-2">
                 <Input
-                  placeholder="Add filter term (environment, org unit, etc)..."
+                  placeholder="Add filter term..."
                   value={newFilterTerm}
                   onChange={e => setNewFilterTerm(e.target.value)}
                   onKeyPress={handleKeyPress}
@@ -154,12 +166,62 @@ const Zones = () => {
                     </Button>
                   </Badge>
                 ))}
-                <Button variant="ghost" size="sm" onClick={() => setFilterTerms([])} className="text-muted-foreground">Clear all</Button>
+                <Button variant="ghost" size="sm" onClick={() => { setFilterTerms([]); const sp = new URLSearchParams(searchParams); sp.delete('q'); setSearchParams(sp, { replace: true }); }} className="text-muted-foreground">Clear all</Button>
               </div>
             )}
           </div>
         </CardContent>
       </Card>
+
+      {/* Mobile Filters Sheet */}
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Filters</SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 space-y-4">
+            <div className="flex flex-col gap-3">
+              {/* mobile stacked input to add chips */}
+              <div className="relative w-full">
+                <Input
+                  placeholder="Add filter term..."
+                  value={newFilterTerm}
+                  onChange={e => setNewFilterTerm(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  className="w-full"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Add filter term..."
+                  value={newFilterTerm}
+                  onChange={e => setNewFilterTerm(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  className="flex-1"
+                />
+                <Button variant="outline" onClick={addFilterTerm} disabled={!newFilterTerm.trim()} className="shrink-0">Add Filter</Button>
+              </div>
+            </div>
+            {filterTerms.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                <span className="text-sm text-muted-foreground self-center">Active Filters:</span>
+                {filterTerms.map(term => (
+                  <Badge key={term} variant="secondary" className="flex items-center gap-1 px-3 py-1">
+                    {term}
+                    <Button variant="ghost" size="sm" className="h-4 w-4 p-0 hover:bg-transparent" onClick={() => removeFilterTerm(term)}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </Badge>
+                ))}
+                <Button variant="ghost" size="sm" onClick={() => { setFilterTerms([]); const sp = new URLSearchParams(searchParams); sp.delete('q'); setSearchParams(sp, { replace: true }); }} className="text-muted-foreground">Clear all</Button>
+              </div>
+            )}
+            <div className="pt-2">
+              <Button variant="default" className="w-full" onClick={() => setFiltersOpen(false)}>Apply</Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
 
   <div>
         <div className="flex items-center justify-between mb-2">
