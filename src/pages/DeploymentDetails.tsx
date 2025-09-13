@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -317,52 +318,62 @@ export default function DeploymentDetails() {
 
   if (loading) {
     return (
-      <div className="space-y-6 animate-fade-in">
-        <div className="flex items-center justify-between">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/deployments")}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
+      <DashboardLayout pageTitle="Deployments" pageSubtitle="Loading deployment details">
+        <div className="space-y-6 animate-fade-in">
+          <div className="flex items-center justify-end">
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/deployments">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to Deployments
+              </Link>
+            </Button>
+          </div>
+          <Card className="shadow-soft">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <GitBranch className="h-5 w-5 text-primary" />
+                Loading deployment…
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Skeleton className="h-6 w-1/3" />
+              <Skeleton className="h-4 w-2/3" />
+              <Separator />
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {[...Array(6)].map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
-        <Card className="shadow-soft">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <GitBranch className="h-5 w-5 text-primary" />
-              Loading deployment…
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Skeleton className="h-6 w-1/3" />
-            <Skeleton className="h-4 w-2/3" />
-            <Separator />
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {[...Array(6)].map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      </DashboardLayout>
     );
   }
 
   if (error || !deployment) {
     return (
-      <div className="space-y-6 animate-fade-in">
-        <div className="flex items-center justify-between">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/deployments")}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </div>
-        <Card className="shadow-soft">
-          <CardContent className="p-12 text-center">
-            <h3 className="text-lg font-semibold mb-2">Deployment Not Found</h3>
-            <p className="text-muted-foreground mb-6">{error || "The requested deployment could not be found."}</p>
-            <Button asChild>
-              <Link to="/deployments">Return to Deployments</Link>
+      <DashboardLayout pageTitle="Deployments" pageSubtitle="Deployment not found">
+        <div className="space-y-6 animate-fade-in">
+          <div className="flex items-center justify-end">
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/deployments">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to Deployments
+              </Link>
             </Button>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+          <Card className="shadow-soft">
+            <CardContent className="p-12 text-center">
+              <h3 className="text-lg font-semibold mb-2">Deployment Not Found</h3>
+              <p className="text-muted-foreground mb-6">{error || "The requested deployment could not be found."}</p>
+              <Button asChild>
+                <Link to="/deployments">Return to Deployments</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </DashboardLayout>
     );
   }
 
@@ -370,34 +381,22 @@ export default function DeploymentDetails() {
   const subtitle = [deployment.application, deployment.portfolio].filter(Boolean).join(" • ");
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/deployments")} aria-label="Back to Deployments">
-            <ArrowLeft className="h-4 w-4" />
+    <DashboardLayout pageTitle={title} pageSubtitle={subtitle || "Deployment details and event logs"}>
+      <div className="space-y-6 animate-fade-in">
+        {/* Actions under global header */}
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/deployments">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Deployments
+            </Link>
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
-              <GitBranch className="h-7 w-7 text-primary" />
-              {title}
-              <Badge variant={statusVariant(deployment.status)} className="ml-2 gap-1">
-                {statusIcon(deployment.status)}
-                <span className="capitalize">{(deployment.status || "unknown").replace(/-/g, " ")}</span>
-              </Badge>
-            </h1>
-            <p className="text-muted-foreground">{subtitle || "Deployment details and event logs"}</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
           {canPromote && (
             <Button onClick={handlePromote} disabled={actionBusy} className="gap-2">
               <Sparkles className="h-4 w-4" />
               Promote to Release
             </Button>
           )}
-
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="destructive" disabled={actionBusy} className="gap-2">
@@ -424,9 +423,8 @@ export default function DeploymentDetails() {
             </AlertDialogContent>
           </AlertDialog>
         </div>
-      </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid gap-6 lg:grid-cols-3">
         {/* Left: Details and Events */}
         <div className="lg:col-span-2 space-y-6">
           {/* Deployment Information */}
@@ -569,7 +567,8 @@ export default function DeploymentDetails() {
           </Card>
         </div>
       </div>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }
 

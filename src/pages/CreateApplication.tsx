@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Application, Portfolio, Zone } from "@/store/types";
 
 import { Button } from "@/components/ui/button";
+import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -39,16 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import {
-  ArrowLeft,
-  Globe,
-  Package2,
-  Plus,
-  Settings2,
-  Sparkles,
-  Tag,
-  GitBranch,
-} from "lucide-react";
+import { ArrowLeft, Globe, Package2, Plus, Settings2, Tag, GitBranch } from "lucide-react";
 
 const envOptions = ["development", "staging", "testing", "production"] as const;
 
@@ -334,25 +326,10 @@ export default function CreateApplication() {
   if (!isAuthenticated || !currentClient) return null;
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Ambient header with theme accents */}
-      <div className="relative overflow-hidden rounded-xl border bg-card/80 shadow-medium">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -top-24 -left-20 h-64 w-64 rounded-full bg-primary/15 blur-3xl" />
-          <div className="absolute -bottom-24 -right-20 h-64 w-64 rounded-full bg-accent/20 blur-3xl" />
-        </div>
-        <div className="relative flex items-center justify-between p-6">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-medium flex items-center justify-center">
-              <Sparkles className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Create Application</h1>
-              <p className="text-sm text-muted-foreground">
-                Onboard a new application into your portfolio
-              </p>
-            </div>
-          </div>
+    <DashboardLayout pageTitle="Create Application" pageSubtitle="Onboard a new application into your portfolio">
+      <div className="space-y-6 animate-fade-in">
+        {/* Header actions (right-aligned) */}
+        <div className="flex items-center justify-end">
           <Button variant="ghost" size="sm" asChild>
             <Link to="/applications">
               <ArrowLeft className="mr-2 h-4 w-4" />
@@ -360,7 +337,6 @@ export default function CreateApplication() {
             </Link>
           </Button>
         </div>
-      </div>
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -674,6 +650,7 @@ export default function CreateApplication() {
           </div>
         </form>
       </Form>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }

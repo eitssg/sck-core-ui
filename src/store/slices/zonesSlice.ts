@@ -123,6 +123,34 @@ export const updateZoneRemote = createAsyncThunk<Zone, Zone, { rejectValue: stri
   }
 );
 
+// Fetch a single zone by client and zone key
+export const fetchZoneByKey = createAsyncThunk<
+  Zone,
+  { client: string; zone: string },
+  { rejectValue: string }
+>(
+  'zones/fetchZoneByKey',
+  async ({ client, zone }, { rejectWithValue }) => {
+    try {
+      const res = await apiFetch(
+        `${API_BASE}/registry/clients/${encodeURIComponent(client)}/zones/${encodeURIComponent(zone)}`,
+        {
+          method: 'GET',
+          cookieFirst: true,
+          headers: { 'Content-Type': 'application/json' },
+          contextLabel: 'ZoneByKey',
+        }
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const { data } = await parseApiEnvelope<Zone>(res);
+      const z: Zone = { ...(data as Zone), client } as Zone;
+      return z;
+    } catch (err: any) {
+      return rejectWithValue(err.message ?? 'Failed to fetch zone');
+    }
+  }
+);
+
 export const deleteZoneRemote = createAsyncThunk<
   { client: string; zone: string },
   { client: string; zone: string },
@@ -264,6 +292,24 @@ const zonesSlice = createSlice({
       .addCase(updateZoneRemote.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload ?? 'Failed to update zone';
+      })
+      // fetchZoneByKey
+      .addCase(fetchZoneByKey.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchZoneByKey.fulfilled, (state, action) => {
+        state.loading = false;
+        const z = action.payload;
+        const idx = state.zones.findIndex(
+          (zone) => zone.client === z.client && zone.zone === z.zone
+        );
+        if (idx !== -1) state.zones[idx] = z;
+        else state.zones.push(z);
+      })
+      .addCase(fetchZoneByKey.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload ?? 'Failed to fetch zone';
       })
       // deleteZoneRemote
       .addCase(deleteZoneRemote.pending, (state) => {

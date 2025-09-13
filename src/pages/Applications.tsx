@@ -12,6 +12,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 import { useReduxData } from "@/hooks/useReduxData";
+import DashboardLayout from "@/components/DashboardLayout";
 import { useTheme } from "@/hooks/useTheme";
 
 import type { Portfolio, Application, Zone, AppDeploymentBuild } from "@/store/types";
@@ -194,22 +195,22 @@ export default function Applications() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Applications</h1>
-          <p className="text-muted-foreground">Deployment units (AppFacts) organized by portfolio</p>
+    <DashboardLayout
+      activeItem="applications"
+      pageTitle="Applications"
+      pageSubtitle="Deployment units organized by portfolio"
+    >
+      <div className="space-y-6">
+        {/* Header actions */}
+        <div className="flex items-center justify-end">
+          <Button asChild variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground">
+            <Link to="/applications/create">
+              <Plus className="h-4 w-4" /> New
+            </Link>
+          </Button>
         </div>
-        <Button asChild variant="gradient" className="gap-2">
-          <Link to="/applications/create">
-            <Plus className="h-4 w-4" />
-            Create Application
-          </Link>
-        </Button>
-      </div>
 
-      {/* Mobile Filters trigger */}
+  {/* Mobile Filters trigger */}
       <div className="sm:hidden">
         <Button variant="outline" className="gap-2" onClick={() => setFiltersOpen(true)}>
           <FilterIcon className="h-4 w-4" />
@@ -275,7 +276,7 @@ export default function Applications() {
         </SheetContent>
       </Sheet>
 
-      {/* Portfolios table */}
+  {/* Portfolios table */}
       <Card className="shadow-medium">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -368,6 +369,7 @@ export default function Applications() {
           </Table>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }

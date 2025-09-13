@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, Save, X, Globe, Key, Network, Tag, Plus, Trash2, SquarePen, ClipboardCopy, Download, Upload } from "lucide-react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { Save, X, Globe, Trash2, SquarePen, ClipboardCopy, Download, Upload, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 // removed Badge; no longer used in Regions header
 import { Separator } from "@/components/ui/separator";
@@ -13,11 +12,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/hooks/useTheme";
 import { useDispatch, useSelector } from "react-redux";
 import type { RootState, AppDispatch } from "@/store";
-import { makeSelectZoneBySlug, updateZoneRemote, createZone } from "@/store/slices/zonesSlice";
+import { makeSelectZoneBySlug, updateZoneRemote, createZone, fetchZoneByKey, selectZonesLoading } from "@/store/slices/zonesSlice";
 import { selectSelectedClient, selectClientBySlug } from "@/store/slices/clientsSlice";
 import type { Zone, AccountFacts, RegionFacts } from "@/store/types";
 import { AWS_REGION_NAME_BY_CODE, AWS_REGION_AZ_COUNT } from "@/constants/aws-regions";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import DashboardLayout from "@/components/DashboardLayout";
 
 // --- Small inline editors -------------------------------------------------
 type KV = Record<string, string>;
@@ -236,6 +236,7 @@ const ZoneDetails = () => {
   const { toast } = useToast();
   const { isDark } = useTheme();
   const dispatch = useDispatch<AppDispatch>();
+  const location = useLocation();
 
   // Route params: expect /zones/:client/:zone (we still accept legacy /zones/:zone)
   const { client: clientParam, zone: zoneParam, id: idParam } = useParams<{
@@ -247,12 +248,30 @@ const ZoneDetails = () => {
   const selectZone = useMemo(()=> makeSelectZoneBySlug(zoneSlug || ""), [zoneSlug]);
   const zone = useSelector((s: RootState)=> (zoneSlug ? selectZone(s) : null)) as Zone | null;
   const selectedClient = useSelector((s: RootState)=> selectSelectedClient(s));
+  const zonesLoading = useSelector((s: RootState)=> selectZonesLoading(s));
   const clientObj = useSelector((s: RootState)=> selectedClient ? selectClientBySlug(s, selectedClient) : undefined) as any;
 
   // Local editable draft
   const [draft, setDraft] = useState<Zone | null>(null);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState("overview");
+  const tabStorageKey = useMemo(() => (zoneSlug ? `sck.zoneDetails.tab:${zoneSlug}` : 'sck.zoneDetails.tab'), [zoneSlug]);
+  const initialTab = useMemo(() => {
+    try {
+      const v = sessionStorage.getItem(tabStorageKey);
+      return v || 'overview';
+    } catch {
+      return 'overview';
+    }
+  }, [tabStorageKey]);
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
+  useEffect(() => {
+    // When navigating between zones, restore the stored tab for the new zone
+    setActiveTab(initialTab);
+  }, [initialTab]);
+  const handleTabChange = useCallback((value: string) => {
+    setActiveTab(value);
+    try { sessionStorage.setItem(tabStorageKey, value); } catch { /* ignore */ }
+  }, [tabStorageKey]);
   const [editing, setEditing] = useState(false);
   const [creatingNew, setCreatingNew] = useState(false);
 
@@ -260,14 +279,46 @@ const ZoneDetails = () => {
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [filterDelegates, setFilterDelegates] = useState("");
 
-  // Dialog state
-  const [newDialogOpen, setNewDialogOpen] = useState(false);
-  const [newZoneName, setNewZoneName] = useState("");
+  // New zone flow moved to Zones list page. We still accept navigation state to seed a new draft.
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
-  useEffect(()=>{
-    if (zone) setDraft(JSON.parse(JSON.stringify(zone)) as Zone);
+  const lastAppliedZoneJsonRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!zone) return;
+    try {
+      const nxt = JSON.stringify(zone);
+      if (lastAppliedZoneJsonRef.current !== nxt) {
+        const next = JSON.parse(nxt) as Zone;
+        setDraft(next);
+        lastAppliedZoneJsonRef.current = nxt;
+      }
+    } catch {
+      try {
+        const clone = JSON.parse(JSON.stringify(zone)) as Zone;
+        setDraft(clone);
+        lastAppliedZoneJsonRef.current = JSON.stringify(clone);
+      } catch { /* ignore */ }
+    }
   }, [zone]);
+
+  // Persist current zone slug (and client) for refresh survival
+  useEffect(() => {
+    try {
+      if (zoneSlug && (clientParam || selectedClient)) {
+        const key = { client: (clientParam || (selectedClient as string))!, zone: zoneSlug };
+        sessionStorage.setItem('sck.currentZone', JSON.stringify(key));
+      }
+    } catch { /* ignore */ }
+  }, [zoneSlug, clientParam, selectedClient]);
+
+  useEffect(() => {
+    // Always fetch the current zone fresh on entry/refresh to ensure up-to-date data
+    if (zoneSlug && (clientParam || selectedClient)) {
+      const client = (clientParam || (selectedClient as string)) as string;
+      dispatch(fetchZoneByKey({ client, zone: zoneSlug }));
+    }
+    // Intentionally exclude `zone` so we don't refetch on each store update
+  }, [zoneSlug, clientParam, selectedClient, dispatch]);
 
   const updateAccount = useCallback((patch: Partial<AccountFacts>)=>{
     setDraft((d)=> d ? ({ ...d, account_facts: { ...(d.account_facts||{}), ...patch } as AccountFacts }) : d);
@@ -358,34 +409,46 @@ const ZoneDetails = () => {
     }
   };
 
-  const openNewDialog = () => {
-    setNewZoneName("");
-    setNewDialogOpen(true);
-  };
-
-  const confirmCreateNew = () => {
-    const clientSlug = clientObj?.client || draft?.client || selectedClient;
-    if (!clientSlug) {
-      toast({ title: 'No client selected', description: 'Select a client before creating a zone.', variant: 'destructive' });
-      return;
+  // If navigated here with intent to create a new zone, initialize a draft
+  useEffect(() => {
+    try {
+      const state = (location as any).state as { createNew?: boolean; zoneName?: string; client?: string } | undefined;
+      if (!zone && !draft && state?.createNew && state?.zoneName) {
+        const clientSlug = state.client || clientObj?.client || selectedClient;
+        if (!clientSlug) return;
+        const name = String(state.zoneName).trim().toLowerCase().slice(0, 32);
+        if (!name) return;
+        const newDraft: Zone = {
+          client: clientSlug as string,
+          zone: name,
+          account_facts: { aws_account_id: '' },
+          region_facts: {},
+          tags: {}
+        } as Zone;
+        setDraft(newDraft);
+        setEditing(true);
+        setCreatingNew(true);
+        setActiveTab('overview');
+      }
+    } catch {
+      // ignore
     }
-    const name = newZoneName.trim().toLowerCase().slice(0, 32);
-    if (!name) return;
+  }, [location, zone, draft, clientObj, selectedClient]);
 
-    const newDraft: Zone = {
-      client: clientSlug,
-      zone: name,
-      account_facts: { aws_account_id: '' },
-      region_facts: {},
-      tags: {}
-    } as Zone;
-
-    setDraft(newDraft);
-    setEditing(true);
-    setCreatingNew(true);
-    setActiveTab('overview');
-    setNewDialogOpen(false);
-  };
+  // Attempt to recover from refresh using sessionStorage if URL params are incomplete
+  useEffect(() => {
+    if (!zoneSlug) {
+      try {
+        const raw = sessionStorage.getItem('sck.currentZone');
+        if (raw) {
+          const parsed = JSON.parse(raw) as { client: string; zone: string };
+          if (parsed?.client && parsed?.zone) {
+            navigate(`/zones/${encodeURIComponent(parsed.client)}/${encodeURIComponent(parsed.zone)}`, { replace: true });
+          }
+        }
+      } catch { /* ignore */ }
+    }
+  }, [zoneSlug, navigate]);
 
   const handleCancel = ()=>{
     if (creatingNew) {
@@ -513,105 +576,71 @@ const ZoneDetails = () => {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [hasUnsaved]);
 
-  // Intercept Back to Zones click when unsaved
-  const onBackClick = useCallback((e: React.MouseEvent) => {
-    if (hasUnsaved) {
-      e.preventDefault();
-      const ok = window.confirm('You have unsaved changes. Discard and leave this page?');
-      if (ok) navigate('/zones');
-    }
-  }, [hasUnsaved, navigate]);
+  // (Back navigation link removed for DashboardLayout)
 
-  if (!zone || !draft) {
+  if (!zone && !draft) {
+    // Show loading state if we have a zoneSlug and are fetching
+    if (zoneSlug && (zonesLoading || (clientParam || selectedClient))) {
+      return (
+        <DashboardLayout pageTitle="Zones" pageSubtitle="Loading zone…">
+          <div className="space-y-6 animate-fade-in">
+            <div className="text-center py-12 text-sm text-muted-foreground">Loading…</div>
+          </div>
+        </DashboardLayout>
+      );
+    }
     return (
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/zones" onClick={onBackClick}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Zones
-            </Link>
-          </Button>
+      <DashboardLayout pageTitle="Zones" pageSubtitle="Zone not found">
+        <div className="space-y-6 animate-fade-in">
+          <div className="text-center py-12">
+            <h2 className="sck-section-title">Zone not found</h2>
+            <p className="sck-section-subtitle">The zone you are looking for does not exist.</p>
+          </div>
         </div>
-        <div className="text-center py-12">
-          <h2 className="text-xl font-semibold">Zone not found</h2>
-          <p className="text-muted-foreground">The zone you're looking for doesn't exist.</p>
-        </div>
-      </div>
+      </DashboardLayout>
     );
   }
 
+  // Use current to safely reference client/zone during initial render before draft is populated
+  const current = (draft || zone) as Zone;
+
   return (
-    <div className="space-y-6 p-4 md:p-6">
-      {/* Header actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/zones" onClick={onBackClick}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Zones
-            </Link>
-          </Button>
-        </div>
-        <div className="flex gap-2">
+    <DashboardLayout
+      pageTitle="Landing Zone"
+      pageSubtitle="Account, regions, deployments, and delegates"
+    >
+      <div className="space-y-6 animate-fade-in">
+        {/* Header actions row under global header */}
+        <div className="sck-header-actions">
+          <div className="mr-auto" />
           {!editing ? (
             <>
-              <Button variant="outline" onClick={openNewDialog} className="gap-1">
-                <Plus className="mr-2 h-4 w-4" />
-                New
+              <Button variant="ghost" size="sm" onClick={()=> setDeleteDialogOpen(true)} className="gap-1 text-muted-foreground hover:text-foreground">
+                <Trash2 className="h-4 w-4 mr-1" /> Delete
               </Button>
-              <Button variant="outline" onClick={()=> setDeleteDialogOpen(true)} className="gap-1">
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete
-              </Button>
-              <Button variant="outline" onClick={()=> setEditing(true)} className="gap-1">
-                <SquarePen className="mr-2 h-4 w-4" />
-                Edit
+              <Button variant="ghost" size="sm" onClick={()=> setEditing(true)} className="gap-1 text-muted-foreground hover:text-foreground">
+                <SquarePen className="h-4 w-4 mr-1" /> Edit
               </Button>
             </>
           ) : (
             <>
-              <Button variant="outline" disabled={saving} onClick={handleCancel} className="gap-1">
-                <X className="mr-2 h-4 w-4" />
-                Cancel
+              <Button variant="ghost" size="sm" disabled={saving} onClick={handleCancel} className="gap-1 text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4 mr-1" /> Cancel
               </Button>
               <Button
-                variant="outline"
+                size="sm"
                 disabled={saving || !(draft?.account_facts?.aws_account_id && Object.keys(draft?.region_facts || {}).length > 0)}
                 onClick={handleSave}
                 className="gap-1"
               >
-                <Save className="mr-2 h-4 w-4" />
+                <Save className="h-4 w-4 mr-1" />
                 {saving ? 'Saving…' : 'Save'}
               </Button>
             </>
           )}
         </div>
-      </div>
 
-      {/* New Zone Dialog */}
-      <Dialog open={newDialogOpen} onOpenChange={(o)=> { if (!saving) setNewDialogOpen(o); }}>
-        <DialogContent className="w-[92vw] max-w-sm p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle>Create New Zone</DialogTitle>
-            <DialogDescription>Enter a new zone name (lowercase, max 32 characters).</DialogDescription>
-          </DialogHeader>
-          <div className="pt-2">
-            <label className="text-sm font-medium text-muted-foreground">Enter landing zone name:</label>
-            <Input
-              className="mt-2"
-              value={newZoneName}
-              onChange={(e)=> setNewZoneName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0,32))}
-              placeholder="my-zone"
-              maxLength={32}
-            />
-          </div>
-          <DialogFooter className="pt-4 gap-2">
-            <Button variant="outline" onClick={()=> setNewDialogOpen(false)}>Cancel</Button>
-            <Button variant="default" onClick={confirmCreateNew} disabled={!newZoneName.trim()}>Create</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+  {/* New Zone Dialog removed; creation is initiated from Zones list page */}
 
       {/* Delete Dialog (placeholder) */}
       <Dialog open={deleteDialogOpen} onOpenChange={(o)=> setDeleteDialogOpen(o)}>
@@ -626,17 +655,17 @@ const ZoneDetails = () => {
         </DialogContent>
       </Dialog>
 
-      <Card>
+      <Card className="shadow-soft">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 flex-wrap text-lg sm:text-xl md:text-2xl">
+          <CardTitle className="sck-section-title flex items-center gap-2">
             <Globe className="h-5 w-5" />
-            {clientObj?.client_name || draft.client}
+            {clientObj?.client_name || current.client}
           </CardTitle>
-          <CardDescription>Landing Zone details for this client</CardDescription>
-          <div className="text-sm text-muted-foreground">Zone: <span className="contrast-value">{draft.zone}</span></div>
+          <CardDescription className="sck-section-subtitle">Landing zone details for this client</CardDescription>
+          <div className="text-sm text-muted-foreground">Zone: <span className="contrast-value">{current.zone}</span></div>
         </CardHeader>
         <CardContent>
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="regions">Regions</TabsTrigger>
@@ -765,18 +794,24 @@ const ZoneDetails = () => {
               />
             </TabsContent>
 
-            <TabsContent value="deployments" className="space-y-4 pt-4">
+      <TabsContent value="deployments" className="space-y-4 pt-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">Zone Type</label>
-                  <Select value={af.environment || ''} onValueChange={(v)=> updateAccount({ environment: v })} disabled={!editing}>
+                  <Select
+                    value={(() => {
+                      const raw = (af.environment || '').toString().toLowerCase();
+                      return raw === 'prd' || raw === 'nprd' || raw === 'dev' ? raw : undefined;
+                    })()}
+                    onValueChange={(v)=> updateAccount({ environment: v })}
+                  >
                     <SelectTrigger className="w-full" disabled={!editing}>
                       <SelectValue placeholder="Select zone type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="dev">Development</SelectItem>
-                      <SelectItem value="nonprod">Non-Production</SelectItem>
-                      <SelectItem value="prod">Production</SelectItem>
+            <SelectItem value="dev">Development</SelectItem>
+            <SelectItem value="nprd">Non-Production</SelectItem>
+            <SelectItem value="prd">Production</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -849,7 +884,8 @@ const ZoneDetails = () => {
           </Tabs>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 };
 

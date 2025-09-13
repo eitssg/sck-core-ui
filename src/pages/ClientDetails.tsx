@@ -85,6 +85,7 @@ import { useToast } from '@/components/ui/use-toast';
 import type { RootState } from '@/store';
 import type { Client } from '@/store/types';
 import { ArrowLeft, Pencil, Save, X, Shield, Network, KeyRound, Repeat2, FileSearch, UserCheck } from 'lucide-react';
+import DashboardLayout from '@/components/DashboardLayout';
 
 interface FieldProps { label: string; value?: string; onChange?: (v: string)=>void; readOnly?: boolean; mono?: boolean; placeholder?: string }
 const Field: React.FC<FieldProps> = ({ label, value, onChange, readOnly, mono, placeholder }) => (
@@ -248,32 +249,45 @@ const ClientDetails: React.FC = () => {
   const status = client.client_status || 'active';
 
   return (
-    <div className="space-y-6 p-4 md:p-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight break-words">{client.client_name || client.client}</h1>
-          <p className="text-sm text-muted-foreground max-w-3xl">{client.client_description || 'No description provided.'}</p>
-          <div className="flex items-center gap-3 flex-wrap pt-1">
-            <span className="font-mono text-sm px-2 py-1 rounded bg-muted contrast-value">{client.client}</span>
+    <DashboardLayout
+      activeItem="clients"
+      pageTitle={client.client_name || client.client}
+      pageSubtitle={client.client_description || 'No description provided.'}
+    >
+      <div className="space-y-6 animate-fade-in">
+        {/* Page-level subtle actions row (right-aligned) */}
+        <div className="sck-header-actions sticky top-16 z-30 bg-background/95 supports-[backdrop-filter]:bg-background/60 backdrop-blur border-b border-border py-2 px-2">
+          <div className="mr-auto flex items-center gap-3">
+            <span className="font-mono text-xs px-2 py-0.5 rounded bg-muted contrast-value">{client.client}</span>
             <span className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
               <span className={`h-2 w-2 rounded-full ${status === 'inactive' ? 'bg-muted-foreground' : status === 'suspended' ? 'bg-accent-foreground' : 'bg-primary'}`}></span>{status}
             </span>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {editing ? (
+          {!editing ? (
             <>
-              <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1"><Save className="h-4 w-4" />{saving? 'Saving...':'Save'}</Button>
-              <Button size="sm" variant="outline" onClick={()=> { setEditing(false); setDraft(client); }} className="gap-1"><X className="h-4 w-4" />Cancel</Button>
+              <Button variant="ghost" size="sm" onClick={()=> setEditing(true)} className="gap-1 text-muted-foreground hover:text-foreground">
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Button>
+              <Button variant="ghost" size="sm" onClick={()=> navigate('/clients')} className="gap-1 text-muted-foreground hover:text-foreground">
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
             </>
           ) : (
-            <Button size="sm" variant="outline" onClick={()=> setEditing(true)} className="gap-1"><Pencil className="h-4 w-4" />Edit</Button>
+            <>
+              <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1">
+                <Save className="h-4 w-4" />{saving? 'Saving...':'Save'}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={()=> { setEditing(false); setDraft(client); }} className="gap-1 text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+                Cancel
+              </Button>
+            </>
           )}
-          <Button variant="ghost" size="sm" onClick={()=> navigate('/clients')} className="gap-1"><ArrowLeft className="h-4 w-4" />Back</Button>
         </div>
-      </div>
 
-  <Tabs defaultValue="overview">
+        <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
@@ -284,8 +298,8 @@ const ClientDetails: React.FC = () => {
         <TabsContent value="overview">
           <Card>
             <CardHeader>
-              <CardTitle>Overview</CardTitle>
-              <CardDescription>Identity & organization basics.</CardDescription>
+              <CardTitle className="sck-section-title">Overview</CardTitle>
+              <CardDescription className="sck-section-subtitle">Identity & organization basics.</CardDescription>
             </CardHeader>
             <CardContent className={grid}>
               <Field label="Client Name" value={draft?.client_name} onChange={(v)=> setField('client_name', v)} readOnly={!editing} />
@@ -305,8 +319,8 @@ const ClientDetails: React.FC = () => {
         <TabsContent value="accounts">
           <Card>
             <CardHeader>
-              <CardTitle>AWS Accounts</CardTitle>
-              <CardDescription>Landing zone account mapping.</CardDescription>
+              <CardTitle className="sck-section-title">AWS Accounts</CardTitle>
+              <CardDescription className="sck-section-subtitle">Landing zone account mapping.</CardDescription>
             </CardHeader>
             <CardContent className={grid}>
               <RegionField
@@ -332,8 +346,8 @@ const ClientDetails: React.FC = () => {
         <TabsContent value="buckets">
           <Card>
             <CardHeader>
-              <CardTitle>S3 Buckets</CardTitle>
-              <CardDescription>Artifact & UI storage.</CardDescription>
+              <CardTitle className="sck-section-title">S3 Buckets</CardTitle>
+              <CardDescription className="sck-section-subtitle">Artifact & UI storage.</CardDescription>
             </CardHeader>
             <CardContent className={grid}>
               <Field label="Automation Bucket" value={draft?.bucket_name} onChange={(v)=> setField('bucket_name', v)} readOnly={!editing} mono />
@@ -355,8 +369,8 @@ const ClientDetails: React.FC = () => {
         <TabsContent value="metadata">
           <Card>
             <CardHeader>
-              <CardTitle>Metadata</CardTitle>
-              <CardDescription>Additional descriptors.</CardDescription>
+              <CardTitle className="sck-section-title">Metadata</CardTitle>
+              <CardDescription className="sck-section-subtitle">Additional descriptors.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
@@ -382,6 +396,7 @@ const ClientDetails: React.FC = () => {
         </TabsContent>
       </Tabs>
     </div>
+    </DashboardLayout>
   );
 };
 

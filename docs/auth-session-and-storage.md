@@ -197,15 +197,6 @@ Notes on refresh timing failures:
 - UI should not render a “no client selected” state. If a saved selection is missing, select `core` automatically.
 - When switching clients, token refresh uses `state=client=<slug>` as documented above.
 
-## UI style guide (buttons)
-
-- Page and list views: use neutral buttons by default (e.g., `variant="outline"`, `secondary`, or `ghost`). Avoid blue/primary/gradient styling on normal pages and for navigation/link actions.
-- Dialogs, auth flows, and data entry: reserve primary/blue buttons for modal dialogs (overlays/popups), auth pages (login, signup, MFA), and edit/data-entry contexts (e.g., Save/Submit in forms).
-  - Filters/search/facets are NOT data entry. Use neutral controls and neutral buttons (e.g., Add/Clear as outline/ghost), not blue primary.
-- Examples:
-  - Portfolios list “New” is a neutral button.
-  - Edit mode forms (data entry) use a blue primary “Save/Submit” button and neutral secondary actions (Cancel, Reset).
-  - Confirmation dialogs (modal) may use a blue primary action and a neutral secondary action.
 
 - `/auth/v1/forgot` issues password token to be used in password reset.
 - `/auth/v1/verify-secret` requires bearer forgot password token.

@@ -68,27 +68,39 @@ LinkFacts
 ## API example (PascalCase)
 
 {
-  "Portfolio": "web-services",
-  "Name": "Web Services",
-  "IconUrl": "https://cdn.example.com/icons/web.svg",
-  "Category": "Platform",
-  "Labels": ["api", "core"],
-  "PortfolioVersion": "1.4",
-  "LifecycleStatus": "Active",
-  "Owner": {"Name": "Platform PM", "Email": "pm@example.com"},
-  "BusinessOwner": {"Name": "BU Dir", "Email": "bu@example.com"},
-  "TechnicalOwner": {"Name": "Tech Lead", "Email": "lead@example.com"},
-  "Project": {"Name": "Core API", "Code": "core", "Repository": "https://github.com/acme/core"},
-  "Domain": "api.acme.com",
-  "Tags": {"Environment": "production", "Team": "platform"},
-  "Compliance": {"SOX": "Yes", "PII": "Low"},
-  "Identifiers": {"Jira": "CAT-123", "CMDB": "CI-987"},
-  "Links": [
-    {"Title": "Runbook", "Url": "https://runbooks/...", "Kind": "runbook"},
-    {"Title": "Grafana", "Url": "https://grafana/...", "Kind": "dashboard"}
+  "portfolio": "web-services",
+  "name": "Web Services",
+  "iconUrl": "https://cdn.example.com/icons/web.svg",
+  "category": "Platform",
+  "labels": ["api", "core"],
+  "portfolio_version": "1.4",
+  "lifecycle_status": "Active",
+  "owner": {"name": "Platform PM", "email": "pm@example.com"},
+  "business_owner": {"name": "BU Dir", "email": "bu@example.com"},
+  "technical_owner": {"name": "Tech Lead", "email": "lead@example.com"},
+  "project": {"name": "Core API", "code": "core", "repository": "https://github.com/acme/core"},
+  "domain": "api.acme.com",
+  "tags": {"environment": "production", "team": "platform"},
+  "compliance": {"SOX": "Yes", "PII": "Low"},
+  "identifiers": {"Jira": "CAT-123", "CMDB": "CI-987"},
+  "links": [
+    {"title": "Runbook", "url": "https://runbooks/...", "kind": "runbook"},
+    {"title": "Grafana", "url": "https://grafana/...", "kind": "dashboard"}
   ],
-  "Dependencies": ["auth-service", "billing"]
+  "dependencies": ["auth-service", "billing"]
 }
+
+We have standardize all objects attributes as snake_case.
+
+All api response, except oauth, will have objects wrapped in response class:
+
+{ "status": "ok", "code": 200, "data": { object }, "metadata": {}, "links": {}, "message": ""}
+
+"data" may be an object { object } or array of objects [{ object }]
+
+GET list API support cursor symantics.  http://s/endpoint?limit=10,cursor=TOKEN.  "metadata" will include "cursor" token or None if no more data.
+
+e.g. { "metadata": { "cursor": TOKEN }}
 
 ## Storage mapping
 

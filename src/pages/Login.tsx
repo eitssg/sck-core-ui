@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useTheme } from "@/hooks/useTheme";
+import { sendAuthEvent } from "@/lib/cross-tab";
 import { buildApiUrl, buildOAuthAuthorizeUrl, API_CONFIG } from "@/lib/api-config";
 import { apiFetch } from "@/lib/api-fetch";
 import { authAPI } from "@/lib/auth-api";
@@ -70,18 +71,26 @@ export default function Login() {
   const errorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    // Unconditional hard logout on entering /login, regardless of auth state
+    // On entering /login: perform a logout only if we likely have a session.
+    // Signals: Redux isAuthenticated OR presence of refresh_token in sessionStorage.
     let cancelled = false;
     (async () => {
       try {
-        // Broadcast to other tabs
-        try { new BroadcastChannel('sck-auth-sync').postMessage({ type: 'auth:logout' }); } catch { /* no-op */ }
-        await dispatch(logoutUser()).unwrap();
+        const hasRefresh = (() => {
+          try { return !!sessionStorage.getItem('refresh_token'); } catch { return false; }
+        })();
+        const shouldServerLogout = isAuthenticated || hasRefresh;
+
+        if (shouldServerLogout) {
+          // Broadcast to other tabs to sync logout (debounced)
+          sendAuthEvent({ type: 'auth:logout' });
+          await dispatch(logoutUser()).unwrap();
+        }
       } catch { /* ignore */ }
       if (!cancelled) dispatch(clearError());
     })();
     return () => { cancelled = true; };
-  }, [dispatch]);
+  }, [dispatch, isAuthenticated]);
 
   // Remove previous custom hard-logout block; centralized in the effect above
 

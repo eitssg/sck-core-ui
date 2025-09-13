@@ -212,7 +212,11 @@ export default function Dashboard() {
     : 0;
 
   return (
-    <DashboardLayout activeItem="dashboard">
+    <DashboardLayout
+      activeItem="dashboard"
+      pageTitle="Dashboard"
+      pageSubtitle="Overview and recent activity"
+    >
       <div className="space-y-6">
         {/* AWS Credentials CTA */}
   {!hasAwsCreds && (

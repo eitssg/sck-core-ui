@@ -148,6 +148,19 @@ All colors MUST be HSL.
 }
 
 @layer utilities {
+  /* Global typography and header classes (single source of truth) */
+  .sck-page-title { @apply text-xl font-bold tracking-tight text-foreground; }
+  .sck-page-subtitle { @apply text-xs text-muted-foreground; }
+
+  .sck-section-title { @apply text-base font-semibold text-foreground; }
+  .sck-section-subtitle { @apply text-sm text-muted-foreground mt-1; }
+
+  .sck-tab-title { @apply text-sm font-medium text-foreground; }
+  .sck-tab-subtitle { @apply text-xs text-muted-foreground; }
+
+  /* Right-aligned header actions row under global header */
+  .sck-header-actions { @apply flex items-center justify-end gap-2; }
+
   .shadow-soft {
     box-shadow: var(--shadow-soft, 0 1px 2px 0 rgb(0 0 0 / 0.05));
   }

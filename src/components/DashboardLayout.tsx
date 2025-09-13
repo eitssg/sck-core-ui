@@ -289,11 +289,11 @@ export default function DashboardLayout({ children, activeItem, navMode = 'full'
                   </button>
                 )}
                 <div>
-                  <h1 className="text-xl font-bold text-foreground">
+                  <h1 className="sck-page-title">
                     {pageTitle ?? (isMobile ? 'Core Automation' : 'Core Automation Portal')}
                   </h1>
                   {pageSubtitle && (
-                    <div className="text-xs text-muted-foreground">{pageSubtitle}</div>
+                    <div className="sck-page-subtitle">{pageSubtitle}</div>
                   )}
                 </div>
               </div>

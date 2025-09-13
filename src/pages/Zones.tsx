@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { Building2, ChevronRight, Search, X, Loader2, Filter as FilterIcon } from 'lucide-react';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { Building2, ChevronRight, X, Loader2, Filter as FilterIcon, Plus, Globe2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +13,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '@/store';
 import { fetchZonesPage, resetZonesPaging, selectZonesNextCursor, selectZonesLoading } from '@/store/slices/zonesSlice';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 // Utility contains
 const contains = (v: unknown, term: string) => v != null && String(v).toLowerCase().includes(term.toLowerCase());
@@ -32,6 +33,9 @@ const Zones = () => {
   });
   const [newFilterTerm, setNewFilterTerm] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [newDialogOpen, setNewDialogOpen] = useState(false);
+  const [newZoneName, setNewZoneName] = useState('');
+  const navigate = useNavigate();
 
   const selectedClientKey: string | null =
     typeof selectedClient === 'string' ? selectedClient : (selectedClient && (selectedClient as any).client) || null;
@@ -110,18 +114,63 @@ const Zones = () => {
   }
 
   return (
-    <DashboardLayout activeItem="zones">
+    <DashboardLayout
+      activeItem="zones"
+      pageTitle="Landing Zones"
+      pageSubtitle="Browse and inspect registered zones for the selected client"
+    >
       <div className="space-y-6">
-        {/* Header (mirrors Clients layout: left title/desc, no right button here) */}
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Landing Zones</h1>
-            <p className="text-muted-foreground">Browse and inspect registered zones for the selected client.</p>
-          </div>
-          {/* Avatar / profile menu is provided by DashboardLayout top bar */}
+        {/* Header actions */}
+        <div className="sck-header-actions">
+          <div className="mr-auto" />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-muted-foreground hover:text-foreground"
+            onClick={() => setNewDialogOpen(true)}
+          >
+            <Plus className="h-4 w-4 mr-1" /> New
+          </Button>
         </div>
 
-      {/* Mobile Filters trigger */}
+        {/* Create New Zone dialog */}
+        <Dialog open={newDialogOpen} onOpenChange={setNewDialogOpen}>
+          <DialogContent className="w-[92vw] max-w-sm p-4 sm:p-6">
+            <DialogHeader>
+              <DialogTitle>Create New Zone</DialogTitle>
+              <DialogDescription>Enter a new zone name (lowercase, max 32 characters).</DialogDescription>
+            </DialogHeader>
+            <div className="pt-2">
+              <label className="text-sm font-medium text-muted-foreground">Enter landing zone name:</label>
+              <Input
+                className="mt-2"
+                value={newZoneName}
+                onChange={(e)=> setNewZoneName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0,32))}
+                placeholder="my-zone"
+                maxLength={32}
+              />
+            </div>
+            <DialogFooter className="pt-4 gap-2">
+              <Button variant="outline" onClick={()=> setNewDialogOpen(false)}>Cancel</Button>
+              <Button
+                variant="default"
+                disabled={!newZoneName.trim() || !selectedClientKey}
+                onClick={() => {
+                  const name = newZoneName.trim().toLowerCase().slice(0, 32);
+                  if (!name || !selectedClientKey) return;
+                  setNewDialogOpen(false);
+                  setNewZoneName('');
+                  const to = `/zones/${encodeURIComponent(selectedClientKey)}/${encodeURIComponent(name)}`;
+                  navigate(to, { state: { createNew: true, zoneName: name, client: selectedClientKey } });
+                }}
+              >
+                Create
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+  {/* Mobile Filters trigger */}
     <div className="sm:hidden">
         <Button variant="outline" className="gap-2" onClick={() => setFiltersOpen(true)}>
           <FilterIcon className="h-4 w-4" />
@@ -268,6 +317,19 @@ const Zones = () => {
         <div className="space-y-2">
           {filteredZones.map(zone => {
             const af = zone.account_facts ?? ({} as any);
+            // Normalize environment to prd/nprd/dev supporting various legacy strings and whitespace
+            const raw = (af.environment ?? '').toString().trim();
+            const rawLc = raw.toLowerCase();
+            const env: 'prd' | 'nprd' | 'dev' | '' =
+              ['production', 'prod', 'prd'].includes(rawLc)
+                ? 'prd'
+                : ['nonprod', 'non-production', 'non production', 'nprod', 'nprd'].includes(rawLc)
+                ? 'nprd'
+                : ['dev', 'development'].includes(rawLc)
+                ? 'dev'
+                : '';
+            const envLabel = env === 'prd' ? 'PROD' : env === 'nprd' ? 'NPROD' : env === 'dev' ? 'DEV' : '-';
+            const badgeVariant = env === 'prd' ? 'destructive' : env === 'nprd' ? 'default' : env === 'dev' ? 'secondary' : 'secondary';
             const to = `/zones/${encodeURIComponent(zone.client)}/${encodeURIComponent(zone.zone)}`;
             return (
               <Link
@@ -279,16 +341,28 @@ const Zones = () => {
                 <Card className="transition-colors hover:bg-muted/30 group">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-3 mb-1">
-                          <span className="font-medium truncate contrast-value" title={`${zone.client} • ${zone.zone}`}>{zone.zone}</span>
-                          <Badge variant={af.environment === 'production' ? 'destructive' : 'secondary'} className="uppercase">{af.environment || '-'}</Badge>
+                      <div className="min-w-0 flex-1 flex items-start gap-3">
+                        <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-muted-foreground shrink-0 group-hover:text-foreground">
+                          <Globe2 className="h-4 w-4" />
                         </div>
-                        <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
-                          <span className="truncate contrast-value" title={af.organizational_unit || ''}>{af.organizational_unit || '—'}</span>
-                          <span className="font-mono contrast-value">{af.aws_account_id || '—'}</span>
-                          <span className="truncate contrast-value" title={af.account_name || ''}>{af.account_name || '—'}</span>
-                          {af.resource_namespace && <span className="truncate contrast-value" title={af.resource_namespace}>NS: {af.resource_namespace}</span>}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-3 mb-1">
+                            <span className="font-medium truncate contrast-value" title={`${zone.zone}`}>{zone.zone}</span>
+                            <Badge variant={badgeVariant} className="uppercase">{envLabel}</Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground flex flex-col gap-1">
+                            <div className="min-w-0 truncate">
+                              <span className="text-muted-foreground">Organizational Unit: </span>
+                              <span className="contrast-value" title={af.organizational_unit || ''}>{af.organizational_unit || '—'}</span>
+                            </div>
+                            <div className="min-w-0 truncate">
+                              <span className="text-muted-foreground">Account: </span>
+                              <span className="contrast-value" title={af.account_name || ''}>{af.account_name || '—'}</span>
+                              <span className="text-muted-foreground"> (</span>
+                              <span className="font-mono text-muted-foreground">{af.aws_account_id || '—'}</span>
+                              <span className="text-muted-foreground">)</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0 text-muted-foreground group-hover:text-foreground">

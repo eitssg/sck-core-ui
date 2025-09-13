@@ -127,6 +127,7 @@ export interface PortfolioSummary {
   name?: string;
   description?: string;
   domain?: string;
+  project?: ProjectFacts; // Some list APIs may include nested project fields (e.g., description)
   icon_url?: string;
   category?: string;
   labels?: string[];
@@ -469,8 +470,9 @@ const portfoliosSlice = createSlice({
         const portfolios = summaryData.map(summary => {
           const slug = (summary as any).portfolio ?? summary.Portfolio!;
           const name = (summary as any).name ?? summary.Name;
-          const description = (summary as any).description ?? summary.Description;
           const domain = (summary as any).domain ?? summary.Domain;
+          const project = (summary as any).project;
+          const description = (summary as any).description ?? summary.Description ?? project?.description;
           const icon_url = (summary as any).icon_url;
           const category = (summary as any).category;
           const labels = (summary as any).labels;
@@ -491,11 +493,15 @@ const portfoliosSlice = createSlice({
             technical_owner,
           } as Portfolio;
 
-          // If name provided, set simple fields; also provide project fallback for existing UI
-          if (name) {
-            (base as any).name = name;
-            (base as any).description = description;
-            base.project = { name, code: slug, description };
+          // Map fields from summary into UI model
+          if (name) (base as any).name = name;
+          if (description) (base as any).description = description;
+          // Provide project fallback (favor project fields if available)
+          const projName = project?.name || name || slug;
+          const projCode = project?.code || slug;
+          const projDesc = project?.description || description;
+          if (projName || projDesc) {
+            base.project = { name: projName, code: projCode, description: projDesc };
           }
 
           return transformPortfolioForUI(base, client);

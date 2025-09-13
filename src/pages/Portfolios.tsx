@@ -381,18 +381,17 @@ export default function Portfolios() {
   
 
   return (
-    <DashboardLayout activeItem="portfolios">
+    <DashboardLayout
+      activeItem="portfolios"
+      pageTitle="Portfolios"
+      pageSubtitle={`Manage portfolios for ${currentClient}`}
+    >
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Portfolios</h1>
-            <p className="text-muted-foreground">Manage portfolios for {currentClient}</p>
-          </div>
-          <Button asChild variant="outline" className="gap-2">
+        {/* Header actions (right side) */}
+        <div className="flex items-center justify-end">
+          <Button asChild variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground">
             <Link to="/portfolios/create">
-              <Plus className="h-4 w-4" />
-              New
+              <Plus className="h-4 w-4" /> New
             </Link>
           </Button>
         </div>
@@ -447,8 +446,8 @@ export default function Portfolios() {
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {filteredPortfolios.map((p) => {
                     const key = `${currentClient}/${p.portfolio}`;
-                    const name = p.name || p.project?.name || p.portfolio;
-                    const desc = p.description || p.project?.description || "";
+                    const name = p.name || p.portfolio;
+                    const desc = p.description || "";
                     const appCount = getAppCount(p.portfolio);
                     const updated = p.updated_at ? new Date(p.updated_at).toLocaleDateString() : "—";
                     return (
@@ -456,21 +455,28 @@ export default function Portfolios() {
                         onClick={() => navigate(`/portfolios/${p.portfolio}`)}
                       >
                         <CardContent className="p-4 space-y-3">
-                          <div className="flex items-center gap-3">
-                            {p.icon_url ? (
-                              <img src={p.icon_url} alt={name} className="w-10 h-10 rounded-md object-cover" />
-                            ) : (
-                              <div className="w-10 h-10 bg-primary/10 rounded-md flex items-center justify-center">
-                                <Briefcase className="h-5 w-5 text-primary" />
-                              </div>
-                            )}
-                            <div className="min-w-0">
+                          {/* Two-column layout: fixed 96px icon column, flexible text column */}
+                          <div className="grid grid-cols-[96px,1fr] gap-4 items-start">
+                            <div className="w-[96px]">
+                              {p.icon_url ? (
+                                <img src={p.icon_url} alt={name} className="w-[96px] h-[96px] rounded-md object-cover" />
+                              ) : (
+                                <div className="w-[96px] h-[96px] bg-primary/10 rounded-md flex items-center justify-center">
+                                  <Briefcase className="h-12 w-12 text-primary" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0 space-y-1">
                               <div className="font-semibold truncate">{name}</div>
                               <div className="text-xs text-muted-foreground truncate">{p.portfolio}</div>
+                              {(p as any)?.portfolio_version && (
+                                <div className="text-xs text-muted-foreground truncate">Version: {(p as any).portfolio_version}</div>
+                              )}
+                              {desc && (
+                                <p className="text-xs text-muted-foreground line-clamp-2">{desc}</p>
+                              )}
                             </div>
                           </div>
-
-                          {desc && <p className="text-sm text-muted-foreground line-clamp-2">{desc}</p>}
 
                           <div className="flex flex-wrap gap-2">
                             {p.category && <Badge variant="secondary">{p.category}</Badge>}

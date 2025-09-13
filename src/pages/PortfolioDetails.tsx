@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, Fragment } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 import type { RootState } from "@/store";
-import { ArrowLeft, Edit, Save, X, Briefcase, ExternalLink, Plus, Users, Clock, Activity, Globe, Tag, Link as LinkIcon, Network, Trash2, Mail, Phone, IdCard, PlusCircle, GripVertical } from "lucide-react";
+import { ArrowLeft, Edit, Save, X, Briefcase, ExternalLink, Plus, Users, Clock, Activity, Globe, Tag, Link as LinkIcon, Network, Trash2, Mail, Phone, IdCard, PlusCircle, GripVertical, ArrowDown, MoreHorizontal, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -98,6 +99,156 @@ export default function PortfolioDetails() {
     | null
   >(null);
   const [activeTab, setActiveTab] = useState<string>("overview");
+  // Icon editor dialog
+  const [iconDialogOpen, setIconDialogOpen] = useState(false);
+  const [iconDraft, setIconDraft] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadingIcon, setUploadingIcon] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const triggerFilePicker = () => fileInputRef.current?.click();
+
+  const handleIconFileChange: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+    try {
+      const file = e.target.files?.[0];
+      if (!file || !currentClient || !portfolio) return;
+      setUploadingIcon(true);
+      setUploadError(null);
+
+      // 1) Request a presigned PUT URL from API
+      const initRes = await fetch(
+        `/api/v1/registry/clients/${encodeURIComponent(currentClient)}/portfolios/${encodeURIComponent(portfolio.portfolio)}/icon:upload`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileName: file.name,
+            contentType: file.type || "application/octet-stream",
+            fileSize: file.size,
+          }),
+        }
+      );
+      const initJson = await initRes.json().catch(() => ({}));
+      if (!initRes.ok || initJson?.status === "error") {
+        throw new Error(initJson?.message || initJson?.data || `Upload init failed (${initRes.status})`);
+      }
+
+      const payload = initJson?.data ?? initJson; // API responses are wrapped with {status, data}
+      const uploadUrl: string = payload.uploadUrl;
+      const headers: Record<string, string> = payload.headers || {};
+      const iconUrl: string = payload.iconUrl; // redirecting GET endpoint
+
+      // 2) Upload file directly to S3 via presigned PUT
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": headers["Content-Type"] || file.type || "application/octet-stream",
+          "Cache-Control": headers["Cache-Control"] || "public, max-age=31536000, immutable",
+        },
+        body: file,
+      });
+      if (!putRes.ok) throw new Error(`S3 upload failed (${putRes.status})`);
+
+      // 3) Point draft to the redirecting icon URL with cache-bust param
+      const bust = `t=${Date.now()}`;
+      setIconDraft(iconUrl ? `${iconUrl}?${bust}` : "");
+    } catch (err: any) {
+      setUploadError(err?.message || "Upload failed");
+    } finally {
+      setUploadingIcon(false);
+      if (e.target) e.target.value = ""; // reset input to allow same file re-pick
+    }
+  };
+
+  const handleIconDialogSave = () => {
+    setFormData((s) => ({ ...s, icon_url: iconDraft || "" }));
+    setIconDialogOpen(false);
+  };
+  // Compliance & Identifiers edit state
+  const [isComplianceEditing, setIsComplianceEditing] = useState(false);
+  const [complianceRows, setComplianceRows] = useState<{ key: string; value: string }[]>([]);
+  const [identifierRows, setIdentifierRows] = useState<{ key: string; value: string }[]>([]);
+  // Structured compliance and identifiers forms
+  const KNOWN_COMPLIANCE_KEYS = [
+    "data_classification",
+    "handles_pii",
+    "pii_types",
+    "encryption_at_rest",
+    "encryption_in_transit",
+    "encryption_algorithms",
+    "compliance_standards",
+    "audit_logging",
+    "audit_log_retention_days",
+    "accessibility_standard",
+  ] as const;
+  const KNOWN_IDENTIFIER_KEYS = [
+    "license",
+    "spdx_id",
+    "license_url",
+    "sbom_url",
+    "issue_tracker_url",
+    "documentation_url",
+    "artifact_registry",
+    "docker_image",
+    "npm_package",
+    "pypi_package",
+    "maven_coordinates",
+    "cicd_pipeline_url",
+  ] as const;
+
+  type ComplianceForm = {
+    data_classification: string;
+    handles_pii: boolean;
+    pii_types_csv: string; // comma-separated
+    encryption_at_rest: boolean;
+    encryption_in_transit: boolean;
+    encryption_algorithms: string;
+    standards_csv: string; // comma-separated
+    audit_logging: boolean;
+    audit_log_retention_days: string; // store as string; convert to number on save
+    accessibility_standard: string;
+  };
+  type IdentifiersForm = {
+    license: string;
+    spdx_id: string;
+    license_url: string;
+    sbom_url: string;
+    issue_tracker_url: string;
+    documentation_url: string;
+    artifact_registry: string;
+    docker_image: string;
+    npm_package: string;
+    pypi_package: string;
+    maven_coordinates: string;
+    cicd_pipeline_url: string;
+  };
+
+  const [complianceForm, setComplianceForm] = useState<ComplianceForm>(() => ({
+    data_classification: "",
+    handles_pii: false,
+    pii_types_csv: "",
+    encryption_at_rest: true,
+    encryption_in_transit: true,
+    encryption_algorithms: "",
+    standards_csv: "",
+    audit_logging: true,
+    audit_log_retention_days: "90",
+    accessibility_standard: "",
+  }));
+  const [identifiersForm, setIdentifiersForm] = useState<IdentifiersForm>(() => ({
+    license: "",
+    spdx_id: "",
+    license_url: "",
+    sbom_url: "",
+    issue_tracker_url: "",
+    documentation_url: "",
+    artifact_registry: "",
+    docker_image: "",
+    npm_package: "",
+    pypi_package: "",
+    maven_coordinates: "",
+    cicd_pipeline_url: "",
+  }));
 
   // Approvers state (grouped by sequence)
   type ApproverItem = {
@@ -126,6 +277,23 @@ export default function PortfolioDetails() {
   }, []);
 
   const [approverGroups, setApproverGroups] = useState<ApproverGroup[]>(computeApproverGroups((portfolio as any)?.approvers as any));
+  const [dragActive, setDragActive] = useState(false);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!dragActive) return;
+    const body = document.body;
+    const prevOverflow = body.style.overflow;
+    const prevTouchAction = (body.style as any).touchAction;
+    const prevOverscroll = (body.style as any).overscrollBehavior;
+    body.style.overflow = "hidden";
+    (body.style as any).touchAction = "none";
+    (body.style as any).overscrollBehavior = "contain";
+    return () => {
+      body.style.overflow = prevOverflow;
+      (body.style as any).touchAction = prevTouchAction;
+      (body.style as any).overscrollBehavior = prevOverscroll;
+    };
+  }, [dragActive]);
   useEffect(() => {
     setApproverGroups(computeApproverGroups((portfolio as any)?.approvers as any));
   }, [portfolio, computeApproverGroups]);
@@ -147,10 +315,23 @@ export default function PortfolioDetails() {
   const openEditApprover = (groupIndex: number, itemIndex: number, data: ApproverItem) => { setApproverEditorCtx({ groupIndex, itemIndex, data }); setApproverEditorOpen(true); };
 
   const [formData, setFormData] = useState(() => ({
+    // Top-level Portfolio
+    name: portfolio?.name || "",
+    portfolio_version: (portfolio as any)?.portfolio_version || "",
+    icon_url: (portfolio as any)?.icon_url || "",
+    // Domain
+    domain: portfolio?.domain || "",
+    // Project
     project_name: portfolio?.project?.name || "",
     project_code: portfolio?.project?.code || "",
     project_description: portfolio?.project?.description || "",
-    domain: portfolio?.domain || "",
+    project_repository: portfolio?.project?.repository || "",
+    // Bizapp (optional parallel to project)
+    bizapp_name: (portfolio as any)?.bizapp?.name || "",
+    bizapp_code: (portfolio as any)?.bizapp?.code || "",
+    bizapp_description: (portfolio as any)?.bizapp?.description || "",
+    bizapp_repository: (portfolio as any)?.bizapp?.repository || "",
+    // Contacts (unchanged)
     contacts: Array.isArray((portfolio as any)?.contacts) ? (portfolio as any).contacts.map((c: any) => ({
       name: c?.name || "",
       email: c?.email || "",
@@ -167,19 +348,35 @@ export default function PortfolioDetails() {
       "GivenName",
       "MiddleName",
       "FamilyName",
+      "PreferredName",
       "Nickname",
+      "Pronouns",
+      "EmployeeId",
       // Work
       "Title",
       "JobTitle",
+      "Role",
+      "Seniority",
       "Department",
+      "Division",
       "Organization",
       "Company",
-      "Role",
+      "BusinessUnit",
+      "CostCenter",
       "Team",
+      "Squad",
+      "Tribe",
       "Manager",
+      "ManagerEmail",
       "Assistant",
       "Office",
       "Location",
+      "Building",
+      "Floor",
+      "Room",
+      "Desk",
+      "WorkHours",
+      "Schedule",
       // Phones
       "Phone",
       "Mobile",
@@ -187,31 +384,52 @@ export default function PortfolioDetails() {
       "WorkPhone",
       "HomePhone",
       "MainPhone",
+      "DirectLine",
+      "AltPhone",
       "Fax",
       "WorkFax",
       "HomeFax",
       "Pager",
       "Extension",
+      "SIP",
       // Email
       "Email",
       "WorkEmail",
       "HomeEmail",
       "AltEmail",
+      "PersonalEmail",
       "iCloud",
-      // Web / Social
+      // Web / Social / Profiles
       "Website",
       "URL",
       "Homepage",
+      "Portfolio",
+      "Resume",
       "Blog",
       "Profile",
       "LinkedIn",
       "Twitter",
-      "GitHub",
+      "X",
       "Facebook",
       "Instagram",
+      "TikTok",
+      "GitHub",
+      "GitLab",
+      "Bitbucket",
+      "StackOverflow",
+      "Reddit",
+      "YouTube",
+      "Vimeo",
+      "Dribbble",
+      "Behance",
+      "Twitch",
+      "Discord",
       "Mastodon",
-      // Messaging
+      "Bluesky",
+      "Threads",
+      // Messaging / IM
       "Skype",
+      "SkypeId",
       "Slack",
       "Teams",
       "WhatsApp",
@@ -220,24 +438,53 @@ export default function PortfolioDetails() {
       "WeChat",
       "QQ",
       "Line",
+      "Zoom",
+      "GoogleMeet",
+      "Webex",
       // Address
       "Address",
+      "Address2",
+      "POBox",
       "Street",
       "City",
       "State",
       "Province",
       "Region",
+      "County",
       "PostalCode",
       "Zip",
       "Country",
+      "CountryCode",
+      "Latitude",
+      "Longitude",
       // Locale/Other
       "Timezone",
       "Language",
+      "Locale",
       // Dates
       "Birthday",
       "Anniversary",
-      // Misc
+      "StartDate",
+      "HireDate",
+      "LastPromotion",
+      // People / Relationships
+      "EmergencyContact",
+      "EmergencyPhone",
+      "Mentor",
+      "Buddy",
+      // Misc / Useful
       "Notes",
+      "Bio",
+      "Interests",
+      "Skills",
+      "Certifications",
+      "Clearance",
+      "SecurityLevel",
+      "OktaUsername",
+      "ADUsername",
+      "SSHKey",
+      "PGPKey",
+      "Calendly",
     ],
     []
   );
@@ -262,10 +509,18 @@ export default function PortfolioDetails() {
   // Sync form when portfolio changes
   useEffect(() => {
     setFormData({
+      name: portfolio?.name || "",
+      portfolio_version: (portfolio as any)?.portfolio_version || "",
+      icon_url: (portfolio as any)?.icon_url || "",
+      domain: portfolio?.domain || "",
       project_name: portfolio?.project?.name || "",
       project_code: portfolio?.project?.code || "",
       project_description: portfolio?.project?.description || "",
-      domain: portfolio?.domain || "",
+      project_repository: portfolio?.project?.repository || "",
+      bizapp_name: (portfolio as any)?.bizapp?.name || "",
+      bizapp_code: (portfolio as any)?.bizapp?.code || "",
+      bizapp_description: (portfolio as any)?.bizapp?.description || "",
+      bizapp_repository: (portfolio as any)?.bizapp?.repository || "",
       contacts: Array.isArray((portfolio as any)?.contacts) ? (portfolio as any).contacts.map((c: any) => ({
         name: c?.name || "",
         email: c?.email || "",
@@ -275,6 +530,141 @@ export default function PortfolioDetails() {
     });
   }, [portfolio]);
 
+  // Sync compliance/identifiers editor rows when portfolio changes
+  useEffect(() => {
+    const c = (portfolio?.compliance ?? {}) as any;
+    setComplianceRows(Object.entries(c).map(([k, v]) => ({ key: k, value: String(v) })));
+    setComplianceForm({
+      data_classification: String(c?.data_classification ?? ""),
+      handles_pii: Boolean(c?.handles_pii ?? false),
+      pii_types_csv: Array.isArray(c?.pii_types) ? (c.pii_types as string[]).join(", ") : String(c?.pii_types ?? ""),
+      encryption_at_rest: c?.encryption_at_rest !== undefined ? Boolean(c.encryption_at_rest) : true,
+      encryption_in_transit: c?.encryption_in_transit !== undefined ? Boolean(c.encryption_in_transit) : true,
+      encryption_algorithms: String(c?.encryption_algorithms ?? ""),
+      standards_csv: Array.isArray(c?.compliance_standards) ? (c.compliance_standards as string[]).join(", ") : String(c?.compliance_standards ?? ""),
+      audit_logging: c?.audit_logging !== undefined ? Boolean(c.audit_logging) : true,
+      audit_log_retention_days: String(c?.audit_log_retention_days ?? "90"),
+      accessibility_standard: String(c?.accessibility_standard ?? ""),
+    });
+
+    const idObj = (portfolio?.identifiers ?? {}) as any;
+    setIdentifierRows(Object.entries(idObj).map(([k, v]) => ({ key: k, value: String(v) })));
+    setIdentifiersForm({
+      license: String(idObj?.license ?? ""),
+      spdx_id: String(idObj?.spdx_id ?? ""),
+      license_url: String(idObj?.license_url ?? ""),
+      sbom_url: String(idObj?.sbom_url ?? ""),
+      issue_tracker_url: String(idObj?.issue_tracker_url ?? ""),
+      documentation_url: String(idObj?.documentation_url ?? ""),
+      artifact_registry: String(idObj?.artifact_registry ?? ""),
+      docker_image: String(idObj?.docker_image ?? ""),
+      npm_package: String(idObj?.npm_package ?? ""),
+      pypi_package: String(idObj?.pypi_package ?? ""),
+      maven_coordinates: String(idObj?.maven_coordinates ?? ""),
+      cicd_pipeline_url: String(idObj?.cicd_pipeline_url ?? ""),
+    });
+  }, [portfolio]);
+
+  const handleComplianceCancel = () => {
+    const c = (portfolio?.compliance ?? {}) as any;
+    setComplianceRows(Object.entries(c).map(([k, v]) => ({ key: k, value: String(v) })));
+    setComplianceForm({
+      data_classification: String(c?.data_classification ?? ""),
+      handles_pii: Boolean(c?.handles_pii ?? false),
+      pii_types_csv: Array.isArray(c?.pii_types) ? (c.pii_types as string[]).join(", ") : String(c?.pii_types ?? ""),
+      encryption_at_rest: c?.encryption_at_rest !== undefined ? Boolean(c.encryption_at_rest) : true,
+      encryption_in_transit: c?.encryption_in_transit !== undefined ? Boolean(c.encryption_in_transit) : true,
+      encryption_algorithms: String(c?.encryption_algorithms ?? ""),
+      standards_csv: Array.isArray(c?.compliance_standards) ? (c.compliance_standards as string[]).join(", ") : String(c?.compliance_standards ?? ""),
+      audit_logging: c?.audit_logging !== undefined ? Boolean(c.audit_logging) : true,
+      audit_log_retention_days: String(c?.audit_log_retention_days ?? "90"),
+      accessibility_standard: String(c?.accessibility_standard ?? ""),
+    });
+    const idObj = (portfolio?.identifiers ?? {}) as any;
+    setIdentifierRows(Object.entries(idObj).map(([k, v]) => ({ key: k, value: String(v) })));
+    setIdentifiersForm({
+      license: String(idObj?.license ?? ""),
+      spdx_id: String(idObj?.spdx_id ?? ""),
+      license_url: String(idObj?.license_url ?? ""),
+      sbom_url: String(idObj?.sbom_url ?? ""),
+      issue_tracker_url: String(idObj?.issue_tracker_url ?? ""),
+      documentation_url: String(idObj?.documentation_url ?? ""),
+      artifact_registry: String(idObj?.artifact_registry ?? ""),
+      docker_image: String(idObj?.docker_image ?? ""),
+      npm_package: String(idObj?.npm_package ?? ""),
+      pypi_package: String(idObj?.pypi_package ?? ""),
+      maven_coordinates: String(idObj?.maven_coordinates ?? ""),
+      cicd_pipeline_url: String(idObj?.cicd_pipeline_url ?? ""),
+    });
+    setIsComplianceEditing(false);
+  };
+
+  const handleComplianceSave = async () => {
+    if (!currentClient || !portfolio) return;
+    const existingCompliance = { ...(portfolio.compliance || {}) } as any;
+    const existingIdentifiers = { ...(portfolio.identifiers || {}) } as any;
+
+    // Build structured compliance
+    const pii_types = (complianceForm.pii_types_csv || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const compliance: Record<string, any> = {
+      ...existingCompliance,
+      data_classification: complianceForm.data_classification || undefined,
+      handles_pii: !!complianceForm.handles_pii,
+      pii_types: pii_types.length ? pii_types : undefined,
+      encryption_at_rest: !!complianceForm.encryption_at_rest,
+      encryption_in_transit: !!complianceForm.encryption_in_transit,
+      encryption_algorithms: complianceForm.encryption_algorithms || undefined,
+      compliance_standards: (complianceForm.standards_csv || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      audit_logging: !!complianceForm.audit_logging,
+      audit_log_retention_days: Number.isFinite(Number(complianceForm.audit_log_retention_days))
+        ? Number(complianceForm.audit_log_retention_days)
+        : undefined,
+      accessibility_standard: complianceForm.accessibility_standard || undefined,
+    };
+
+    // Remove keys explicitly cleared
+    KNOWN_COMPLIANCE_KEYS.forEach((k) => {
+      if (
+        (k === "pii_types" && (!compliance.pii_types || compliance.pii_types.length === 0)) ||
+        (k === "compliance_standards" && (!compliance.compliance_standards || compliance.compliance_standards.length === 0)) ||
+        compliance[k as keyof typeof compliance] === undefined || compliance[k as keyof typeof compliance] === ""
+      ) {
+        delete compliance[k as any];
+      }
+    });
+
+    // Build structured identifiers
+    const identifiers: Record<string, any> = {
+      ...existingIdentifiers,
+      license: identifiersForm.license || undefined,
+      spdx_id: identifiersForm.spdx_id || undefined,
+      license_url: identifiersForm.license_url || undefined,
+      sbom_url: identifiersForm.sbom_url || undefined,
+      issue_tracker_url: identifiersForm.issue_tracker_url || undefined,
+      documentation_url: identifiersForm.documentation_url || undefined,
+      artifact_registry: identifiersForm.artifact_registry || undefined,
+      docker_image: identifiersForm.docker_image || undefined,
+      npm_package: identifiersForm.npm_package || undefined,
+      pypi_package: identifiersForm.pypi_package || undefined,
+      maven_coordinates: identifiersForm.maven_coordinates || undefined,
+      cicd_pipeline_url: identifiersForm.cicd_pipeline_url || undefined,
+    };
+    KNOWN_IDENTIFIER_KEYS.forEach((k) => {
+      if (identifiers[k] === undefined || identifiers[k] === "") {
+        delete identifiers[k];
+      }
+    });
+
+    await actions.portfolios.patch(currentClient, portfolio.portfolio, { compliance, identifiers } as any);
+    setIsComplianceEditing(false);
+  };
+
   if (!currentClient) {
     return (
       <div className="space-y-6 animate-fade-in">
@@ -282,7 +672,7 @@ export default function PortfolioDetails() {
           <CardContent className="p-12 text-center">
             <h3 className="text-lg font-semibold mb-2">No Client Selected</h3>
             <p className="text-muted-foreground mb-6">Select a client from the header to view portfolio details.</p>
-            <Button onClick={() => navigate("/portfolios")}>Go to Portfolios</Button>
+            <Button variant="outline" onClick={() => navigate("/portfolios")}>Go to Portfolios</Button>
           </CardContent>
         </Card>
       </div>
@@ -313,7 +703,7 @@ export default function PortfolioDetails() {
                 <p className="text-muted-foreground mb-6">The requested portfolio could not be found for client {currentClient}.</p>
               </>
             )}
-            <Button asChild>
+            <Button variant="outline" asChild>
               <Link to="/portfolios">Return to Portfolios</Link>
             </Button>
           </CardContent>
@@ -328,13 +718,31 @@ export default function PortfolioDetails() {
     setIsSaving(true);
     try {
       // Build minimal patch payload aligned to model
-      const patch = {
-        project: {
+      const patch: any = {
+        // Top-level
+        name: formData.name || undefined,
+        portfolio_version: formData.portfolio_version || undefined,
+        icon_url: formData.icon_url || undefined,
+        domain: formData.domain || undefined,
+        // Project
+        project: (
+          formData.project_name || formData.project_code || formData.project_description || formData.project_repository
+        ) ? {
           name: formData.project_name || undefined,
           code: formData.project_code || undefined,
           description: formData.project_description || undefined,
-        },
-        domain: formData.domain || undefined,
+          repository: formData.project_repository || undefined,
+        } : undefined,
+        // Bizapp (optional)
+        bizapp: (
+          formData.bizapp_name || formData.bizapp_code || formData.bizapp_description || formData.bizapp_repository
+        ) ? {
+          name: formData.bizapp_name || undefined,
+          code: formData.bizapp_code || undefined,
+          description: formData.bizapp_description || undefined,
+          repository: formData.bizapp_repository || undefined,
+        } : undefined,
+        // Contacts
         contacts: Array.isArray(formData.contacts)
           ? formData.contacts
               .filter((c) => (c.name || c.email))
@@ -425,69 +833,60 @@ export default function PortfolioDetails() {
       pageSubtitle="Update metadata and basic information"
     >
       <div className="space-y-6 animate-fade-in">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-foreground">{portfolio.project?.name || portfolio.portfolio}</h1>
-              <p className="text-muted-foreground">
-                Portfolio: <span className="font-mono">{portfolio.portfolio}</span>
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            {isEditing ? (
-              <>
-                <Button variant="secondary" onClick={() => setIsEditing(false)} className="gap-2">
-                  <X className="h-4 w-4" />
-                  Cancel
-                </Button>
-                <Button onClick={handleSave} disabled={isSaving} className="gap-2">
-                  <Save className="h-4 w-4" />
-                  {isSaving ? "Saving..." : "Save"}
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button variant="outline" onClick={() => setIsEditing(true)} className="gap-2">
-                  <Edit className="h-4 w-4" />
-                  Edit
-                </Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="outline" disabled={isDeleting} className="gap-2">
+        {/* Sticky header actions under global header (style-guide compliant) */}
+        <div className="sck-header-actions sticky top-16 z-30 bg-background/95 supports-[backdrop-filter]:bg-background/60 backdrop-blur border-b border-border py-2 px-2">
+          <div className="mr-auto" />
+          {!isEditing ? (
+            <>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="sm" disabled={isDeleting} className="gap-1 text-muted-foreground hover:text-foreground">
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete portfolio “{portfolio.project?.name || portfolio.portfolio}”?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This action cannot be undone and may affect associated applications.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90 gap-2"
+                    >
                       <Trash2 className="h-4 w-4" />
                       Delete
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete portfolio “{portfolio.project?.name || portfolio.portfolio}”?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This action cannot be undone and may affect associated applications.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={handleDelete}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90 gap-2"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </>
-            )}
-          </div>
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <Button variant="ghost" size="sm" onClick={() => setIsEditing(true)} className="gap-1 text-muted-foreground hover:text-foreground">
+                <Edit className="h-4 w-4" />
+                Edit
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)} className="gap-1 text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleSave} disabled={isSaving} className="gap-1">
+                <Save className="h-4 w-4" />
+                {isSaving ? "Saving..." : "Save"}
+              </Button>
+            </>
+          )}
         </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+  <div className="grid gap-6 lg:grid-cols-1">
         <div className="lg:col-span-2 space-y-6">
       {/* Tabbed details */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+  <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="contacts">Contacts</TabsTrigger>
@@ -498,13 +897,35 @@ export default function PortfolioDetails() {
 
             <TabsContent value="overview">
               <Card className="shadow-soft">
-                <CardHeader>
-                  <CardTitle>Portfolio</CardTitle>
-                  <CardDescription>Overview and basic information</CardDescription>
+                <CardHeader className="flex flex-row items-start gap-2">
+                  <div>
+                    <CardTitle className="sck-section-title">Portfolio</CardTitle>
+                    <CardDescription className="sck-section-subtitle">Overview and basic information</CardDescription>
+                  </div>
+                  {/* Page-level actions are rendered in the sticky header above per style guide */}
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {!isEditing ? (
                     <div className="space-y-4">
+                      {/* Header row with icon and names */}
+                      <div className="flex items-center gap-4">
+                        <div className="relative">
+                          {portfolio.icon_url ? (
+                            <img src={portfolio.icon_url} alt={portfolio.name || portfolio.project?.name || portfolio.portfolio} className="w-12 h-12 rounded-md object-cover" />
+                          ) : (
+                            <div className="w-12 h-12 bg-primary/10 rounded-md flex items-center justify-center">
+                              <Briefcase className="h-6 w-6 text-primary" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-base font-semibold truncate">{portfolio.name || portfolio.project?.name || portfolio.portfolio}</div>
+                          {(portfolio as any)?.portfolio_version && (
+                            <div className="text-xs text-muted-foreground truncate">Version: {(portfolio as any).portfolio_version}</div>
+                          )}
+                        </div>
+                      </div>
+
                       {(portfolio.category || portfolio.lifecycle_status) && (
                         <div className="flex gap-2 flex-wrap">
                           {portfolio.category && <Badge variant="secondary">{portfolio.category}</Badge>}
@@ -513,7 +934,11 @@ export default function PortfolioDetails() {
                       )}
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-1">
-                          <label className="text-sm font-medium text-muted-foreground">Description</label>
+                          <label className="text-sm font-medium text-muted-foreground">Project Name</label>
+                          <p className="text-foreground">{portfolio.project?.name || "—"}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium text-muted-foreground">Project Description</label>
                           <p className="text-foreground">{portfolio.project?.description || "No description provided"}</p>
                         </div>
                         <div>
@@ -522,6 +947,23 @@ export default function PortfolioDetails() {
                             <Globe className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm">{portfolio.domain || "—"}</span>
                           </div>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-muted-foreground">Project Home Page</label>
+                            {portfolio.project?.repository ? (
+                              <a
+                                href={portfolio.project.repository}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label="Open repository"
+                                className="inline-flex"
+                              >
+                                <ExternalLink className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                              </a>
+                            ) : null}
+                          </div>
+                          <p className="text-sm text-muted-foreground break-all">{portfolio.project?.repository || "—"}</p>
                         </div>
                       </div>
 
@@ -557,6 +999,38 @@ export default function PortfolioDetails() {
                     </div>
                   ) : (
                     <div className="space-y-4">
+                      {/* Row: icon and basic fields */}
+                      <div className="flex items-start gap-4">
+                        <div className="relative">
+                          {formData.icon_url ? (
+                            <img src={formData.icon_url} alt={formData.name || formData.project_name || portfolio.portfolio} className="w-12 h-12 rounded-md object-cover" />
+                          ) : (
+                            <div className="w-12 h-12 bg-primary/10 rounded-md flex items-center justify-center">
+                              <Briefcase className="h-6 w-6 text-primary" />
+                            </div>
+                          )}
+                          <button type="button" className="absolute -bottom-2 -right-2 bg-background border rounded-full p-1 shadow-sm" onClick={() => { setIconDraft(formData.icon_url || ""); setUploadError(null); setIconDialogOpen(true); }} aria-label="Edit icon">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
+                          <FieldEdit
+                            id="portfolio_name"
+                            label="Portfoio Name"
+                            value={formData.name}
+                            onChange={(v) => setFormData((s) => ({ ...s, name: v }))}
+                            placeholder="Display name"
+                          />
+                          <FieldEdit
+                            id="portfolio_version"
+                            label="Version"
+                            value={formData.portfolio_version}
+                            onChange={(v) => setFormData((s) => ({ ...s, portfolio_version: v }))}
+                            placeholder="e.g. 1.0, 2025.09"
+                          />
+                        </div>
+                      </div>
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FieldEdit
                           id="project_name"
@@ -575,7 +1049,7 @@ export default function PortfolioDetails() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="project_description">Description</Label>
+                        <Label htmlFor="project_description">Project Description</Label>
                         <Textarea
                           id="project_description"
                           rows={3}
@@ -586,11 +1060,56 @@ export default function PortfolioDetails() {
                       </div>
 
                       <FieldEdit
+                        id="project_repository"
+                        label="Project Home Page"
+                        value={formData.project_repository}
+                        onChange={(v) => setFormData((s) => ({ ...s, project_repository: v }))}
+                        placeholder="https://..."
+                        type="url"
+                      />
+
+                      <FieldEdit
                         id="domain"
                         label="Domain"
                         value={formData.domain}
                         onChange={(v) => setFormData((s) => ({ ...s, domain: v }))}
                         placeholder="example.com"
+                      />
+
+                      {/* Bizapp section */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                        <FieldEdit
+                          id="bizapp_name"
+                          label="Business App Name"
+                          value={formData.bizapp_name}
+                          onChange={(v) => setFormData((s) => ({ ...s, bizapp_name: v }))}
+                          placeholder="Optional"
+                        />
+                        <FieldEdit
+                          id="bizapp_code"
+                          label="Business App Code"
+                          value={formData.bizapp_code}
+                          onChange={(v) => setFormData((s) => ({ ...s, bizapp_code: v }))}
+                          placeholder="Optional"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="bizapp_description">Business App Description</Label>
+                        <Textarea
+                          id="bizapp_description"
+                          rows={2}
+                          value={formData.bizapp_description}
+                          onChange={(e) => setFormData((s) => ({ ...s, bizapp_description: e.target.value }))}
+                          placeholder="Optional"
+                        />
+                      </div>
+                      <FieldEdit
+                        id="bizapp_repository"
+                        label="Business App Repository"
+                        value={formData.bizapp_repository}
+                        onChange={(v) => setFormData((s) => ({ ...s, bizapp_repository: v }))}
+                        placeholder="https://..."
+                        type="url"
                       />
                       {/* Save/Cancel controls are shown in the page header while editing */}
                     </div>
@@ -602,7 +1121,7 @@ export default function PortfolioDetails() {
               <Card className="shadow-soft mt-6">
                 <CardHeader>
                   <div className="flex items-center justify-between">
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="sck-section-title flex items-center gap-2">
                       <Briefcase className="h-5 w-5 text-primary" />
                       Applications ({portfolioApplications.length})
                     </CardTitle>
@@ -613,10 +1132,13 @@ export default function PortfolioDetails() {
                       </Link>
                     </Button>
                   </div>
-                  <CardDescription>Applications that belong to this portfolio</CardDescription>
+                  <CardDescription className="sck-section-subtitle">Applications that belong to this portfolio</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
+                  <div
+                    className={`space-y-3 overscroll-contain ${dragActive ? 'touch-none select-none' : ''}`}
+                    onTouchMove={(e) => { if (dragActive) e.preventDefault(); }}
+                  >
                     {portfolioApplications.map((app) => {
                       const env = app.environment || "unknown";
                       const sub = `${app.region} • ${app.zone}`;
@@ -668,16 +1190,37 @@ export default function PortfolioDetails() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
-                      <CardTitle>Approvers</CardTitle>
-                      <CardDescription>Define approval workflow and roles</CardDescription>
+                      <CardTitle className="sck-section-title">Approvers</CardTitle>
+                      <CardDescription className="sck-section-subtitle">Define approval workflow and roles</CardDescription>
                     </div>
                     <Button variant="outline" size="sm" onClick={openNewApprover} className="gap-1">
-                      <PlusCircle className="h-4 w-4" /> Add Approver
+                      <Plus className="h-4 w-4" />
+                      Add
                     </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
+                  <div
+                    className={`space-y-3 overscroll-contain ${dragActive ? 'touch-none select-none overflow-hidden' : ''}`}
+                    onTouchStart={(e) => {
+                      const t = e.touches?.[0];
+                      if (t) touchStartRef.current = { x: t.clientX, y: t.clientY };
+                    }}
+                    onTouchMove={(e) => {
+                      const start = touchStartRef.current;
+                      const t = e.touches?.[0];
+                      if (start && t) {
+                        const dx = t.clientX - start.x;
+                        const dy = t.clientY - start.y;
+                        if (!dragActive && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
+                          setDragActive(true);
+                        }
+                      }
+                      if (dragActive) e.preventDefault();
+                    }}
+                    onTouchEnd={() => { touchStartRef.current = null; setDragActive(false); }}
+                    onTouchCancel={() => { touchStartRef.current = null; setDragActive(false); }}
+                  >
                     {approverGroups.length === 0 && (
                       <div className="text-sm text-muted-foreground">No approvers</div>
                     )}
@@ -686,7 +1229,7 @@ export default function PortfolioDetails() {
                     {(() => {
                       const DropZone = ({ index }: { index: number }) => (
                         <div
-                          className="h-8 my-2 rounded-md border-2 border-dashed border-transparent transition-colors"
+                          className="relative h-8 my-2 rounded-md border-2 border-dashed border-transparent transition-colors"
                           onDragEnter={(e) => {
                             e.preventDefault();
                             const el = e.currentTarget as HTMLDivElement;
@@ -704,6 +1247,7 @@ export default function PortfolioDetails() {
                           onDrop={(e) => {
                             const el = e.currentTarget as HTMLDivElement;
                             el.classList.remove("border-primary", "bg-primary/20");
+                            setDragActive(false);
                             // Group re-order
                             const gTxt = e.dataTransfer.getData("application/x-approver-group");
                             if (gTxt) {
@@ -734,7 +1278,13 @@ export default function PortfolioDetails() {
                               normalizeAndPersistApprovers(copy);
                             }
                           }}
-                        />
+                        >
+                          {index > 0 && index < approverGroups.length ? (
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                              <ArrowDown className="h-4 w-4 text-muted-foreground/60" />
+                            </div>
+                          ) : null}
+                        </div>
                       );
 
                       return (
@@ -742,8 +1292,8 @@ export default function PortfolioDetails() {
                           {/* Top drop zone (before first group) */}
                           <DropZone index={0} />
                           {approverGroups.map((group, gIdx) => (
-                            <>
-                              <div key={`group-${gIdx}`} className="border rounded-lg">
+                            <Fragment key={`group-${gIdx}`}>
+                              <div className="border rounded-lg">
                                 {/* Group drag handle and header */}
                               <div
                                 className="flex items-center gap-3 px-3 py-2 bg-muted/50 border-b cursor-move"
@@ -751,14 +1301,16 @@ export default function PortfolioDetails() {
                                 onDragStart={(e) => {
                                   e.dataTransfer.setData("application/x-approver-group", JSON.stringify({ gIdx }));
                                   e.dataTransfer.effectAllowed = "move";
+                                  setDragActive(true);
                                 }}
+                                onDragEnd={() => setDragActive(false)}
                               >
                                 <GripVertical className="h-4 w-4 text-muted-foreground" />
                                 <div className="text-sm font-medium">Step {gIdx + 1}</div>
                               </div>
 
                               {/* Items row and drop target to group approvers */}
-                              <div
+                <div
                                 className="flex items-stretch gap-3 p-3 min-h-[64px]"
                                 onDragOver={(e) => e.preventDefault()}
                                 onDrop={(e) => {
@@ -772,6 +1324,7 @@ export default function PortfolioDetails() {
                                   const filtered = copy.filter((g) => g.items.length > 0);
                                   setApproverGroups(filtered);
                                   normalizeAndPersistApprovers(filtered);
+                  setDragActive(false);
                                 }}
                               >
                                 {group.items.map((a, iIdx) => (
@@ -782,7 +1335,9 @@ export default function PortfolioDetails() {
                                     onDragStart={(e) => {
                                       e.dataTransfer.setData("application/x-approver-item", JSON.stringify({ fromG: gIdx, fromI: iIdx }));
                                       e.dataTransfer.effectAllowed = "move";
+                                      setDragActive(true);
                                     }}
+                                    onDragEnd={() => setDragActive(false)}
                                   >
                                     <GripVertical className="h-4 w-4 text-muted-foreground" />
                                     <div className="flex-1 min-w-0">
@@ -803,7 +1358,15 @@ export default function PortfolioDetails() {
                                           size="sm"
                                         />
                                       </div>
-                                      <Button variant="ghost" size="icon" onClick={() => openEditApprover(gIdx, iIdx, a)}>
+              {/* Mobile subtle more icon; desktop pencil */}
+              <Button aria-label="Edit" variant="ghost" size="icon" className="lg:hidden"
+                onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}
+                onClick={() => openEditApprover(gIdx, iIdx, a)}>
+                                        <MoreHorizontal className="h-4 w-4" />
+                                      </Button>
+              <Button aria-label="Edit" variant="ghost" size="icon" className="hidden lg:inline-flex"
+                onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}
+                onClick={() => openEditApprover(gIdx, iIdx, a)}>
                                         <Edit className="h-4 w-4" />
                                       </Button>
                                     </div>
@@ -814,7 +1377,7 @@ export default function PortfolioDetails() {
                               </div>
                               {/* Drop zone after each group (outside the bordered group) */}
                               <DropZone index={gIdx + 1} />
-                            </>
+                            </Fragment>
                           ))}
                         </>
                       );
@@ -827,8 +1390,8 @@ export default function PortfolioDetails() {
             <TabsContent value="contacts">
               <Card className="shadow-soft">
                 <CardHeader>
-                  <CardTitle>Contacts</CardTitle>
-                  <CardDescription>Owners and contact vCards</CardDescription>
+                  <CardTitle className="sck-section-title">Contacts</CardTitle>
+                  <CardDescription className="sck-section-subtitle">Owners and contact vCards</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {/* Owner/Technical/Business vCards with labels */}
@@ -920,40 +1483,108 @@ export default function PortfolioDetails() {
             <TabsContent value="compliance">
               <Card className="shadow-soft">
                 <CardHeader>
-                  <CardTitle>Compliance & Identifiers</CardTitle>
-                  <CardDescription>Governance, risk, and identifiers</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid md:grid-cols-2 gap-4">
+                  <div className="flex items-start justify-between gap-2">
                     <div>
-                      <h4 className="font-semibold mb-2">Compliance</h4>
-                      <div className="space-y-1 text-sm">
-                        {Object.entries(portfolio.compliance ?? {}).map(([k, v]) => (
-                          <div key={k} className="flex items-center justify-between">
-                            <span className="text-muted-foreground">{k}</span>
-                            <span className="font-medium">{String(v)}</span>
-                          </div>
-                        ))}
-                        {Object.keys(portfolio.compliance ?? {}).length === 0 && (
-                          <div className="text-sm text-muted-foreground">No compliance info</div>
-                        )}
-                      </div>
+                      <CardTitle className="sck-section-title">Compliance & Identifiers</CardTitle>
+                      <CardDescription className="sck-section-subtitle">Governance, risk, and identifiers</CardDescription>
                     </div>
-                    <div>
-                      <h4 className="font-semibold mb-2">Identifiers</h4>
-                      <div className="space-y-1 text-sm">
-                        {Object.entries(portfolio.identifiers ?? {}).map(([k, v]) => (
-                          <div key={k} className="flex items-center justify-between">
-                            <span className="text-muted-foreground">{k}</span>
-                            <span className="font-medium">{String(v)}</span>
-                          </div>
-                        ))}
-                        {Object.keys(portfolio.identifiers ?? {}).length === 0 && (
-                          <div className="text-sm text-muted-foreground">No identifiers set</div>
-                        )}
-                      </div>
+                    <div className="ml-auto flex items-center gap-2">
+                      {!isComplianceEditing ? (
+                        <Button variant="ghost" size="sm" onClick={() => setIsComplianceEditing(true)} className="gap-1 text-muted-foreground hover:text-foreground">
+                          <Edit className="h-4 w-4" />
+                          Edit
+                        </Button>
+                      ) : (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={handleComplianceCancel} className="gap-1 text-muted-foreground hover:text-foreground">
+                            <X className="h-4 w-4" />
+                            Cancel
+                          </Button>
+                          <Button size="sm" onClick={handleComplianceSave} className="gap-1">
+                            <Save className="h-4 w-4" />
+                            Save
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {!isComplianceEditing ? (
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <h4 className="font-semibold mb-2">Compliance</h4>
+                        <ReadOnlyRow label="Data Classification" value={(portfolio.compliance as any)?.data_classification} />
+                        <ReadOnlyRow label="Handles PII" value={String((portfolio.compliance as any)?.handles_pii ?? "—")} />
+                        <ReadOnlyRow label="PII Types" value={Array.isArray((portfolio.compliance as any)?.pii_types) ? ((portfolio.compliance as any).pii_types as string[]).join(", ") : (portfolio.compliance as any)?.pii_types} />
+                        <ReadOnlyRow label="Encryption at Rest" value={String((portfolio.compliance as any)?.encryption_at_rest ?? "—")} />
+                        <ReadOnlyRow label="Encryption in Transit" value={String((portfolio.compliance as any)?.encryption_in_transit ?? "—")} />
+                        <ReadOnlyRow label="Encryption Algorithms" value={(portfolio.compliance as any)?.encryption_algorithms} />
+                        <ReadOnlyRow label="Compliance Standards" value={Array.isArray((portfolio.compliance as any)?.compliance_standards) ? ((portfolio.compliance as any).compliance_standards as string[]).join(", ") : (portfolio.compliance as any)?.compliance_standards} />
+                        <ReadOnlyRow label="Audit Logging" value={String((portfolio.compliance as any)?.audit_logging ?? "—")} />
+                        <ReadOnlyRow label="Audit Log Retention Days" value={String((portfolio.compliance as any)?.audit_log_retention_days ?? "—")} />
+                        <ReadOnlyRow label="Accessibility Standard" value={(portfolio.compliance as any)?.accessibility_standard} />
+                      </div>
+                      <div className="space-y-2">
+                        <h4 className="font-semibold mb-2">Identifiers</h4>
+                        <ReadOnlyRow label="License" value={(portfolio.identifiers as any)?.license} />
+                        <ReadOnlyRow label="SPDX ID" value={(portfolio.identifiers as any)?.spdx_id} />
+                        <ReadOnlyRow label="License URL" value={(portfolio.identifiers as any)?.license_url} isLink />
+                        <ReadOnlyRow label="SBOM URL" value={(portfolio.identifiers as any)?.sbom_url} isLink />
+                        <ReadOnlyRow label="Issue Tracker" value={(portfolio.identifiers as any)?.issue_tracker_url} isLink />
+                        <ReadOnlyRow label="Documentation" value={(portfolio.identifiers as any)?.documentation_url} isLink />
+                        <ReadOnlyRow label="Artifact Registry" value={(portfolio.identifiers as any)?.artifact_registry} />
+                        <ReadOnlyRow label="Docker Image" value={(portfolio.identifiers as any)?.docker_image} />
+                        <ReadOnlyRow label="npm Package" value={(portfolio.identifiers as any)?.npm_package} />
+                        <ReadOnlyRow label="PyPI Package" value={(portfolio.identifiers as any)?.pypi_package} />
+                        <ReadOnlyRow label="Maven Coordinates" value={(portfolio.identifiers as any)?.maven_coordinates} />
+                        <ReadOnlyRow label="CI/CD Pipeline" value={(portfolio.identifiers as any)?.cicd_pipeline_url} isLink />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="space-y-3">
+                        <h4 className="font-semibold mb-2">Compliance</h4>
+                        <FieldEdit id="cf_data_classification" label="Data Classification" value={complianceForm.data_classification} onChange={(v) => setComplianceForm((s) => ({ ...s, data_classification: v }))} placeholder="e.g., Public, Internal, Confidential" />
+                        <div className="flex items-center gap-2">
+                          <Switch id="cf_handles_pii" checked={!!complianceForm.handles_pii} onCheckedChange={(v) => setComplianceForm((s) => ({ ...s, handles_pii: v }))} size="sm" />
+                          <Label htmlFor="cf_handles_pii" className="text-sm">Handles PII</Label>
+                        </div>
+                        <FieldEdit id="cf_pii_types" label="PII Types" value={complianceForm.pii_types_csv} onChange={(v) => setComplianceForm((s) => ({ ...s, pii_types_csv: v }))} placeholder="e.g., Email, Phone, SSN" />
+                        <div className="flex items-center gap-2">
+                          <Switch id="cf_enc_rest" checked={!!complianceForm.encryption_at_rest} onCheckedChange={(v) => setComplianceForm((s) => ({ ...s, encryption_at_rest: v }))} size="sm" />
+                          <Label htmlFor="cf_enc_rest" className="text-sm">Encryption at Rest</Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Switch id="cf_enc_transit" checked={!!complianceForm.encryption_in_transit} onCheckedChange={(v) => setComplianceForm((s) => ({ ...s, encryption_in_transit: v }))} size="sm" />
+                          <Label htmlFor="cf_enc_transit" className="text-sm">Encryption in Transit</Label>
+                        </div>
+                        <FieldEdit id="cf_algorithms" label="Encryption Algorithms" value={complianceForm.encryption_algorithms} onChange={(v) => setComplianceForm((s) => ({ ...s, encryption_algorithms: v }))} placeholder="e.g., AES-256, TLS 1.2+" />
+                        <FieldEdit id="cf_standards" label="Compliance Standards" value={complianceForm.standards_csv} onChange={(v) => setComplianceForm((s) => ({ ...s, standards_csv: v }))} placeholder="e.g., SOC 2, ISO 27001" />
+                        <div className="flex items-center gap-2">
+                          <Switch id="cf_audit_logging" checked={!!complianceForm.audit_logging} onCheckedChange={(v) => setComplianceForm((s) => ({ ...s, audit_logging: v }))} size="sm" />
+                          <Label htmlFor="cf_audit_logging" className="text-sm">Audit Logging Enabled</Label>
+                        </div>
+                        <FieldEdit id="cf_retention" label="Audit Log Retention (days)" value={complianceForm.audit_log_retention_days} onChange={(v) => setComplianceForm((s) => ({ ...s, audit_log_retention_days: v }))} placeholder="e.g., 90" type="number" />
+                        <FieldEdit id="cf_accessibility" label="Accessibility Standard" value={complianceForm.accessibility_standard} onChange={(v) => setComplianceForm((s) => ({ ...s, accessibility_standard: v }))} placeholder="e.g., WCAG 2.1 AA" />
+                      </div>
+                      <div className="space-y-3">
+                        <h4 className="font-semibold mb-2">Identifiers</h4>
+                        <FieldEdit id="id_license" label="License" value={identifiersForm.license} onChange={(v) => setIdentifiersForm((s) => ({ ...s, license: v }))} placeholder="e.g., MIT" />
+                        <FieldEdit id="id_spdx" label="SPDX ID" value={identifiersForm.spdx_id} onChange={(v) => setIdentifiersForm((s) => ({ ...s, spdx_id: v }))} placeholder="e.g., MIT" />
+                        <FieldEdit id="id_license_url" label="License URL" value={identifiersForm.license_url} onChange={(v) => setIdentifiersForm((s) => ({ ...s, license_url: v }))} placeholder="https://…" type="url" />
+                        <FieldEdit id="id_sbom_url" label="SBOM URL" value={identifiersForm.sbom_url} onChange={(v) => setIdentifiersForm((s) => ({ ...s, sbom_url: v }))} placeholder="https://…" type="url" />
+                        <FieldEdit id="id_issue_tracker" label="Issue Tracker URL" value={identifiersForm.issue_tracker_url} onChange={(v) => setIdentifiersForm((s) => ({ ...s, issue_tracker_url: v }))} placeholder="https://…" type="url" />
+                        <FieldEdit id="id_docs" label="Documentation URL" value={identifiersForm.documentation_url} onChange={(v) => setIdentifiersForm((s) => ({ ...s, documentation_url: v }))} placeholder="https://…" type="url" />
+                        <FieldEdit id="id_registry" label="Artifact Registry" value={identifiersForm.artifact_registry} onChange={(v) => setIdentifiersForm((s) => ({ ...s, artifact_registry: v }))} placeholder="e.g., ghcr.io/org/pkg" />
+                        <FieldEdit id="id_docker" label="Docker Image" value={identifiersForm.docker_image} onChange={(v) => setIdentifiersForm((s) => ({ ...s, docker_image: v }))} placeholder="e.g., org/image:tag" />
+                        <FieldEdit id="id_npm" label="npm Package" value={identifiersForm.npm_package} onChange={(v) => setIdentifiersForm((s) => ({ ...s, npm_package: v }))} placeholder="e.g., @org/pkg" />
+                        <FieldEdit id="id_pypi" label="PyPI Package" value={identifiersForm.pypi_package} onChange={(v) => setIdentifiersForm((s) => ({ ...s, pypi_package: v }))} placeholder="e.g., package-name" />
+                        <FieldEdit id="id_maven" label="Maven Coordinates" value={identifiersForm.maven_coordinates} onChange={(v) => setIdentifiersForm((s) => ({ ...s, maven_coordinates: v }))} placeholder="e.g., group:artifact:version" />
+                        <FieldEdit id="id_cicd" label="CI/CD Pipeline URL" value={identifiersForm.cicd_pipeline_url} onChange={(v) => setIdentifiersForm((s) => ({ ...s, cicd_pipeline_url: v }))} placeholder="https://…" type="url" />
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -961,8 +1592,8 @@ export default function PortfolioDetails() {
             <TabsContent value="links">
               <Card className="shadow-soft">
                 <CardHeader>
-                  <CardTitle>Links & Dependencies</CardTitle>
-                  <CardDescription>Related systems and references</CardDescription>
+                  <CardTitle className="sck-section-title">Links & Dependencies</CardTitle>
+                  <CardDescription className="sck-section-subtitle">Related systems and references</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
@@ -999,8 +1630,8 @@ export default function PortfolioDetails() {
               <div className="mt-6">
                 <Card className="shadow-soft">
                   <CardHeader>
-                    <CardTitle>Portfolio Record Details</CardTitle>
-                    <CardDescription>System metadata for this record</CardDescription>
+                    <CardTitle className="sck-section-title">Portfolio Record Details</CardTitle>
+                    <CardDescription className="sck-section-subtitle">System metadata for this record</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -1023,9 +1654,9 @@ export default function PortfolioDetails() {
           {/* Applications moved inside Overview tab */}
         </div>
 
-        {/* Sidebar: only show on Overview tab */}
+        {/* Stack previously-sidebar cards below main content to make them full width */}
         {activeTab === "overview" && (
-          <div className="space-y-6">
+          <div className="space-y-6 lg:col-span-2">
             <Card className="shadow-soft">
               <CardHeader>
                 <CardTitle>Quick Actions</CardTitle>
@@ -1072,6 +1703,58 @@ export default function PortfolioDetails() {
 
       {/* Applications card is rendered within Overview tab above */}
       </div>
+      {/* Contact Editor Sheet */}
+      {/* Icon URL / Upload Dialog */}
+      <Dialog open={iconDialogOpen} onOpenChange={setIconDialogOpen}>
+        <DialogContent className="w-[92vw] max-w-md sm:max-w-lg p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle>Set Icon</DialogTitle>
+            <DialogDescription>
+              Paste an image URL or upload a file. Recommended: square, 128–256px. Renders at 48×48 here.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label htmlFor="icon_url_input">Image URL</Label>
+            <Input
+              id="icon_url_input"
+              type="url"
+              inputMode="url"
+              placeholder="https://example.com/icon.png"
+              value={iconDraft}
+              onChange={(e) => setIconDraft(e.target.value)}
+            />
+            <div className="flex items-center gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                className="hidden"
+                onChange={handleIconFileChange}
+              />
+              <Button type="button" variant="outline" size="sm" onClick={triggerFilePicker} disabled={uploadingIcon}>
+                {uploadingIcon ? "Uploading…" : "Upload"}
+              </Button>
+              {uploadError && <span className="text-xs text-destructive">{uploadError}</span>}
+            </div>
+            <div className="mt-2">
+              <Label className="text-xs text-muted-foreground">Preview</Label>
+              <div className="mt-1">
+                {iconDraft ? (
+                  <img src={iconDraft} alt="Icon preview" className="w-24 h-24 rounded-md object-cover border" />
+                ) : (
+                  <div className="w-24 h-24 bg-primary/10 rounded-md flex items-center justify-center border">
+                    <Briefcase className="h-8 w-8 text-primary" />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setIconDialogOpen(false)}>Cancel</Button>
+            <Button type="button" onClick={handleIconDialogSave}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {/* Contact Editor Sheet */}
       <ContactEditorSheet
         open={editorOpen}
@@ -1142,6 +1825,42 @@ function FieldEdit({
   );
 }
 
+/* Presentational helper: read-only label/value row with optional link */
+function ReadOnlyRow({
+  label,
+  value,
+  isLink,
+}: {
+  label: string;
+  value?: string | number | boolean | null;
+  isLink?: boolean;
+}) {
+  const str = typeof value === "boolean" ? String(value) : (value ?? "").toString();
+  const empty = str.trim().length === 0;
+  return (
+    <div className="space-y-1">
+      <label className="text-sm font-medium text-muted-foreground">{label}</label>
+      {isLink ? (
+        empty ? (
+          <p className="text-sm text-muted-foreground">—</p>
+        ) : (
+          <a
+            href={str}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-foreground hover:underline break-all inline-flex items-center gap-1"
+          >
+            {str}
+            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+          </a>
+        )
+      ) : (
+        <p className="text-sm text-foreground break-all">{empty ? "—" : str}</p>
+      )}
+    </div>
+  );
+}
+
 /* Presentational helper: vCard for a contact */
 function ContactVCard({
   role,
@@ -1160,10 +1879,19 @@ function ContactVCard({
   if (isEmpty) {
     return (
       <div className="relative border rounded-lg p-6 bg-card text-card-foreground flex flex-col items-center justify-center text-center min-h-[112px]">
-        {onEdit && (
-          <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={onEdit}>
-            <Edit className="h-4 w-4" />
-          </Button>
+  {onEdit && (
+    <>
+      <Button aria-label="Edit" variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7 lg:hidden"
+        onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}
+        onClick={onEdit}>
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+      <Button aria-label="Edit" variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7 hidden lg:inline-flex"
+        onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}
+        onClick={onEdit}>
+              <Edit className="h-4 w-4" />
+            </Button>
+          </>
         )}
         <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
           <IdCard className="h-5 w-5" />
@@ -1177,9 +1905,18 @@ function ContactVCard({
   return (
     <div className="relative border rounded-lg p-4 bg-card text-card-foreground hover:bg-accent/30 transition-colors">
       {onEdit && (
-        <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={onEdit}>
-          <Edit className="h-4 w-4" />
-        </Button>
+  <>
+    <Button aria-label="Edit" variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7 lg:hidden"
+      onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}
+      onClick={onEdit}>
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+    <Button aria-label="Edit" variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7 hidden lg:inline-flex"
+      onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}
+      onClick={onEdit}>
+            <Edit className="h-4 w-4" />
+          </Button>
+        </>
       )}
       <div className="flex items-start gap-3">
         <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
@@ -1316,59 +2053,84 @@ function AttributeEditor({
   const add = () => onChange([...(rows || []), { key: "", value: "" }]);
   const remove = (i: number) => onChange((rows || []).filter((_, idx) => idx !== i));
 
-  function AttributeRow({ index, r }: { index: number; r: { key: string; value: string } }) {
-    const [open, setOpen] = useState(false);
-    const filtered = (r.key ? commonLabels.filter((l) => l.toLowerCase().includes(r.key.toLowerCase())) : commonLabels).slice(0, 10);
-    return (
-      <div className="w-full">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Input
-              value={r.key}
-              onChange={(e) => { update(index, "key", e.target.value); setOpen(true); }}
-              onFocus={() => setOpen(true)}
-              onBlur={() => setTimeout(() => setOpen(false), 120)}
-              placeholder="Label"
-              className="flex-1"
-            />
-            {open && filtered.length > 0 && (
-              <div className="absolute z-30 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md max-h-44 overflow-auto">
-                {filtered.map((l) => (
-                  <button
-                    type="button"
-                    key={l}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => { update(index, "key", l); setOpen(false); }}
-                  >
-                    {l}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <Input
-            value={r.value}
-            onChange={(e) => update(index, "value", e.target.value)}
-            placeholder="Value"
-            className="flex-[2]"
-          />
-          <Button variant="outline" size="icon" onClick={() => remove(index)}>
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={compact ? "space-y-2" : "space-y-3"}>
       {(rows || []).map((r, i) => (
-        <AttributeRow key={`attr-${i}`} index={i} r={r} />
+        <AttrRow
+          key={`attr-${i}`}
+          index={i}
+          r={r}
+          suggestions={commonLabels}
+          onUpdate={update}
+          onRemove={remove}
+        />
       ))}
       <Button variant="outline" size="sm" onClick={add} className="gap-1">
         <PlusCircle className="h-4 w-4" /> Add attribute
       </Button>
+    </div>
+  );
+}
+
+/* Stable row component to prevent remount on each edit (preserves input focus) */
+function AttrRow({
+  index,
+  r,
+  suggestions,
+  onUpdate,
+  onRemove,
+}: {
+  index: number;
+  r: { key: string; value: string };
+  suggestions?: string[];
+  onUpdate: (i: number, field: "key" | "value", value: string) => void;
+  onRemove: (i: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const labels = suggestions || [];
+  const filtered = (r.key ? labels.filter((l) => l.toLowerCase().includes(r.key.toLowerCase())) : labels).slice(0, 100);
+  return (
+    <div className="w-full">
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Input
+            value={r.key}
+            onChange={(e) => { onUpdate(index, "key", e.target.value); setOpen(true); }}
+            onFocus={() => setOpen(true)}
+            onBlur={() => setTimeout(() => setOpen(false), 120)}
+            onKeyDown={(e) => e.stopPropagation()}
+            onKeyUp={(e) => e.stopPropagation()}
+            placeholder="Label"
+            className="flex-1"
+          />
+          {open && filtered.length > 0 && (
+            <div className="absolute z-30 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md max-h-44 overflow-auto">
+              {filtered.map((l) => (
+                <button
+                  type="button"
+                  key={l}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { onUpdate(index, "key", l); setOpen(false); }}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <Input
+          value={r.value}
+          onChange={(e) => onUpdate(index, "value", e.target.value)}
+          onKeyDown={(e) => e.stopPropagation()}
+          onKeyUp={(e) => e.stopPropagation()}
+          placeholder="Value"
+          className="flex-[2]"
+        />
+        <Button variant="outline" size="icon" onClick={() => onRemove(index)}>
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 }

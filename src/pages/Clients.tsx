@@ -106,25 +106,21 @@ const Clients = () => {
   };
 
   return (
-    <DashboardLayout activeItem="clients">
+    <DashboardLayout
+      activeItem="clients"
+      pageTitle="Management Accounts"
+      pageSubtitle="Manage your client organizations and their configurations"
+    >
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Management Accounts</h1>
-            <p className="text-muted-foreground">Manage your client organizations and their configurations.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button asChild variant="outline" size="sm" className="gap-1">
-              <Link to="/clients/create">
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">New</span>
-              </Link>
-            </Button>
-          </div>
-
-
-          </div>
+        {/* Header actions */}
+        <div className="flex items-center justify-end">
+          <Button asChild variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground">
+            <Link to="/clients/create">
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">New</span>
+            </Link>
+          </Button>
+        </div>
 
           {/* Mobile Filters trigger */}
         <div className="sm:hidden">

@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useReduxData } from "@/hooks/useReduxData";
 import { useTheme } from "@/hooks/useTheme";
 import type { Application, Portfolio, Zone, AppDeploymentBuild } from "@/store/types";
+import DashboardLayout from "@/components/DashboardLayout";
 import { fetchBuilds } from "@/store/slices/deploymentsSlice";
 
 function toArray<T>(v: T | T[] | null | undefined): T[] {
@@ -216,23 +217,14 @@ export default function ApplicationDetails() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/applications")}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Applications
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
-              <FolderOpen className="h-7 w-7 text-primary" />
-              {titleName}
-            </h1>
-            <p className="text-muted-foreground">{subtitle}</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
+    <DashboardLayout
+      activeItem="applications"
+      pageTitle={titleName}
+      pageSubtitle={subtitle}
+    >
+      <div className="space-y-6 animate-fade-in">
+        {/* Header actions */}
+        <div className="flex items-center justify-end gap-2">
           {!isEditing ? (
             <Button variant="outline" onClick={() => setIsEditing(true)}>
               Edit
@@ -246,7 +238,6 @@ export default function ApplicationDetails() {
             </>
           )}
         </div>
-      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: App Information + Branches */}
@@ -331,10 +322,10 @@ export default function ApplicationDetails() {
               )}
             </CardContent>
           </Card>
-        </div>
+  </div>
 
-        {/* Right: Deployment Target and Zone */}
-        <div className="space-y-6">
+  {/* Right: Deployment Target and Zone */}
+  <div className="space-y-6">
           <Card className="shadow-soft">
             <CardHeader>
               <CardTitle className="text-lg">Deployment Target</CardTitle>
@@ -392,7 +383,8 @@ export default function ApplicationDetails() {
           </Card>
         </div>
       </div>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }
 

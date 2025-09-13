@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { selectIsAuthenticated } from '@/store/slices/authSlice';
 import { fetchClients, selectClients, setSelectedClient, selectSelectedClient } from '@/store/slices/clientsSlice';
+import { fetchPortfolios } from '@/store/slices/portfoliosSlice';
+import { fetchZonesPage, resetZonesPaging } from '@/store/slices/zonesSlice';
 import { selectTokens } from '@/store/slices/authSlice';
 import { selectUser as selectProfileUser } from '@/store/slices/profileSlice';
 
@@ -51,6 +53,19 @@ export default function ClientsBootstrap() {
       dispatch(setSelectedClient(target) as any);
     }
   }, [dispatch, isAuthenticated, clients, selected]);
+
+  // After a client is selected and we have access, fetch portfolios list on boot/refresh
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const client = selected;
+    const haveAccess = Boolean(tokens && (tokens as any).access_token);
+    if (!client || !haveAccess) return;
+    // Fetch with modest page size; list pages can paginate further
+    dispatch(fetchPortfolios({ client, limit: 100, cursor: null, force: true }) as any);
+  // Refresh zones list as well for dashboard and other pages
+  dispatch(resetZonesPaging());
+  dispatch(fetchZonesPage({ client, limit: 100, append: false }) as any);
+  }, [dispatch, isAuthenticated, selected, tokens]);
 
   return null;
 }
