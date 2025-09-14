@@ -7,7 +7,7 @@ logging: core_logging
 database: core_db
 api: core_api
 
-## basic pythoj structure
+## basic python module/file.py structure
 
 // File: myscript.py
 
@@ -34,6 +34,12 @@ bucket_resource = MagicS3Bucket(bucket_name=bucket_name, region=region)
 bucket_resource.put_object(Key=key, Filename=filename, Body=stream)
 
 ```
+## Response Object filtering
+
+all lambda functions pass response through ProxyResponse.  THis ensures
+the format is correct for the AWS API Gateway and also injects no-cache headers.
+Therefore, the browser will never cache from /api or /auth endpoints.  All
+caching is manual within redux.
 
 # bucket structure
 
@@ -90,3 +96,23 @@ def lambda_handler(event, context):
 
 All APi gateway lambda handlers event always uses ProxyEvent to decode the body based on mimetype.
 
+## Endpoint calling requirements
+
+/api/v1/**:
+    MUST include Authorization header via useApiHeaders().getAuthHeaders().
+    Do NOT set credentials: 'include' (session cookie is for /auth only).
+/auth/v1/**:
+    MUST set credentials: 'include' so HTTP-only session cookies are sent/received.
+    Do NOT attach Authorization header.
+    Presigned S3 URLs (PUT/GET):
+    MUST NOT send Authorization; S3 rejects it.
+    Asset GET helpers (icons, etc.):
+    Use an auth-aware fetch wrapper that follows redirects and renders a Blob URL (e.g., SecureImg), so the initial /api GET includes Authorization.
+
+Examples:
+
+API call:
+    const { getAuthHeaders } = useApiHeaders();
+    fetch('/api/v1/…', { headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' } })
+Auth call:  
+    fetch('/auth/v1/token', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })

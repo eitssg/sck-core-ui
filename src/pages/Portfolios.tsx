@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Briefcase, Plus, Search, X, Tag, Filter as FilterIcon } from "lucide-react";
 import { useSelector } from "react-redux";
 import type { RootState } from "@/store";
@@ -12,16 +12,13 @@ import { useReduxData } from "@/hooks/useReduxData";
 import type { Portfolio, Application } from "@/store/types";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import SecureImg from "@/components/SecureImg";
 
 export default function Portfolios() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Auth guard
+  // Auth state can be used to conditionally render content, but pages never redirect to /login.
   const isAuthenticated = useSelector((s: RootState) => s.auth?.isAuthenticated) ?? false;
-  useEffect(() => {
-    if (!isAuthenticated) navigate("/login");
-  }, [isAuthenticated, navigate]);
 
   const { selectedClient, portfolios, applications, actions } = useReduxData();
 
@@ -451,15 +448,14 @@ export default function Portfolios() {
                     const appCount = getAppCount(p.portfolio);
                     const updated = p.updated_at ? new Date(p.updated_at).toLocaleDateString() : "—";
                     return (
-                      <Card key={key} className="hover:shadow-lg transition-shadow cursor-pointer"
-                        onClick={() => navigate(`/portfolios/${p.portfolio}`)}
-                      >
+                      <Card key={key} className="hover:shadow-lg transition-shadow cursor-pointer">
                         <CardContent className="p-4 space-y-3">
+                          <Link to={`/portfolios/${p.portfolio}`} className="block focus:outline-none focus:ring-2 focus:ring-primary rounded-md">
                           {/* Two-column layout: fixed 96px icon column, flexible text column */}
                           <div className="grid grid-cols-[96px,1fr] gap-4 items-start">
                             <div className="w-[96px]">
                               {p.icon_url ? (
-                                <img src={p.icon_url} alt={name} className="w-[96px] h-[96px] rounded-md object-cover" />
+                                <SecureImg src={p.icon_url} alt={name} containerClassName="bg-white rounded-md" className="w-[96px] h-[96px] object-cover" />
                               ) : (
                                 <div className="w-[96px] h-[96px] bg-primary/10 rounded-md flex items-center justify-center">
                                   <Briefcase className="h-12 w-12 text-primary" />
@@ -500,6 +496,7 @@ export default function Portfolios() {
                             <span>{appCount} apps</span>
                             <span>Updated {updated}</span>
                           </div>
+                          </Link>
                         </CardContent>
                       </Card>
                     );

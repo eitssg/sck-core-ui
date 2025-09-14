@@ -27,16 +27,21 @@ import {
 import { useReduxData } from "@/hooks/useReduxData";
 import type { Portfolio, Application } from "@/store/types";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useApiHeaders } from "@/hooks/useApiHeaders";
+import SecureImg from "@/components/SecureImg";
 
 export default function PortfolioDetails() {
   const navigate = useNavigate();
+  const { getAuthHeaders } = useApiHeaders();
   
 
-  // Auth guard via authSlice
+  // Auth guard via authSlice: avoid redirect if refresh token exists (refresh may be in-flight)
   const isAuthenticated = useSelector((s: RootState) => s.auth?.isAuthenticated) ?? false;
-  useEffect(() => {
-    if (!isAuthenticated) navigate("/login");
-  }, [isAuthenticated, navigate]);
+  const hasRefreshToken = useMemo(() => {
+    try { return Boolean(sessionStorage.getItem('refresh_token')); } catch { return false; }
+  }, []);
+  // Pages must never navigate to /login. If unauth and no refresh token, render nothing.
+  const blockRender = !isAuthenticated && !hasRefreshToken;
 
   // Route params: /portfolios/:portfolio
   const { portfolio: portfolioParam } = useParams<{ portfolio: string }>();
@@ -105,6 +110,7 @@ export default function PortfolioDetails() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // Preview state no longer needs a cache-buster; Response headers are no-cache
 
   const triggerFilePicker = () => fileInputRef.current?.click();
 
@@ -116,11 +122,11 @@ export default function PortfolioDetails() {
       setUploadError(null);
 
       // 1) Request a presigned PUT URL from API
-      const initRes = await fetch(
-        `/api/v1/registry/clients/${encodeURIComponent(currentClient)}/portfolios/${encodeURIComponent(portfolio.portfolio)}/icon:upload`,
+    const initRes = await fetch(
+        `/api/v1/registry/clients/${encodeURIComponent(currentClient)}/portfolios/${encodeURIComponent(portfolio.portfolio)}/icon/upload`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+      headers: { ...getAuthHeaders() },
           body: JSON.stringify({
             fileName: file.name,
             contentType: file.type || "application/octet-stream",
@@ -149,9 +155,8 @@ export default function PortfolioDetails() {
       });
       if (!putRes.ok) throw new Error(`S3 upload failed (${putRes.status})`);
 
-      // 3) Point draft to the redirecting icon URL with cache-bust param
-      const bust = `t=${Date.now()}`;
-      setIconDraft(iconUrl ? `${iconUrl}?${bust}` : "");
+  // 3) Store canonical redirect URL
+  setIconDraft(iconUrl || "");
     } catch (err: any) {
       setUploadError(err?.message || "Upload failed");
     } finally {
@@ -826,6 +831,7 @@ export default function PortfolioDetails() {
   const envs = Array.from(new Set(portfolioApplications.map((a) => (a.environment || "").trim()).filter(Boolean)));
   const zones = Array.from(new Set(portfolioApplications.map((a) => a.zone).filter(Boolean)));
 
+  if (blockRender) return null;
   return (
     <DashboardLayout
       activeItem="portfolios"
@@ -833,55 +839,19 @@ export default function PortfolioDetails() {
       pageSubtitle="Update metadata and basic information"
     >
       <div className="space-y-6 animate-fade-in">
-        {/* Sticky header actions under global header (style-guide compliant) */}
-        <div className="sck-header-actions sticky top-16 z-30 bg-background/95 supports-[backdrop-filter]:bg-background/60 backdrop-blur border-b border-border py-2 px-2">
-          <div className="mr-auto" />
-          {!isEditing ? (
-            <>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="ghost" size="sm" disabled={isDeleting} className="gap-1 text-muted-foreground hover:text-foreground">
-                    <Trash2 className="h-4 w-4" />
-                    Delete
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete portfolio “{portfolio.project?.name || portfolio.portfolio}”?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This action cannot be undone and may affect associated applications.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDelete}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90 gap-2"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-              <Button variant="ghost" size="sm" onClick={() => setIsEditing(true)} className="gap-1 text-muted-foreground hover:text-foreground">
-                <Edit className="h-4 w-4" />
-                Edit
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)} className="gap-1 text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-                Cancel
-              </Button>
-              <Button size="sm" onClick={handleSave} disabled={isSaving} className="gap-1">
-                <Save className="h-4 w-4" />
-                {isSaving ? "Saving..." : "Save"}
-              </Button>
-            </>
-          )}
-        </div>
+        {/* Sticky header actions: show only while editing */}
+        {isEditing && (
+          <div className="sck-header-actions sticky top-16 z-30 bg-background/95 supports-[backdrop-filter]:bg-background/60 backdrop-blur py-2 px-2 flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)} className="gap-1 text-muted-foreground hover:text-foreground">
+              <X className="h-4 w-4" />
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={isSaving} className="gap-1">
+              <Save className="h-4 w-4" />
+              {isSaving ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        )}
 
   <div className="grid gap-6 lg:grid-cols-1">
         <div className="lg:col-span-2 space-y-6">
@@ -902,16 +872,50 @@ export default function PortfolioDetails() {
                     <CardTitle className="sck-section-title">Portfolio</CardTitle>
                     <CardDescription className="sck-section-subtitle">Overview and basic information</CardDescription>
                   </div>
-                  {/* Page-level actions are rendered in the sticky header above per style guide */}
+                  {/* Actions for overview tab: Edit/Delete on the right when not editing */}
+                  {!isEditing && (
+                    <div className="ml-auto flex items-center gap-2">
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="sm" disabled={isDeleting} className="gap-1 text-muted-foreground hover:text-foreground">
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete portfolio “{portfolio.project?.name || portfolio.portfolio}”?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This action cannot be undone and may affect associated applications.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={handleDelete}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 gap-2"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                      <Button variant="ghost" size="sm" onClick={() => setIsEditing(true)} className="gap-1 text-muted-foreground hover:text-foreground">
+                        <Edit className="h-4 w-4" />
+                        Edit
+                      </Button>
+                    </div>
+                  )}
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {!isEditing ? (
                     <div className="space-y-4">
                       {/* Header row with icon and names */}
                       <div className="flex items-center gap-4">
-                        <div className="relative">
+            <div className="relative">
                           {portfolio.icon_url ? (
-                            <img src={portfolio.icon_url} alt={portfolio.name || portfolio.project?.name || portfolio.portfolio} className="w-12 h-12 rounded-md object-cover" />
+              <SecureImg src={portfolio.icon_url} alt={portfolio.name || portfolio.project?.name || portfolio.portfolio} containerClassName="bg-white rounded-md" className="w-12 h-12 object-cover" />
                           ) : (
                             <div className="w-12 h-12 bg-primary/10 rounded-md flex items-center justify-center">
                               <Briefcase className="h-6 w-6 text-primary" />
@@ -1001,9 +1005,9 @@ export default function PortfolioDetails() {
                     <div className="space-y-4">
                       {/* Row: icon and basic fields */}
                       <div className="flex items-start gap-4">
-                        <div className="relative">
+            <div className="relative">
                           {formData.icon_url ? (
-                            <img src={formData.icon_url} alt={formData.name || formData.project_name || portfolio.portfolio} className="w-12 h-12 rounded-md object-cover" />
+              <SecureImg src={formData.icon_url} alt={formData.name || formData.project_name || portfolio.portfolio} containerClassName="bg-white rounded-md" className="w-12 h-12 object-cover" />
                           ) : (
                             <div className="w-12 h-12 bg-primary/10 rounded-md flex items-center justify-center">
                               <Briefcase className="h-6 w-6 text-primary" />
@@ -1740,7 +1744,7 @@ export default function PortfolioDetails() {
               <Label className="text-xs text-muted-foreground">Preview</Label>
               <div className="mt-1">
                 {iconDraft ? (
-                  <img src={iconDraft} alt="Icon preview" className="w-24 h-24 rounded-md object-cover border" />
+                  <SecureImg src={iconDraft} alt="Icon preview" containerClassName="bg-white rounded-md" className="w-24 h-24 object-cover border" />
                 ) : (
                   <div className="w-24 h-24 bg-primary/10 rounded-md flex items-center justify-center border">
                     <Briefcase className="h-8 w-8 text-primary" />

@@ -18,6 +18,10 @@
   - Session cookie: HTTP-only, for `/auth/v1/**` only, rotated via `/auth/v1/refresh`.
   - Access token: Redux memory only, for `/api/v1/**`, refreshed via `/auth/v1/token`.
   - Refresh token: `sessionStorage` only, key `refresh_token`.
+- **Client requests**:
+  - All UI calls to `/api/v1/**` MUST include `Authorization: Bearer <access_token>` using `useApiHeaders().getAuthHeaders()`.
+  - Do NOT attach Authorization when calling presigned S3 URLs (PUT/GET) — S3 will reject those headers.
+  - For asset GET helpers (icons, etc.), prefer a small auth-aware fetch wrapper that follows redirects and renders a Blob URL.
 - **Storage**:
   - `localStorage`: UI prefs only (e.g., `sck.selectedClient`, `sck.profileName`).
   - `sessionStorage`: Ephemeral keys (e.g., `refresh_token`, `sck_session_expires_at`).

@@ -559,11 +559,30 @@ export const SessionManager = () => {
       };
     const onTokenRefreshed = () => scheduleProactiveRefresh();
     const onTokenRefreshFailed = () => scheduleProactiveRefresh();
+    const onAuthEndpointFailed = (e: Event) => {
+      try {
+        const detail = (e as CustomEvent).detail || {};
+        const path: string = String(detail.path || '');
+        const status: number | null = typeof detail.status === 'number' ? detail.status : null;
+        if (!path.startsWith('/auth/')) return; // only act on /auth endpoints
+        // Only the app layer decides redirects: map non-2xx to reasons
+        if (path.startsWith('/auth/v1/token')) {
+          navigate('/login?reason=bootstrap_failed', { replace: true });
+        } else if (path.startsWith('/auth/v1/refresh')) {
+          navigate('/login?reason=session_expired', { replace: true });
+        } else if (path.startsWith('/auth/v1/me') || path.startsWith('/auth/v1/profiles')) {
+          const params = new URLSearchParams({ reason: 'me_unauthorized' });
+          try { params.set('returnTo', window.location.pathname + window.location.search); } catch { /* ignore */ }
+          navigate(`/login?${params.toString()}`, { replace: true });
+        }
+      } catch { /* ignore */ }
+    };
     const onActivity = () => { lastActivityRef.current = Date.now(); };
     window.addEventListener('storage', onStorage);
     window.addEventListener('sck:tokenRefreshed', onTokenRefreshed as EventListener);
     window.addEventListener('sck:tokenRefreshFailed', onTokenRefreshFailed as EventListener);
-    window.addEventListener('mousemove', onActivity);
+  window.addEventListener('mousemove', onActivity);
+  window.addEventListener('sck:auth-endpoint-failed', onAuthEndpointFailed as EventListener);
     window.addEventListener('keydown', onActivity);
     window.addEventListener('touchstart', onActivity);
     window.addEventListener('click', onActivity);
@@ -573,10 +592,11 @@ export const SessionManager = () => {
       window.removeEventListener('sck:tokenRefreshFailed', onTokenRefreshFailed as EventListener);
       window.removeEventListener('mousemove', onActivity);
       window.removeEventListener('keydown', onActivity);
-      window.removeEventListener('touchstart', onActivity);
+  window.removeEventListener('touchstart', onActivity);
+  window.removeEventListener('sck:auth-endpoint-failed', onAuthEndpointFailed as EventListener);
       window.removeEventListener('click', onActivity);
     };
-  }, [scheduleProactiveRefresh]);
+  }, [scheduleProactiveRefresh, navigate]);
 
   useEffect(() => {
     // Sleep/wake or tab focus: check if close to expiry and refresh immediately if needed

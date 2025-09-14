@@ -305,7 +305,7 @@ export const authAPI = {
         redirect_uri: API_CONFIG.OAUTH.REDIRECT_URI,
       });
 
-      const tokenHeaders: Record<string, string> = {
+  const tokenHeaders: Record<string, string> = {
         'Content-Type': 'application/x-www-form-urlencoded',  // STANDARD OAUTH
       };
       const basic = this._getBasicAuthHeader();
@@ -335,6 +335,7 @@ export const authAPI = {
         const errorData = await response.json().catch(() => ({}));
         const message = errorData.error || errorData.message || 'invalid_request';
         const mapped = mapOAuthErrorToUserMessage(errorData.error_description || message, response.status);
+        try { window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path: '/auth/v1/token', status: response.status } })); } catch { /* ignore */ }
         return { error: message, error_description: mapped } as OAuthErrorResponse;
       }
 
@@ -486,6 +487,7 @@ export const authAPI = {
         const errorData = await response.json().catch(() => ({}));
         const message = errorData.error || errorData.message || 'invalid_request';
         const mapped = mapOAuthErrorToUserMessage(errorData.error_description || message, response.status);
+        try { window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path: '/auth/v1/token', status: response.status } })); } catch { /* ignore */ }
         return { error: message, error_description: mapped } as OAuthErrorResponse;
       }
 
@@ -557,6 +559,7 @@ export const authAPI = {
 
       if (!response.ok) {
   try { if (DEBUG_AUTH) console.log('[authAPI] refreshToken: non-OK status', response.status); } catch (e) { /* no-op */ }
+        try { window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path: '/auth/v1/token', status: response.status } })); } catch { /* ignore */ }
         // Only clear tokens on 401/invalid refresh; keep tokens on transient errors
         if (response.status === 401) {
           // Don't auto-logout on 401; just signal invalid refresh
@@ -595,6 +598,7 @@ export const authAPI = {
       });
       if (!res.ok) {
   try { console.log('[authAPI] refreshSession: non-OK status', res.status); } catch (e) { /* no-op */ }
+        try { window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path: '/auth/v1/refresh', status: res.status } })); } catch { /* ignore */ }
         // If the session cookie is invalid/expired, surface a specific error so callers can navigate to /login
         if (res.status === 401) {
           const err: any = new Error('session_cookie_invalid');

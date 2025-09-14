@@ -496,3 +496,18 @@ These statements clarify intent for current behavior. If code differs, treat thi
   - Prohibited `?client` in UI routes/links; tenant context derives from token + path only.
   - Added list-vs-detail fetch rule requiring detail pages to fetch the full record.
   - Updated tenancy scoping bullets and Do/Don’t checklist accordingly.
+
+## Global Considerations
+
+- No pages should redirect to /login for any circumstance unless a user clicks a 'logout' link or button.
+- Redirect to /login when 
+  - /auth/v1/token issues 401 or other error
+  - /auth/v1/me issues a 401 or other error
+  - /auth/v1/profiles issuea a 401 or other error
+  - /auth/v1/refresh issues a 401 or other error.  
+- All /auth/v1/me (profile retrieval) or /auth/v1/profiles (profile retrieval), /auth/v1/refresh or /auth/v1/token refresh occurs a the app layer in the session manager. 
+- Redirect to /login automatically occurs only at the direction of the sessionmanager.
+
+# Plan Management
+
+Always generate a plan first and ask for confirmation to proceed before making code changes.

@@ -180,8 +180,15 @@ export const fetchUserProfile = createAsyncThunk<
         
   const response = await apiFetch(url, { contextLabel: 'Profile' });
       if (response.status === 401) {
-        try { console.log('[profile] 401 on /auth/v1/me (legacy) -> forcing logout'); } catch { /* ignore */ }
-        queueMicrotask(() => { try { (window as any).store?.dispatch?.(logoutUser() as any); } catch { /* ignore */ } });
+        // If we have a refresh token, do not force logout here; allow SessionManager to refresh tokens.
+        let hasRefresh = false;
+        try { hasRefresh = Boolean(sessionStorage.getItem('refresh_token')); } catch { /* ignore */ }
+        if (!hasRefresh) {
+          try { console.log('[profile] 401 on /auth/v1/me -> logging out (no refresh token)'); } catch { /* ignore */ }
+          queueMicrotask(() => { try { (window as any).store?.dispatch?.(logoutUser() as any); } catch { /* ignore */ } });
+        } else {
+          try { console.log('[profile] 401 on /auth/v1/me -> defer to SessionManager (refresh present)'); } catch { /* ignore */ }
+        }
         throw new Error('unauthorized');
       }
       if (!response.ok) {
@@ -518,14 +525,11 @@ export const fetchAuthProfiles = createAsyncThunk<
   'profile/fetchAuthProfiles',
   async () => {
     const resp = await apiFetch(buildApiUrl('/auth/v1/profiles'), { contextLabel: 'ProfileList' });
-    if (resp.status === 401) {
-      try { console.log('[profile] 401 on /auth/v1/profiles -> forcing logout'); } catch { /* ignore */ }
-      // Dispatch logout side-effect in a fire-and-forget manner (no state passed here)
-      // Using a microtask to avoid interfering with current reducer queue
-      queueMicrotask(() => { try { (window as any).store?.dispatch?.(logoutUser() as any); } catch { /* ignore */ } });
-      throw new Error('unauthorized');
+    if (!resp.ok) {
+      try { window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path: '/auth/v1/profiles', status: resp.status } })); } catch { /* ignore */ }
+      throw new Error(`profiles_list_failed_${resp.status || 'unknown'}`);
     }
-    if (!resp.ok) throw new Error('Failed to list profiles');
+    
     const json = await resp.json();
   // Accept multiple shapes:
   // 1. { profiles: [...] }
@@ -565,12 +569,10 @@ export const fetchAuthProfile = createAsyncThunk<
   'profile/fetchAuthProfile',
   async ({ profileName }) => {
     const resp = await apiFetch(buildApiUrl(`/auth/v1/profiles/${encodeURIComponent(profileName)}`), { contextLabel: 'Profile' });
-    if (resp.status === 401) {
-      try { console.log('[profile] 401 on /auth/v1/profiles/:name -> forcing logout'); } catch { /* ignore */ }
-      queueMicrotask(() => { try { (window as any).store?.dispatch?.(logoutUser() as any); } catch { /* ignore */ } });
-      throw new Error('unauthorized');
+    if (!resp.ok) {
+      try { window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path: `/auth/v1/profiles/${encodeURIComponent(profileName)}`, status: resp.status } })); } catch { /* ignore */ }
+      throw new Error(`profile_fetch_failed_${resp.status || 'unknown'}`);
     }
-    if (!resp.ok) throw new Error('Failed to fetch profile');
     const json = await resp.json();
     const profile = normalizeUserProfile(json);
     return { profile, context: 'auth' };

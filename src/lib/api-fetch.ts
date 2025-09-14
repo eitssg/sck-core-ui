@@ -94,15 +94,11 @@ function handle401(res: Response, options: ApiFetchOptions) {
   if (res.status !== 401) return;
   try {
     const path = extractPathFromUrl(String(res.url || ''));
-    if (path.startsWith('/auth/v1/me')) {
-      // Force immediate navigation to login; session cookie is invalid/expired and cannot be refreshed
-      if (typeof window !== 'undefined') {
-        const params = new URLSearchParams({ reason: 'me_unauthorized' });
-        try { params.set('returnTo', window.location.pathname + window.location.search); } catch { /* ignore */ }
-        window.location.replace(`/login?${params.toString()}`);
-      }
+    // Never redirect here; surface an event for SessionManager to decide.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path, status: res.status } }));
     }
-  } catch { /* ignore redirect errors */ }
+  } catch { /* ignore */ }
   // Caller hook first
   try {
     options.onUnauthorized?.();

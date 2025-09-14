@@ -135,6 +135,9 @@ export interface PortfolioSummary {
   lifecycle_status?: string;
   business_owner?: OwnerFacts;
   technical_owner?: OwnerFacts;
+  // Audit fields from list payloads
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface PortfoliosState {
@@ -480,6 +483,8 @@ const portfoliosSlice = createSlice({
           const lifecycle_status = (summary as any).lifecycle_status;
           const business_owner = (summary as any).business_owner;
           const technical_owner = (summary as any).technical_owner;
+          const created_at = (summary as any).created_at;
+          const updated_at = (summary as any).updated_at;
 
           const base: Portfolio = {
             portfolio: slug,
@@ -491,6 +496,8 @@ const portfoliosSlice = createSlice({
             lifecycle_status,
             business_owner,
             technical_owner,
+            created_at,
+            updated_at,
           } as Portfolio;
 
           // Map fields from summary into UI model

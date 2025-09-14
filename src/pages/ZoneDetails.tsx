@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, ReactNode } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Save, X, Globe, Trash2, SquarePen, ClipboardCopy, Download, Upload, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 // removed Badge; no longer used in Regions header
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/hooks/useTheme";
 import { useDispatch, useSelector } from "react-redux";
@@ -152,6 +153,7 @@ type SecurityAlias = { type: string; value: string; description?: string };
 function SecurityAliasesEditor({ value, onChange, readOnly = false }: { value?: Record<string, SecurityAlias[]>; onChange: (next: Record<string, SecurityAlias[]>)=> void; readOnly?: boolean; }){
   const aliases = value || {};
   const [newName, setNewName] = useState("");
+  const [newRows, setNewRows] = useState<Record<string, SecurityAlias>>({});
   const addGroup = ()=>{
     const k = newName.trim();
     if (!k) return;
@@ -160,9 +162,12 @@ function SecurityAliasesEditor({ value, onChange, readOnly = false }: { value?: 
     setNewName("");
   }
   const addEntry = (k: string)=>{
+    const draft = newRows[k] || { type: "", value: "", description: "" };
+    if (!draft.type && !draft.value && !draft.description) return; // avoid adding empty rows
     const next = { ...aliases } as Record<string, SecurityAlias[]>;
-    next[k] = [...(next[k]||[]), { type: "", value: "", description: "" }];
+    next[k] = [...(next[k]||[]), { type: draft.type || "", value: draft.value || "", description: draft.description || "" }];
     onChange(next);
+    setNewRows((nr)=> ({ ...nr, [k]: { type: "", value: "", description: "" } }));
   };
   const updateEntry = (k: string, idx: number, patch: Partial<SecurityAlias>)=>{
     const next = { ...aliases } as Record<string, SecurityAlias[]>;
@@ -188,36 +193,62 @@ function SecurityAliasesEditor({ value, onChange, readOnly = false }: { value?: 
       {Object.entries(aliases).map(([k, list])=> (
         <Card key={k}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
-            <div className="font-medium">Alias group: {k}</div>
+            <div className="font-medium">{k}</div>
             <div className="flex gap-2">
               {!readOnly && (
-                <>
-                  <Button variant="outline" size="sm" onClick={()=>addEntry(k)}><Plus className="h-4 w-4 mr-1"/>Add entry</Button>
-                  <Button variant="ghost" size="sm" onClick={()=>removeGroup(k)}><Trash2 className="h-4 w-4 mr-1"/>Remove group</Button>
-                </>
+                <Button variant="ghost" size="sm" onClick={()=>removeGroup(k)}><Trash2 className="h-4 w-4 mr-1"/>Remove group</Button>
               )}
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
-            {list.length===0 && <p className="text-sm text-muted-foreground">No entries</p>}
+            {list.length===0 && readOnly && <p className="text-sm text-muted-foreground">No entries</p>}
             {list.map((row, idx)=> (
-              <div key={`${k}-${idx}`} className="grid gap-2 md:grid-cols-3">
+              <div key={`${k}-${idx}`} className="grid gap-2 items-start grid-cols-1 md:grid-cols-[12rem_16rem_1fr_auto]">
                 {readOnly ? (
                   <>
                     <div className="text-sm contrast-value break-all" title={row.type}>{row.type || '—'}</div>
                     <div className="text-sm contrast-value break-all" title={row.value}>{row.value || '—'}</div>
                     <div className="text-sm contrast-value break-all" title={row.description}>{row.description || '—'}</div>
+                    <div />
                   </>
                 ) : (
                   <>
                     <Input placeholder="type" value={row.type} onChange={(e)=> updateEntry(k, idx, { type: e.target.value })} />
                     <Input placeholder="value" value={row.value} onChange={(e)=> updateEntry(k, idx, { value: e.target.value })} />
                     <Input placeholder="description" value={row.description || ""} onChange={(e)=> updateEntry(k, idx, { description: e.target.value })} />
-                    <div className="md:col-span-3 flex justify-end"><Button variant="ghost" size="sm" onClick={()=> removeEntry(k, idx)}><Trash2 className="h-4 w-4 mr-1"/>Remove</Button></div>
+                    <div className="flex md:justify-end">
+                      <Button variant="ghost" size="icon" onClick={()=> removeEntry(k, idx)} title="Remove">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </>
                 )}
               </div>
             ))}
+            {!readOnly && (
+              <div className="grid gap-2 items-start grid-cols-1 md:grid-cols-[12rem_16rem_1fr_auto]">
+                <Input
+                  placeholder="type"
+                  value={(newRows[k]?.type) || ''}
+                  onChange={(e)=> setNewRows((nr)=> ({ ...nr, [k]: { ...(nr[k]||{ type: '', value: '', description: '' }), type: e.target.value } }))}
+                />
+                <Input
+                  placeholder="value"
+                  value={(newRows[k]?.value) || ''}
+                  onChange={(e)=> setNewRows((nr)=> ({ ...nr, [k]: { ...(nr[k]||{ type: '', value: '', description: '' }), value: e.target.value } }))}
+                />
+                <Input
+                  placeholder="description"
+                  value={(newRows[k]?.description) || ''}
+                  onChange={(e)=> setNewRows((nr)=> ({ ...nr, [k]: { ...(nr[k]||{ type: '', value: '', description: '' }), description: e.target.value } }))}
+                />
+                <div className="flex md:justify-end">
+                  <Button variant="outline" size="sm" onClick={()=> addEntry(k)}>
+                    <Plus className="h-4 w-4 mr-1" /> Add
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       ))}
@@ -228,6 +259,69 @@ function SecurityAliasesEditor({ value, onChange, readOnly = false }: { value?: 
         </div>
       )}
     </div>
+  );
+}
+
+// Responsive details row: label left (max-content), value/editor right; stacks on mobile
+function DetailsRow({ label, children }: { label: ReactNode; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-[14rem_1fr] gap-2 md:gap-4 items-start">
+      <div className="text-sm font-medium text-muted-foreground md:w-[14rem] break-words">{label}</div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+// Searchable AWS Region combobox: shows key (e.g., us-east-1) in trigger, friendly names in the menu
+function RegionCombobox({ value, onChange, placeholder = "Select region", disabled = false, className = "w-56" }: {
+  value?: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const entries = useMemo(() => Array.from(AWS_REGION_NAME_BY_CODE.entries()), []);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className={`${className} justify-between`}
+        >
+          {value ? value : <span className="text-muted-foreground">{placeholder}</span>}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-[--radix-popover-trigger-width]">
+        <Command shouldFilter>
+          <CommandInput placeholder="Search regions…" />
+          <CommandEmpty>No region found.</CommandEmpty>
+          <CommandGroup>
+            {entries.map(([code, name]) => (
+              <CommandItem
+                key={code}
+                // include code in value so typing the key filters too
+                value={`${name || code} ${code}`}
+                onSelect={() => {
+                  onChange(code);
+                  setOpen(false);
+                }}
+              >
+                {/* Show key with description underneath */}
+                <div className="flex w-full flex-col gap-0.5">
+                  <span className="font-mono text-xs">{code}</span>
+                  <span className="text-[11px] text-muted-foreground">{name || code}</span>
+                </div>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -369,6 +463,20 @@ const ZoneDetails = () => {
       if (!rf[label]) rf[label] = { aws_region: "" } as RegionFacts;
       return { ...d, region_facts: rf } as Zone;
     })
+  };
+
+  const cloneRegionLabel = (from: string, toRaw: string, newAwsRegion: string) => {
+    const to = toRaw.trim().toLowerCase();
+    const region = (newAwsRegion || "").trim();
+    if (!to) return;
+    setDraft((d)=>{
+      if (!d) return d;
+      const rf = { ...(d.region_facts || {}) } as Record<string, RegionFacts>;
+      const source = (rf[from] || { aws_region: "" }) as RegionFacts;
+      const az = AWS_REGION_AZ_COUNT.get(region) ?? source.az_count;
+      rf[to] = { ...source, aws_region: region, az_count: az } as RegionFacts;
+      return { ...d, region_facts: rf } as Zone;
+    });
   };
 
   const handleSave = async ()=>{
@@ -610,45 +718,24 @@ const ZoneDetails = () => {
       pageSubtitle="Account, regions, deployments, and delegates"
     >
       <div className="space-y-6 animate-fade-in">
-        {/* Header actions row under global header */}
-        <div className="sck-header-actions">
-          <div className="mr-auto" />
-          {!editing ? (
-            <>
-              <Button variant="ghost" size="sm" onClick={()=> setDeleteDialogOpen(true)} className="gap-1 text-muted-foreground hover:text-foreground">
-                <Trash2 className="h-4 w-4 mr-1" /> Delete
-              </Button>
-              <Button variant="ghost" size="sm" onClick={()=> setEditing(true)} className="gap-1 text-muted-foreground hover:text-foreground">
-                <SquarePen className="h-4 w-4 mr-1" /> Edit
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="ghost" size="sm" disabled={saving} onClick={handleCancel} className="gap-1 text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4 mr-1" /> Cancel
-              </Button>
-              <Button
-                size="sm"
-                disabled={saving || !(draft?.account_facts?.aws_account_id && Object.keys(draft?.region_facts || {}).length > 0)}
-                onClick={handleSave}
-                className="gap-1"
-              >
-                <Save className="h-4 w-4 mr-1" />
-                {saving ? 'Saving…' : 'Save'}
-              </Button>
-            </>
-          )}
-        </div>
+  {/* Removed sticky header actions; actions now live in CardHeader */}
 
   {/* New Zone Dialog removed; creation is initiated from Zones list page */}
 
       {/* Delete Dialog (placeholder) */}
       <Dialog open={deleteDialogOpen} onOpenChange={(o)=> setDeleteDialogOpen(o)}>
         <DialogContent className="w-[92vw] max-w-sm p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle>Delete Zone</DialogTitle>
-            <DialogDescription>Not yet supported.</DialogDescription>
-          </DialogHeader>
+          <div className="flex items-start gap-4">
+            <div className="w-24 h-24 rounded-full bg-red-600 flex items-center justify-center shrink-0">
+              <X className="w-12 h-12 text-white" />
+            </div>
+            <div className="flex-1">
+              <DialogHeader>
+                <DialogTitle>Delete Zone</DialogTitle>
+                <DialogDescription>Not yet supported.</DialogDescription>
+              </DialogHeader>
+            </div>
+          </div>
           <DialogFooter className="pt-4">
             <Button variant="outline" onClick={()=> setDeleteDialogOpen(false)}>Close</Button>
           </DialogFooter>
@@ -656,13 +743,42 @@ const ZoneDetails = () => {
       </Dialog>
 
       <Card className="shadow-soft">
-        <CardHeader>
-          <CardTitle className="sck-section-title flex items-center gap-2">
-            <Globe className="h-5 w-5" />
-            {clientObj?.client_name || current.client}
-          </CardTitle>
-          <CardDescription className="sck-section-subtitle">Landing zone details for this client</CardDescription>
-          <div className="text-sm text-muted-foreground">Zone: <span className="contrast-value">{current.zone}</span></div>
+        <CardHeader className="flex flex-row items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <CardTitle className="sck-section-title flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              {clientObj?.client_name || current.client}
+            </CardTitle>
+            <CardDescription className="sck-section-subtitle">Landing zone details for this client</CardDescription>
+            <div className="text-sm text-muted-foreground">Zone: <span className="contrast-value">{current.zone}</span></div>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            {editing ? (
+              <>
+                <Button variant="ghost" size="sm" disabled={saving} onClick={handleCancel} className="gap-1 text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4 mr-1" /> Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={saving || !(draft?.account_facts?.aws_account_id && Object.keys(draft?.region_facts || {}).length > 0)}
+                  onClick={handleSave}
+                  className="gap-1"
+                >
+                  <Save className="h-4 w-4 mr-1" />
+                  {saving ? 'Saving…' : 'Save'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="ghost" size="sm" onClick={()=> setDeleteDialogOpen(true)} className="gap-1 text-muted-foreground hover:text-foreground">
+                  <Trash2 className="h-4 w-4 mr-1" /> Delete
+                </Button>
+                <Button variant="ghost" size="sm" onClick={()=> setEditing(true)} className="gap-1 text-muted-foreground hover:text-foreground">
+                  <SquarePen className="h-4 w-4 mr-1" /> Edit
+                </Button>
+              </>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -674,122 +790,94 @@ const ZoneDetails = () => {
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6 pt-4">
-              <Separator />
-              <div className="space-y-4">
-                {/* Account section */}
-                <div className="text-sm font-medium text-muted-foreground">ACCOUNT</div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  {/* Environment moved to Deployments tab */}
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">AWS Account ID</label>
-                    {editing ? (
-                      <Input className="font-mono" value={af.aws_account_id || ''} onChange={(e)=> updateAccount({ aws_account_id: e.target.value.replace(/\D/g,'') })} />
-                    ) : (
-                      <div className="mt-2 font-mono text-sm contrast-value break-all">{af.aws_account_id || '—'}</div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Account Name</label>
-                    {editing ? (
-                      <Input value={af.account_name || ''} onChange={(e)=> updateAccount({ account_name: e.target.value })} />
-                    ) : (
-                      <div className="mt-2 text-sm contrast-value break-all">{af.account_name || '—'}</div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Organizational Unit</label>
-                    {editing ? (
-                      <Input value={af.organizational_unit || ''} onChange={(e)=> updateAccount({ organizational_unit: e.target.value })} />
-                    ) : (
-                      <div className="mt-2 text-sm contrast-value break-all">{af.organizational_unit || '—'}</div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Resource Namespace</label>
-                    {editing ? (
-                      <Input value={af.resource_namespace || ''} onChange={(e)=> updateAccount({ resource_namespace: e.target.value })} />
-                    ) : (
-                      <div className="mt-2 text-sm contrast-value break-all">{af.resource_namespace || '—'}</div>
-                    )}
-                  </div>
-                </div>
-                {/* Network section */}
-                <Separator />
-                <div className="text-sm font-medium text-muted-foreground">NETWORK</div>
-                <div className="grid gap-6 md:grid-cols-2">
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Network Name</label>
-                    {editing ? (
-                      <Input value={af.network_name || ''} onChange={(e)=> updateAccount({ network_name: e.target.value })} />
-                    ) : (
-                      <div className="mt-2 text-sm contrast-value break-all">{af.network_name || '—'}</div>
-                    )}
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-2 gap-2">
-                      <div className="text-sm font-medium text-muted-foreground">Subnet Aliases</div>
-                      {editing && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1"
-                          title="Sort A–Z"
-                          onClick={() => {
-                            const sorted = [...(af.subnet_aliases || [])].sort((a,b)=> a.localeCompare(b));
-                            updateAccount({ subnet_aliases: sorted });
-                          }}
-                        >
-                          A–Z
-                        </Button>
-                      )}
-                    </div>
-                    <div className="rounded-md border border-subtle p-2 max-h-64 overflow-y-auto">
-                      <StringArrayEditor
-                        readOnly={!editing}
-                        value={af.subnet_aliases}
-                        onChange={(next)=> updateAccount({ subnet_aliases: next })}
-                        addLabel="Add alias"
-                        placeholder="subnet-alias"
+              {editing && (
+                <>
+                  <div className="space-y-4">
+                    <DetailsRow label="Zone Name">
+                      <Input
+                        value={draft?.zone || ''}
+                        onChange={(e)=> setDraft((d)=> d ? ({ ...d, zone: e.target.value }) : d)}
                       />
-                    </div>
+                    </DetailsRow>
                   </div>
-                  <div className="md:col-span-2">
-                    <div className="text-sm font-medium text-muted-foreground mb-2">VPC Aliases</div>
-                    <StringArrayEditor readOnly={!editing} value={af.vpc_aliases} onChange={(next)=> updateAccount({ vpc_aliases: next })} addLabel="Add alias" placeholder="vpc-alias" />
-                  </div>
-                </div>
-                <Separator />
-                <div className="space-y-3">
-                  <div className="text-sm font-medium text-muted-foreground">KMS</div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="text-sm text-muted-foreground">KMS Key ARN</label>
-                      {editing ? (
-                        <Input className="font-mono" value={af.kms?.kms_key_arn || ''} onChange={(e)=> updateAccount({ kms: { aws_account_id: af.kms?.aws_account_id || af.aws_account_id || '', ...(af.kms||{}), kms_key_arn: e.target.value } as any })} />
-                      ) : (
-                        <div className="mt-2 font-mono text-sm contrast-value break-all">{af.kms?.kms_key_arn || '—'}</div>
-                      )}
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">KMS Key</label>
-                      {editing ? (
-                        <Input className="font-mono" value={af.kms?.kms_key || ''} onChange={(e)=> updateAccount({ kms: { aws_account_id: af.kms?.aws_account_id || af.aws_account_id || '', ...(af.kms||{}), kms_key: e.target.value } as any })} />
-                      ) : (
-                        <div className="mt-2 font-mono text-sm contrast-value break-all">{af.kms?.kms_key || '—'}</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                </>
+              )}
+
+              <div className="space-y-4">
+                <DetailsRow label="Namespace">
+                  {editing ? (
+                    <Input value={af.resource_namespace || ''} onChange={(e)=> updateAccount({ resource_namespace: e.target.value })} />
+                  ) : (
+                    <div className="text-sm contrast-value break-all">{af.resource_namespace || '—'}</div>
+                  )}
+                </DetailsRow>
+                <DetailsRow label="Account Name">
+                  {editing ? (
+                    <Input value={af.account_name || ''} onChange={(e)=> updateAccount({ account_name: e.target.value })} />
+                  ) : (
+                    <div className="text-sm contrast-value break-all">{af.account_name || '—'}</div>
+                  )}
+                </DetailsRow>
+                <DetailsRow label="Account Number">
+                  {editing ? (
+                    <Input className="font-mono" value={af.aws_account_id || ''} onChange={(e)=> updateAccount({ aws_account_id: e.target.value.replace(/\D/g,'') })} />
+                  ) : (
+                    <div className="text-sm contrast-value break-all">{af.aws_account_id || '—'}</div>
+                  )}
+                </DetailsRow>
+                <DetailsRow label="Organizational Unit">
+                  {editing ? (
+                    <Input value={af.organizational_unit || ''} onChange={(e)=> updateAccount({ organizational_unit: e.target.value })} />
+                  ) : (
+                    <div className="text-sm contrast-value break-all">{af.organizational_unit || '—'}</div>
+                  )}
+                </DetailsRow>
+              </div>
+              <DetailsRow label="Network Name">
+                {editing ? (
+                  <Input value={af.network_name || ''} onChange={(e)=> updateAccount({ network_name: e.target.value })} />
+                ) : (
+                  <div className="text-sm contrast-value break-all">{af.network_name || '—'}</div>
+                )}
+              </DetailsRow>
+              <DetailsRow label="Subnet Aliases">
+                <StringArrayEditor
+                  readOnly={!editing}
+                  value={af.subnet_aliases}
+                  onChange={(next)=> updateAccount({ subnet_aliases: next })}
+                  addLabel="Add alias"
+                  placeholder="subnet-alias"
+                />
+              </DetailsRow>
+              <DetailsRow label="VPC Aliases">
+                <StringArrayEditor readOnly={!editing} value={af.vpc_aliases} onChange={(next)=> updateAccount({ vpc_aliases: next })} addLabel="Add alias" placeholder="vpc-alias" />
+              </DetailsRow>
+              <div className="space-y-3">
+                <DetailsRow label="KMS Key ARN">
+                  {editing ? (
+                    <Input className="font-mono" value={af.kms?.kms_key_arn || ''} onChange={(e)=> updateAccount({ kms: { aws_account_id: af.kms?.aws_account_id || af.aws_account_id || '', ...(af.kms||{}), kms_key_arn: e.target.value } as any })} />
+                  ) : (
+                    <div className="text-sm contrast-value break-all">{af.kms?.kms_key_arn || '—'}</div>
+                  )}
+                </DetailsRow>
+                <DetailsRow label="KMS Key">
+                  {editing ? (
+                    <Input className="font-mono" value={af.kms?.kms_key || ''} onChange={(e)=> updateAccount({ kms: { aws_account_id: af.kms?.aws_account_id || af.aws_account_id || '', ...(af.kms||{}), kms_key: e.target.value } as any })} />
+                  ) : (
+                    <div className="text-sm contrast-value break-all">{af.kms?.kms_key || '—'}</div>
+                  )}
+                </DetailsRow>
               </div>
             </TabsContent>
 
-            <TabsContent value="regions" className="space-y-4 pt-4">
+      <TabsContent value="regions" className="space-y-4 pt-4">
               <RegionsTab
                 regions={regions}
                 onRename={renameRegionLabel}
                 onRemove={removeRegionLabel}
                 onAdd={addRegionLabel}
                 onPatch={updateRegionFacts}
+        onClone={cloneRegionLabel}
                 readOnly={!editing}
               />
             </TabsContent>
@@ -798,22 +886,34 @@ const ZoneDetails = () => {
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">Zone Type</label>
-                  <Select
-                    value={(() => {
-                      const raw = (af.environment || '').toString().toLowerCase();
-                      return raw === 'prd' || raw === 'nprd' || raw === 'dev' ? raw : undefined;
-                    })()}
-                    onValueChange={(v)=> updateAccount({ environment: v })}
-                  >
-                    <SelectTrigger className="w-full" disabled={!editing}>
-                      <SelectValue placeholder="Select zone type" />
-                    </SelectTrigger>
-                    <SelectContent>
-            <SelectItem value="dev">Development</SelectItem>
-            <SelectItem value="nprd">Non-Production</SelectItem>
-            <SelectItem value="prd">Production</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {editing ? (
+                    <Select
+                      value={(() => {
+                        const raw = (af.environment || '').toString().toLowerCase();
+                        return raw === 'prd' || raw === 'nprd' || raw === 'dev' ? raw : undefined;
+                      })()}
+                      onValueChange={(v)=> updateAccount({ environment: v })}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select zone type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="dev">Development</SelectItem>
+                        <SelectItem value="nprd">Non-Production</SelectItem>
+                        <SelectItem value="prd">Production</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="text-sm contrast-value break-all mt-2">
+                      {(() => {
+                        const raw = (af.environment || '').toString().toLowerCase();
+                        if (raw === 'prd') return 'Production';
+                        if (raw === 'nprd') return 'Non-Production';
+                        if (raw === 'dev') return 'Development';
+                        return '—';
+                      })()}
+                    </div>
+                  )}
                 </div>
               </div>
               <div>
@@ -870,16 +970,14 @@ const ZoneDetails = () => {
                 </div>
               </div>
               <div className="text-xs text-muted-foreground">Expect one AWS account ID per line. Each must be exactly 12 numeric digits. Duplicates are deduplicated.</div>
-              <div className="rounded-md border border-subtle p-2">
-                 <StringArrayEditor
-                   readOnly={!editing}
-                   value={delegatesList}
-                   onChange={(next)=> updateAccount({ kms: { aws_account_id: af.kms?.aws_account_id || af.aws_account_id || '', ...(af.kms||{}), delegate_aws_account_ids: next } as any })}
-                   addLabel="Add account"
-                   placeholder="123456789012"
-                   filter={filterDelegates}
-                 />
-               </div>
+              <StringArrayEditor
+                readOnly={!editing}
+                value={delegatesList}
+                onChange={(next)=> updateAccount({ kms: { aws_account_id: af.kms?.aws_account_id || af.aws_account_id || '', ...(af.kms||{}), delegate_aws_account_ids: next } as any })}
+                addLabel="Add account"
+                placeholder="123456789012"
+                filter={filterDelegates}
+              />
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -889,111 +987,209 @@ const ZoneDetails = () => {
   );
 };
 
-function RegionsTab({ regions, onRename, onRemove, onAdd, onPatch, readOnly = false }: {
+function RegionsTab({ regions, onRename, onRemove, onAdd, onPatch, onClone, readOnly = false }: {
   regions: Record<string, RegionFacts>;
   onRename: (from: string, to: string)=> void;
   onRemove: (label: string)=> void;
   onAdd: (label: string)=> void;
   onPatch: (label: string, patch: Partial<RegionFacts>)=> void;
+  onClone: (from: string, to: string, newAwsRegion: string)=> void;
   readOnly?: boolean;
 }){
-  const [newLabel, setNewLabel] = useState("");
-  const labels = Object.keys(regions||{});
+  const [addOpen, setAddOpen] = useState(false);
+  const [addFrom, setAddFrom] = useState<string | null>(null);
+  const [newAlias, setNewAlias] = useState("");
+  const [newAwsRegion, setNewAwsRegion] = useState("");
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removeLabel, setRemoveLabel] = useState<string | null>(null);
+  const labels = useMemo(() => Object.keys(regions || {}), [regions]);
+  const [active, setActive] = useState<string | undefined>(labels[0]);
+  useEffect(() => {
+    if (!active || !labels.includes(active)) {
+      setActive(labels[0]);
+    }
+  }, [labels, active]);
+  const handleRename = useCallback((from: string, to: string) => {
+    onRename(from, to);
+    const next = (to || '').trim().toLowerCase();
+    if (next && from !== next) setActive(next);
+  }, [onRename]);
   return (
     <div className="space-y-4">
-    {!readOnly && (
-        <div className="flex gap-2 items-center">
-      <Input placeholder="new region alias (lowercase)" value={newLabel} onChange={(e)=> setNewLabel(e.target.value)} />
-      <Button variant="outline" size="sm" onClick={()=> { onAdd(newLabel); setNewLabel(""); }}><Plus className="h-4 w-4 mr-1"/>Add alias</Button>
-        </div>
-      )}
       {labels.length===0 && <p className="text-sm text-muted-foreground">No regions configured</p>}
-      {labels.map((label)=> (
-        <Card key={label}>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Region Alias</span>
-              <Input className="w-48" value={label} readOnly={readOnly} disabled={readOnly} onChange={(e)=> onRename(label, e.target.value)} />
-            </div>
-            <div className="flex gap-2">
-              {!readOnly && (
-                <Button variant="ghost" size="sm" onClick={()=> onRemove(label)}><Trash2 className="h-4 w-4 mr-1"/>Remove</Button>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="text-sm text-muted-foreground">AWS Region</label>
-                {readOnly ? (
-                  <div className="mt-2 text-sm contrast-value break-all">{regions[label]?.aws_region || '—'}</div>
-                ) : (
-                  <>
-                    <Input list={`aws-region-list`} value={regions[label]?.aws_region || ''} onChange={(e)=> onPatch(label, { aws_region: e.target.value })} />
-                    <datalist id="aws-region-list">
-                      {Array.from(AWS_REGION_NAME_BY_CODE.keys()).map((code)=> (
-                        <option key={code} value={code}>{AWS_REGION_NAME_BY_CODE.get(code)}</option>
-                      ))}
-                    </datalist>
-                  </>
-                )}
+      {labels.length>0 && (
+        <Tabs value={active} onValueChange={setActive}>
+          <div className="flex items-center gap-2">
+            <TabsList className="flex-1 overflow-x-auto">
+              {labels.map((label)=> (
+                <TabsTrigger key={label} value={label} className="whitespace-nowrap">{label}</TabsTrigger>
+              ))}
+            </TabsList>
+            {!readOnly && (
+              <div className="ml-2 flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!active || labels.length <= 1}
+                  onClick={()=> { setRemoveLabel(active || null); setRemoveOpen(true); }}
+                >
+                  <Trash2 className="h-4 w-4 mr-1"/>Remove
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={()=> {
+                    if (!active) return;
+                    setAddFrom(active);
+                    setNewAlias("");
+                    setNewAwsRegion(regions[active]?.aws_region || "");
+                    setAddOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-1"/>Add
+                </Button>
               </div>
-              <div>
-                <label className="text-sm text-muted-foreground">AZ Count</label>
-                <div className="mt-2 text-sm contrast-value">{regions[label]?.az_count ?? '—'}</div>
+            )}
+          </div>
+          {labels.map((label)=> (
+            <TabsContent key={`content-${label}`} value={label}>
+              <div className="space-y-4 pt-4">
+                <DetailsRow label="Region Alias">
+                  {readOnly ? (
+                    <div className="text-sm contrast-value break-all">{label}</div>
+                  ) : (
+                    <Input className="w-48" value={label} onChange={(e)=> handleRename(label, e.target.value)} />
+                  )}
+                </DetailsRow>
+                <DetailsRow label="AWS Region">
+                  {readOnly ? (
+                    <div className="text-sm contrast-value break-all">{regions[label]?.aws_region || '—'}</div>
+                  ) : (
+                    <RegionCombobox
+                      value={regions[label]?.aws_region || ''}
+                      onChange={(v)=> onPatch(label, { aws_region: v })}
+                      placeholder="Select region"
+                      className="w-56"
+                    />
+                  )}
+                </DetailsRow>
+                <DetailsRow label="AZ Count">
+                  {readOnly ? (
+                    <div className="text-sm contrast-value break-all">{regions[label]?.az_count ?? '—'}</div>
+                  ) : (
+                    <Input className="w-24" value={regions[label]?.az_count ?? ''} readOnly />
+                  )}
+                </DetailsRow>
+                <DetailsRow label="Proxy Host">
+                  {readOnly ? (
+                    <div className="text-sm contrast-value break-all">{regions[label]?.proxy_host || '—'}</div>
+                  ) : (
+                    <Input value={regions[label]?.proxy_host || ''} onChange={(e)=> onPatch(label, { proxy_host: e.target.value })} />
+                  )}
+                </DetailsRow>
+                <DetailsRow label="Proxy URL">
+                  {readOnly ? (
+                    <div className="text-sm contrast-value break-all">{regions[label]?.proxy_url || '—'}</div>
+                  ) : (
+                    <Input value={regions[label]?.proxy_url || ''} onChange={(e)=> onPatch(label, { proxy_url: e.target.value })} />
+                  )}
+                </DetailsRow>
+                <DetailsRow label="No Proxy">
+                  {readOnly ? (
+                    <div className="text-sm contrast-value break-all">{regions[label]?.no_proxy || '—'}</div>
+                  ) : (
+                    <Input value={regions[label]?.no_proxy || ''} onChange={(e)=> onPatch(label, { no_proxy: e.target.value })} />
+                  )}
+                </DetailsRow>
+                <DetailsRow label="Name Servers">
+                  <StringArrayEditor readOnly={readOnly} value={regions[label]?.name_servers} onChange={(next)=> onPatch(label, { name_servers: next })} addLabel="Add server" placeholder="8.8.8.8" />
+                </DetailsRow>
+                <div className="space-y-6">
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium text-muted-foreground">Image Aliases</div>
+                    <KeyValueListEditor readOnly={readOnly} value={regions[label]?.image_aliases as any} onChange={(next)=> onPatch(label, { image_aliases: next })} addLabel="Add alias" keyPlaceholder="alias" valuePlaceholder="ami-..." />
+                  </div>
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium text-muted-foreground">Security Group Aliases</div>
+                    <KeyValueListEditor readOnly={readOnly} value={regions[label]?.security_group_aliases as any} onChange={(next)=> onPatch(label, { security_group_aliases: next })} addLabel="Add alias" keyPlaceholder="alias" valuePlaceholder="sg-..." />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground mb-2">Security Aliases</div>
+                  <SecurityAliasesEditor readOnly={readOnly} value={regions[label]?.security_aliases as any} onChange={(next)=> onPatch(label, { security_aliases: next as any })} />
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground mb-2">Region Tags</div>
+                  <KeyValueListEditor readOnly={readOnly} value={regions[label]?.tags as any} onChange={(next)=> onPatch(label, { tags: next as any })} addLabel="Add tag" keyPlaceholder="tag" valuePlaceholder="value" />
+                </div>
               </div>
-            </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              <div>
-                <label className="text-sm text-muted-foreground">Proxy Host</label>
-                {readOnly ? (
-                  <div className="mt-2 text-sm contrast-value break-all">{regions[label]?.proxy_host || '—'}</div>
-                ) : (
-                  <Input value={regions[label]?.proxy_host || ''} onChange={(e)=> onPatch(label, { proxy_host: e.target.value })} />
-                )}
-              </div>
-              <div>
-                <label className="text-sm text-muted-foreground">Proxy URL</label>
-                {readOnly ? (
-                  <div className="mt-2 text-sm contrast-value break-all">{regions[label]?.proxy_url || '—'}</div>
-                ) : (
-                  <Input value={regions[label]?.proxy_url || ''} onChange={(e)=> onPatch(label, { proxy_url: e.target.value })} />
-                )}
-              </div>
-              <div>
-                <label className="text-sm text-muted-foreground">No Proxy</label>
-                {readOnly ? (
-                  <div className="mt-2 text-sm contrast-value break-all">{regions[label]?.no_proxy || '—'}</div>
-                ) : (
-                  <Input value={regions[label]?.no_proxy || ''} onChange={(e)=> onPatch(label, { no_proxy: e.target.value })} />
-                )}
-              </div>
+            </TabsContent>
+          ))}
+        </Tabs>
+      )}
+      <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
+        <DialogContent className="w-[92vw] max-w-sm p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle>Remove Region Alias</DialogTitle>
+            <DialogDescription>Are you sure you wish to remove this region alias{removeLabel ? ` "${removeLabel}"` : ''}?</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-4">
+            <Button variant="outline" onClick={()=> setRemoveOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!removeLabel || labels.length <= 1}
+              onClick={()=> {
+                if (removeLabel) onRemove(removeLabel);
+                setRemoveOpen(false);
+                setRemoveLabel(null);
+              }}
+            >
+              Remove
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="w-[92vw] max-w-md p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle>Add Region Alias</DialogTitle>
+            <DialogDescription>Clone settings from the selected alias into a new alias and region.</DialogDescription>
+          </DialogHeader>
+      <div className="space-y-4">
+            <div>
+        <label className="text-sm text-muted-foreground mb-2">New Alias</label>
+              <Input placeholder="new region alias (lowercase)" value={newAlias} onChange={(e)=> setNewAlias(e.target.value)} />
             </div>
             <div>
-              <div className="text-sm text-muted-foreground mb-2">Name Servers</div>
-              <StringArrayEditor readOnly={readOnly} value={regions[label]?.name_servers} onChange={(next)=> onPatch(label, { name_servers: next })} addLabel="Add server" placeholder="8.8.8.8" />
+        <label className="text-sm text-muted-foreground mb-2">AWS Region</label>
+              <RegionCombobox
+                value={newAwsRegion}
+                onChange={setNewAwsRegion}
+                placeholder="Select region"
+                className="w-full"
+              />
             </div>
-            <div className="grid gap-6 md:grid-cols-2">
-              <div>
-                <div className="text-sm text-muted-foreground mb-2">Image Aliases</div>
-                <KeyValueListEditor readOnly={readOnly} value={regions[label]?.image_aliases as any} onChange={(next)=> onPatch(label, { image_aliases: next })} addLabel="Add alias" keyPlaceholder="alias" valuePlaceholder="ami-..." />
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground mb-2">Security Group Aliases</div>
-                <KeyValueListEditor readOnly={readOnly} value={regions[label]?.security_group_aliases as any} onChange={(next)=> onPatch(label, { security_group_aliases: next })} addLabel="Add alias" keyPlaceholder="alias" valuePlaceholder="sg-..." />
-              </div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground mb-2">Security Aliases</div>
-              <SecurityAliasesEditor readOnly={readOnly} value={regions[label]?.security_aliases as any} onChange={(next)=> onPatch(label, { security_aliases: next as any })} />
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground mb-2">Region Tags</div>
-              <KeyValueListEditor readOnly={readOnly} value={regions[label]?.tags as any} onChange={(next)=> onPatch(label, { tags: next as any })} addLabel="Add tag" keyPlaceholder="tag" valuePlaceholder="value" />
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+          </div>
+          <DialogFooter className="pt-4">
+            <Button variant="outline" onClick={()=> { setAddOpen(false); }}>Cancel</Button>
+    <Button
+              variant="default"
+              onClick={()=> {
+                if (addFrom && newAlias.trim()) {
+      onClone(addFrom, newAlias, newAwsRegion);
+      setActive(newAlias.trim().toLowerCase());
+                }
+                setAddOpen(false);
+                setAddFrom(null);
+                setNewAlias("");
+                setNewAwsRegion("");
+              }}
+            >
+              Add
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

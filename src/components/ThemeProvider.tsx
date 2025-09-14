@@ -26,21 +26,6 @@ export default function ThemeProvider({ children, theme = "system", onThemeChang
   // Keep internal state in sync with prop changes
   useEffect(() => setCurrent(theme), [theme]);
 
-  // Watch system changes if using "system"
-  useEffect(() => {
-    if (!window.matchMedia) return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = () => {
-      sysRef.current = mq.matches ? "dark" : "light";
-      // Re-apply DOM class if current is "system"
-      if (current === "system") applyDomTheme("system", sysRef.current);
-    };
-    mq.addEventListener?.("change", handler);
-    return () => mq.removeEventListener?.("change", handler);
-  }, [current]);
-
-  const resolved: "light" | "dark" = current === "system" ? sysRef.current : (current as any) === "dark" ? "dark" : "light";
-
   // Apply theme to <html> element (class + data attribute + CSS vars from preset)
   const applyDomTheme = useCallback((sel: ThemeName, res: "light" | "dark") => {
     const root = document.documentElement;
@@ -61,8 +46,24 @@ export default function ThemeProvider({ children, theme = "system", onThemeChang
       });
     }
   }, [lightPresetId, darkPresetId]);
+
+  // Watch system changes if using "system"
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => {
+      sysRef.current = mq.matches ? "dark" : "light";
+      // Re-apply DOM class if current is "system"
+      if (current === "system") applyDomTheme("system", sysRef.current);
+    };
+    mq.addEventListener?.("change", handler);
+    return () => mq.removeEventListener?.("change", handler);
+  }, [current, applyDomTheme]);
+
+  const resolved: "light" | "dark" = current === "system" ? sysRef.current : (current as any) === "dark" ? "dark" : "light";
   useEffect(() => {
     applyDomTheme(current, resolved);
+    // applyDomTheme is stable (useCallback) and included intentionally
   }, [current, resolved, applyDomTheme]);
 
   const setTheme = (t: ThemeName) => {
