@@ -23,6 +23,27 @@ interface ZonesState {
 // Prefer env var, fallback to versioned base /api/v1 (all endpoints assume versioned root now)
 const API_BASE = (import.meta as any)?.env?.VITE_API_BASE_URL || '/api/v1';
 
+// Helper: normalized zone key for dedup (case/whitespace tolerant)
+const zoneKey = (z: Partial<Zone>): string =>
+  `${String(z.client ?? '').trim().toLowerCase()}||${String(z.zone ?? '').trim().toLowerCase()}`;
+
+const upsertZone = (list: Zone[], z: Zone): Zone[] => {
+  const key = zoneKey(z);
+  const idx = list.findIndex((it) => zoneKey(it) === key);
+  if (idx !== -1) {
+    const next = list.slice();
+    next[idx] = z;
+    return next;
+  }
+  return [...list, z];
+};
+
+const dedupZones = (items: Zone[]): Zone[] => {
+  const map = new Map<string, Zone>();
+  for (const z of items) map.set(zoneKey(z), z);
+  return Array.from(map.values());
+};
+
 // ---------- CRUD Thunks (adjust endpoints to match your backend) ----------
 export const fetchZones = createAsyncThunk<
   Zone[],
@@ -185,7 +206,7 @@ const zonesSlice = createSlice({
   initialState,
   reducers: {
     setZones: (state, action: PayloadAction<Zone[]>) => {
-      state.zones = action.payload;
+  state.zones = dedupZones(action.payload);
     },
     resetZonesPaging: (state) => {
       state.zones = [];
@@ -193,15 +214,10 @@ const zonesSlice = createSlice({
       state.prevCursors = [];
     },
     addZone: (state, action: PayloadAction<Zone>) => {
-      state.zones.push(action.payload);
+      state.zones = upsertZone(state.zones, action.payload);
     },
     updateZone: (state, action: PayloadAction<Zone>) => {
-      const z = action.payload;
-      const idx = state.zones.findIndex(
-        (zone) => zone.client === z.client && zone.zone === z.zone
-      );
-      if (idx !== -1) state.zones[idx] = z;
-      else state.zones.push(z);
+      state.zones = upsertZone(state.zones, action.payload);
     },
     removeZone: (state, action: PayloadAction<{ client: string; zone: string }>) => {
       const { client, zone } = action.payload;
@@ -228,16 +244,14 @@ const zonesSlice = createSlice({
         state.loading = false;
         const { items, nextCursor, append } = action.payload;
         if (append) {
-          // Deduplicate by composite key
-            const existing = new Set(state.zones.map(z => `${z.client}||${z.zone}`));
-            for (const z of items) {
-              const key = `${z.client}||${z.zone}`;
-              if (!existing.has(key)) {
-                state.zones.push(z);
-              }
-            }
+          // Deduplicate by normalized composite key
+          const existing = new Map(state.zones.map((z) => [zoneKey(z), z] as const));
+          for (const z of items) {
+            existing.set(zoneKey(z), z);
+          }
+          state.zones = Array.from(existing.values());
         } else {
-          state.zones = items;
+          state.zones = dedupZones(items);
         }
         // Push previous cursor onto stack if moving forward
         if (append && state.nextCursor && state.nextCursor !== nextCursor) {
@@ -256,7 +270,7 @@ const zonesSlice = createSlice({
       })
       .addCase(fetchZones.fulfilled, (state, action) => {
         state.loading = false;
-        state.zones = action.payload;
+  state.zones = dedupZones(action.payload);
       })
       .addCase(fetchZones.rejected, (state, action) => {
         state.loading = false;
@@ -269,7 +283,7 @@ const zonesSlice = createSlice({
       })
       .addCase(createZone.fulfilled, (state, action) => {
         state.loading = false;
-        state.zones.push(action.payload);
+  state.zones = upsertZone(state.zones, action.payload);
       })
       .addCase(createZone.rejected, (state, action) => {
         state.loading = false;
@@ -282,12 +296,7 @@ const zonesSlice = createSlice({
       })
       .addCase(updateZoneRemote.fulfilled, (state, action) => {
         state.loading = false;
-        const z = action.payload;
-        const idx = state.zones.findIndex(
-          (zone) => zone.client === z.client && zone.zone === z.zone
-        );
-        if (idx !== -1) state.zones[idx] = z;
-        else state.zones.push(z);
+  state.zones = upsertZone(state.zones, action.payload);
       })
       .addCase(updateZoneRemote.rejected, (state, action) => {
         state.loading = false;
@@ -300,12 +309,7 @@ const zonesSlice = createSlice({
       })
       .addCase(fetchZoneByKey.fulfilled, (state, action) => {
         state.loading = false;
-        const z = action.payload;
-        const idx = state.zones.findIndex(
-          (zone) => zone.client === z.client && zone.zone === z.zone
-        );
-        if (idx !== -1) state.zones[idx] = z;
-        else state.zones.push(z);
+  state.zones = upsertZone(state.zones, action.payload);
       })
       .addCase(fetchZoneByKey.rejected, (state, action) => {
         state.loading = false;

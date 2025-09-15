@@ -7,6 +7,7 @@ import { useDispatch } from "react-redux";
 import type { AppDeploymentBuild } from "@/store/types";
 import { useReduxData } from "@/hooks/useReduxData";
 import type { AppDispatch, RootState } from "@/store";
+// Builds API not available yet; slice thunk is a no-op returning empty results
 import { fetchBuilds } from "@/store/slices/deploymentsSlice";
 import { useSelector } from "react-redux";
 
@@ -55,8 +56,8 @@ export default function LatestDeployments({ limit = 5 }: LatestDeploymentsProps)
 
   // Fetch once per client (server uses current client from token)
   React.useEffect(() => {
+    // Intentionally do nothing until backend exists; thunk returns empty list anyway
     if (!selectedClient) return;
-    // If we have no cache or cache belongs to another client, fetch
     if (!lastFetched || cachedForClient !== selectedClient) {
       dispatch(fetchBuilds({ limit: Math.max(limit, 5) }));
     }

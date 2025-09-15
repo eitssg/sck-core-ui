@@ -60,7 +60,7 @@ export default function PortfolioDetails() {
   }, [portfolios?.items]);
 
   const appsList = useMemo<Application[]>(() => {
-    const a: any = (applications as any)?.items ?? applications;
+    const a: any = (applications as any)?.items ?? [];
     return Array.isArray(a) ? (a as Application[]) : [];
   }, [applications]);
 
@@ -73,6 +73,8 @@ export default function PortfolioDetails() {
       try {
         setDetailLoading(true);
         await (actions.portfolios.fetchSingle(currentClient, portfolioParam, true) as any);
+  // Fetch applications scoped to this portfolio
+  await (actions.applications.fetch(currentClient, { portfolio: portfolioParam, limit: 200 }) as any);
       } finally {
         if (!cancelled) setDetailLoading(false);
       }
@@ -1129,12 +1131,14 @@ export default function PortfolioDetails() {
                       <Briefcase className="h-5 w-5 text-primary" />
                       Applications ({portfolioApplications.length})
                     </CardTitle>
+                    {/* Application creation temporarily disabled
                     <Button variant="outline" size="sm" asChild>
                       <Link to={`/applications/create`}>
                         <Plus className="h-4 w-4 mr-2" />
                         Add Application
                       </Link>
                     </Button>
+                    */}
                   </div>
                   <CardDescription className="sck-section-subtitle">Applications that belong to this portfolio</CardDescription>
                 </CardHeader>
@@ -1150,7 +1154,7 @@ export default function PortfolioDetails() {
                         <div
                           key={`${app.portfolio}:${app.app_regex}:${app.region}:${app.zone}`}
                           className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
-                          onClick={() => navigate(`/applications/${encodeURIComponent(app.app_regex)}`)}
+                          onClick={() => navigate(`/applications/${encodeURIComponent((app as any).app_regex || (app as any).appRegex || '')}?portfolio=${encodeURIComponent(app.portfolio)}`)}
                         >
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
@@ -1175,14 +1179,14 @@ export default function PortfolioDetails() {
                       <Briefcase className="mx-auto h-12 w-12 text-muted-foreground" />
                       <h3 className="mt-2 text-sm font-medium text-foreground">No applications</h3>
                       <p className="mt-1 text-sm text-muted-foreground">Get started by creating your first application.</p>
-                      <div className="mt-6">
+                      {/* <div className="mt-6">
                         <Button variant="outline" asChild>
                           <Link to={`/applications/create`}>
                             <Plus className="h-4 w-4 mr-2" />
                             Add Application
                           </Link>
                         </Button>
-                      </div>
+                      </div> */}
                     </div>
                   )}
                 </CardContent>

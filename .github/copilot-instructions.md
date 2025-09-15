@@ -83,3 +83,6 @@
 - **Context**: Use `#codebase` to reference `docs/*.md`, `src/auth/*`, `components/ui/*`, or open files in VS Code for automatic inclusion.
 - **Output**: Provide code diffs, explanations, and contradiction warnings.
 - **Strictness**: Enforce rules exactly as documented; flag deviations with specific file references.
+
+## Precedence Note
+- When used within the monorepo, this file is the canonical UI rule set. If any root instruction appears to conflict, prefer this file and raise a contradiction notice.

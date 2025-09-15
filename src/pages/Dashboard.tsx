@@ -11,8 +11,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import DeploymentChart from "@/components/DeploymentChart";
 import LatestDeployments from "@/components/LatestDeployments";
 
-import { buildApiUrl, API_CONFIG } from "@/lib/api-config";
-import { apiFetch } from "@/lib/api-fetch";
+// No deployments API yet; avoid calling nonexistent endpoints
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,29 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import {
-  Sparkles,
-  Users,
-  Briefcase,
-  Server,
-  GitBranch,
-  Activity,
-  Plus,
-  Clock,
-  Building2,
-} from "lucide-react";
-
-// Minimal API response helpers
-type ApiResponse<T> = {
-  data: T[] | T;
-  metadata?: { total?: number; cursor?: string | null; [k: string]: any };
-  message?: string;
-  status?: string;
-};
-function toArray<T>(v: T[] | T | undefined | null): T[] {
-  if (!v) return [];
-  return Array.isArray(v) ? v : [v];
-}
+import { Sparkles, Users, Briefcase, Server, GitBranch, Activity, Plus, Clock, Building2 } from "lucide-react";
 
 type Deployment = {
   id: string;
@@ -74,7 +51,6 @@ export default function Dashboard() {
   }, [clients, currentClient]);
 
   // Page-local API-derived stats
-  const [appTotal, setAppTotal] = useState<number>(0);
   const [depTotal, setDepTotal] = useState<number>(0);
   const [activeDeployments, setActiveDeployments] = useState<number>(0);
   const [recentDeployments, setRecentDeployments] = useState<Deployment[]>([]);
@@ -111,83 +87,10 @@ export default function Dashboard() {
     if (!currentClient) return;
     setBusy(true);
     try {
-      // Applications total
-      const appsUrl = new URL(buildApiUrl(API_CONFIG.ENDPOINTS.API.APPLICATIONS));
-      appsUrl.searchParams.set("client", currentClient);
-      appsUrl.searchParams.set("limit", "1");
-      const appsRes = await apiFetch(appsUrl.toString(), {
-        cookieFirst: true,
-        notify401: true,
-        contextLabel: "Applications",
-      });
-      if (appsRes.ok) {
-        const appsJson = (await appsRes.json()) as ApiResponse<any>;
-        setAppTotal(appsJson.metadata?.total ?? toArray(appsJson.data).length);
-      } else {
-        if (appsRes.status === 401) {
-          try {
-            const j = await appsRes.clone().json().catch(() => ({}));
-            const msg = String(j?.message || "");
-            if (msg) {
-              if (msg.includes('key_rotation_required')) {
-                setAws401('key_rotation_required');
-                try { sessionStorage.setItem('aws_cred_status', 'rotation'); } catch { /* ignore storage errors */ }
-              } else if (msg.includes('invalid_credentils') || msg.includes('aws_credentials_invalid')) {
-                setAws401('aws_credentials_invalid');
-                try { sessionStorage.setItem('aws_cred_status', 'invalid'); } catch { /* ignore storage errors */ }
-              } else if (msg.includes('aws_credentials_missing')) {
-                setAws401('aws_credentials_missing');
-                try { sessionStorage.setItem('aws_cred_status', 'missing'); } catch { /* ignore storage errors */ }
-              }
-            }
-          } catch { /* ignore */ }
-        }
-        setAppTotal(0);
-      }
-
-      // Deployments recent + totals
-      const depUrl = new URL(buildApiUrl(API_CONFIG.ENDPOINTS.API.DEPLOYMENTS));
-      depUrl.searchParams.set("client", currentClient);
-      depUrl.searchParams.set("limit", "5");
-      depUrl.searchParams.set("order", "desc");
-      const depRes = await apiFetch(depUrl.toString(), {
-        cookieFirst: true,
-        notify401: true,
-        contextLabel: "Deployments",
-      });
-      if (depRes.ok) {
-        const depJson = (await depRes.json()) as ApiResponse<Deployment>;
-        const rows = toArray(depJson.data);
-        setRecentDeployments(rows);
-        setDepTotal(depJson.metadata?.total ?? rows.length);
-        const active = rows.filter((d) =>
-          ["released", "release-in-progress"].includes((d.status || "").toLowerCase())
-        ).length;
-        setActiveDeployments(active);
-      } else {
-        if (depRes.status === 401) {
-          try {
-            const j = await depRes.clone().json().catch(() => ({}));
-            const msg = String(j?.message || "");
-            if (msg) {
-              if (msg.includes('key_rotation_required')) {
-                setAws401('key_rotation_required');
-                try { sessionStorage.setItem('aws_cred_status', 'rotation'); } catch { /* ignore storage errors */ }
-              } else if (msg.includes('invalid_credentils') || msg.includes('aws_credentials_invalid')) {
-                setAws401('aws_credentials_invalid');
-                try { sessionStorage.setItem('aws_cred_status', 'invalid'); } catch { /* ignore storage errors */ }
-              } else if (msg.includes('aws_credentials_missing')) {
-                setAws401('aws_credentials_missing');
-                try { sessionStorage.setItem('aws_cred_status', 'missing'); } catch { /* ignore storage errors */ }
-              }
-            }
-          } catch { /* ignore */ }
-        }
-        setRecentDeployments([]);
-        setDepTotal(0);
-        setActiveDeployments(0);
-      }
-
+      // Backend for deployments is not implemented yet. Use placeholders.
+      setRecentDeployments([]);
+      setDepTotal(0);
+      setActiveDeployments(0);
       setLastRefresh(new Date());
     } catch (err) {
       toast({
@@ -299,16 +202,6 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-soft">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Applications</CardTitle>
-              <Server className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{appTotal}</div>
-              <p className="text-xs text-muted-foreground">Tracked across environments</p>
-            </CardContent>
-          </Card>
 
           <Card className="shadow-soft">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

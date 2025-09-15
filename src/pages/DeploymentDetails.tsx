@@ -135,6 +135,8 @@ function eventIcon(type: string, status: string) {
 }
 
 export default function DeploymentDetails() {
+  // Feature flag: backend deployments API not yet available
+  const DEPLOYMENTS_API_AVAILABLE = false;
   const navigate = useNavigate();
   const { toast } = useToast();
   const { isDark } = useTheme();
@@ -158,16 +160,16 @@ export default function DeploymentDetails() {
   const clientSlug = useMemo(() => (typeof selectedClient === "string" ? selectedClient : null), [selectedClient]);
 
   const detailsUrl = useMemo(() => {
-    if (!idOrPrn) return null;
+    if (!idOrPrn || !DEPLOYMENTS_API_AVAILABLE) return null;
     const base = buildApiUrl(`${API_CONFIG.ENDPOINTS.API.DEPLOYMENTS}/${encodeURIComponent(idOrPrn)}`);
     return clientSlug ? `${base}?client=${encodeURIComponent(clientSlug)}` : base;
-  }, [idOrPrn, clientSlug]);
+  }, [idOrPrn, clientSlug, DEPLOYMENTS_API_AVAILABLE]);
 
   const eventsUrl = useMemo(() => {
-    if (!idOrPrn) return null;
+    if (!idOrPrn || !DEPLOYMENTS_API_AVAILABLE) return null;
     const base = buildApiUrl(`${API_CONFIG.ENDPOINTS.API.DEPLOYMENTS}/${encodeURIComponent(idOrPrn)}/events`);
     return clientSlug ? `${base}?client=${encodeURIComponent(clientSlug)}` : base;
-  }, [idOrPrn, clientSlug]);
+  }, [idOrPrn, clientSlug, DEPLOYMENTS_API_AVAILABLE]);
 
   const fetchDetails = useCallback(async () => {
     if (!detailsUrl) return;
@@ -237,18 +239,18 @@ export default function DeploymentDetails() {
     fetchEvents();
   }, [idOrPrn, isAuthenticated, fetchDetails, fetchEvents]);
 
-  const canPromote = deployment?.status === "not-released";
+  const canPromote = DEPLOYMENTS_API_AVAILABLE && deployment?.status === "not-released";
   const promoteUrl = useMemo(() => {
-    if (!idOrPrn) return null;
+    if (!idOrPrn || !DEPLOYMENTS_API_AVAILABLE) return null;
     const base = buildApiUrl(`${API_CONFIG.ENDPOINTS.API.DEPLOYMENTS}/${encodeURIComponent(idOrPrn)}/release`);
     return clientSlug ? `${base}?client=${encodeURIComponent(clientSlug)}` : base;
-  }, [idOrPrn, clientSlug]);
+  }, [idOrPrn, clientSlug, DEPLOYMENTS_API_AVAILABLE]);
 
   const teardownUrl = useMemo(() => {
-    if (!idOrPrn) return null;
+    if (!idOrPrn || !DEPLOYMENTS_API_AVAILABLE) return null;
     const base = buildApiUrl(`${API_CONFIG.ENDPOINTS.API.DEPLOYMENTS}/${encodeURIComponent(idOrPrn)}/teardown`);
     return clientSlug ? `${base}?client=${encodeURIComponent(clientSlug)}` : base;
-  }, [idOrPrn, clientSlug]);
+  }, [idOrPrn, clientSlug, DEPLOYMENTS_API_AVAILABLE]);
 
   const handlePromote = async () => {
     if (!promoteUrl) return;
@@ -315,6 +317,32 @@ export default function DeploymentDetails() {
   };
 
   if (!isAuthenticated) return null;
+
+  if (!DEPLOYMENTS_API_AVAILABLE) {
+    return (
+      <DashboardLayout pageTitle="Deployments" pageSubtitle="Feature not available yet">
+        <div className="space-y-6 animate-fade-in">
+          <div className="flex items-center justify-end">
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/dashboard">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to Dashboard
+              </Link>
+            </Button>
+          </div>
+          <Card className="shadow-soft">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <GitBranch className="h-5 w-5 text-primary" />
+                Deployments coming soon
+              </CardTitle>
+              <CardDescription>The deployments API isn’t enabled yet. This page will light up once it’s available.</CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   if (loading) {
     return (
@@ -533,7 +561,7 @@ export default function DeploymentDetails() {
             </CardHeader>
             <CardContent className="space-y-2">
               <Button asChild variant={isDark ? "secondary" : "outline"} className="w-full justify-start gap-2">
-                <Link to="/applications">
+                <Link to="/dashboard">
                   <Activity className="h-4 w-4" />
                   View Application
                 </Link>

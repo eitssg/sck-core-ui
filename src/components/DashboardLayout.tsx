@@ -24,7 +24,7 @@ import { useSelector, useDispatch } from 'react-redux'
 import { RootState, useAppDispatch } from '@/store'
 import { selectSelectedClient, selectClients, selectSelectedClientName, switchToClient, selectClientContext, selectSwitchingToClient } from '@/store/slices/clientsSlice'
 import { refreshAccessToken, selectTokens } from '@/store/slices/authSlice'
-import { selectUser as selectProfileUser, selectUserProfiles, selectCurrentProfile, switchToProfile } from '@/store/slices/profileSlice'
+import { selectUser as selectProfileUser, selectUserProfiles, selectCurrentProfile, switchToProfile, patchAuthProfile, updateProfileGlobally } from '@/store/slices/profileSlice'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import UserMenu from '@/components/UserMenu'
@@ -175,7 +175,6 @@ export default function DashboardLayout({ children, activeItem, navMode = 'full'
     { name: 'Dashboard', href: '/dashboard', icon: Home },
     { name: 'Zones', href: '/zones', icon: GitBranch },
     { name: 'Portfolios', href: '/portfolios', icon: Briefcase },
-    { name: 'Applications', href: '/applications', icon: FolderOpen },
     { name: 'Deployments', href: '/deployments', icon: GitBranch },
     { name: 'Documentation', href: '/docs', icon: List },
   ]
@@ -237,6 +236,15 @@ export default function DashboardLayout({ children, activeItem, navMode = 'full'
 
   const toggleMobile = useCallback(() => setMobileOpen(o => !o), [])
 
+  // Sync from profile preference on user/profile change
+  const sidebarPref = (profileUser?.preferences as any)?.ui?.sidebarCollapsed as boolean | undefined
+  useEffect(() => {
+    if (typeof sidebarPref === 'boolean') {
+      setSidebarCollapsed(sidebarPref)
+      try { localStorage.setItem('sck.sidebarCollapsed', sidebarPref ? '1' : '0') } catch { /* ignore */ }
+    }
+  }, [profileUser?.profile_name, sidebarPref])
+
   return (
     <SidebarProvider
       open={!sidebarCollapsed}
@@ -248,6 +256,14 @@ export default function DashboardLayout({ children, activeItem, navMode = 'full'
         } catch {
           // ignore persistence errors
         }
+        // Also persist to profile preferences
+        const prefs = ((profileUser?.preferences as any) || {}) as Record<string, any>
+        const nextPrefs = { ...prefs, ui: { ...(prefs.ui || {}), sidebarCollapsed: collapsed } }
+        const profileName = (profileUser?.profile_name as string) || 'default'
+        // optimistic local Redux update
+        ;(dispatch as any)(updateProfileGlobally({ profile_name: profileName, preferences: nextPrefs }))
+        // async server patch; swallow errors
+        ;(dispatch as any)(patchAuthProfile({ profileName, profileData: { preferences: nextPrefs } }))
       }}
     >
       <div className="min-h-screen w-full flex flex-col">
@@ -280,6 +296,12 @@ export default function DashboardLayout({ children, activeItem, navMode = 'full'
                       } catch {
                         // ignore persistence errors
                       }
+                      // Persist to profile preferences too
+                      const prefs = ((profileUser?.preferences as any) || {}) as Record<string, any>
+                      const nextPrefs = { ...prefs, ui: { ...(prefs.ui || {}), sidebarCollapsed: next } }
+                      const profileName = (profileUser?.profile_name as string) || 'default'
+                      ;(dispatch as any)(updateProfileGlobally({ profile_name: profileName, preferences: nextPrefs }))
+                      ;(dispatch as any)(patchAuthProfile({ profileName, profileData: { preferences: nextPrefs } }))
                       return next
                     })}
                     aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}

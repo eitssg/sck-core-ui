@@ -40,8 +40,9 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const Portfolios = lazy(() => import("./pages/Portfolios"));
 const CreatePortfolio = lazy(() => import("./pages/CreatePortfolio"));
 const PortfolioDetails = lazy(() => import("./pages/PortfolioDetails"));
-const Applications = lazy(() => import("./pages/Applications"));
-const CreateApplication = lazy(() => import("./pages/CreateApplication"));
+// Applications routes removed (now listed under PortfolioDetails)
+// const Applications = lazy(() => import("./pages/Applications"));
+// const CreateApplication = lazy(() => import("./pages/CreateApplication"));
 const ApplicationDetails = lazy(() => import("./pages/ApplicationDetails"));
 const Clients = lazy(() => import("./pages/Clients"));
 const ClientDetails = lazy(() => import("./pages/ClientDetails"));
@@ -145,10 +146,8 @@ const AppRoutes = () => (
     {createProtectedRoute('/portfolios/create', CreatePortfolio, 'form')}
   {createProtectedRoute('/portfolios/:portfolio', PortfolioDetails, 'dashboard')}
 
-    {/* Application routes */}
-    {createProtectedRoute('/applications', Applications, 'list')}
-    {createProtectedRoute('/applications/create', CreateApplication, 'form')}
-    {createProtectedRoute('/applications/:id', ApplicationDetails, 'dashboard')}
+  {/* Application routes removed; detail remains accessible via portfolio/application links */}
+  {createProtectedRoute('/applications/:id', ApplicationDetails, 'dashboard')}
 
     {/* Client routes */}
     {createProtectedRoute('/clients', Clients, 'list')}

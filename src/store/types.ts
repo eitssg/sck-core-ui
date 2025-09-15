@@ -127,6 +127,12 @@ export interface ClientList {
   pageSize: number;
 }
 
+interface TagPolicy {
+  tag_name: string;
+  required: boolean;
+  description: string;
+}
+
 // Client interface matching Python ClientFact model
 export interface Client {
   // Primary identifier (matches Python 'client' field)
@@ -174,6 +180,10 @@ export interface Client {
 
   // Resource naming
   scope?: string;
+
+  // Tagging Poicy
+  tags?: Record<string, string>;
+  tags_policy?: [TagPolicy];
 
   // Audit fields (inherited from DatabaseRecord)
   created_at?: string;

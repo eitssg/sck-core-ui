@@ -1,150 +1,98 @@
-import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, type PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
+import type { RootState } from '@/store';
+import type { Application } from '@/store/types';
+import { buildApiUrl, API_CONFIG, getAuthHeaders } from '@/lib/api-config';
+import { apiFetch } from '@/lib/api-fetch';
+import { parseApiEnvelope } from '@/store/api/envelope';
 
-export interface Application {
-  id: string;
-  clientPortfolio: string; // Key string
-  appRegex: string; // UnicodeAttribute - App Selector regex
-  name: string; // UnicodeAttribute
-  environment: string; // UnicodeAttribute
-  account: string; // UnicodeAttribute
-  zone: string; // UnicodeAttribute - references Zone ID
-  imageAliases: Record<string, string>; // MapAttribute
-  repository: string; // UnicodeAttribute
-  region: string; // UnicodeAttribute
-  tags: Record<string, string>; // MapAttribute
-  enforceValidation: string; // UnicodeAttribute
-  metadata: Record<string, any>; // MapAttribute
-  
-  // Additional fields for UI
-  slug: string;
-  code: string;
-  description: string;
-  portfolioId: string;
-  status: 'running' | 'stopped' | 'error' | 'deploying';
-  version: string;
-  lastDeploy: string;
-}
+type Status = 'idle' | 'loading' | 'succeeded' | 'failed';
 
 interface ApplicationsState {
-  applications: Application[];
-  selectedApplicationId: string | null;
-  loading: boolean;
+  items: Application[];
+  status: Status;
   error: string | null;
+  lastFetched: number | null;
+  currentClient: string | null;
 }
 
 const initialState: ApplicationsState = {
-  applications: [
-    {
-      id: 'app-1',
-      clientPortfolio: 'client-1#portfolio-1',
-      appRegex: '^ecom-.*',
-      name: 'Frontend Web App',
-      environment: 'production',
-      account: 'prod-account',
-      zone: 'zone-1',
-      imageAliases: { 'web': 'nginx:latest', 'api': 'node:18' },
-      repository: 'https://github.com/acme/ecommerce-frontend',
-      region: 'us-east-1',
-      tags: { 'team': 'frontend', 'env': 'prod' },
-      enforceValidation: 'true',
-      metadata: { 'created': '2024-01-15', 'version': '1.2.3' },
-      slug: 'frontend-web-app',
-      code: 'FWA',
-      description: 'React-based e-commerce frontend application',
-      portfolioId: 'portfolio-1',
-      status: 'running',
-      version: '1.2.3',
-      lastDeploy: '2024-07-25T08:30:00Z',
-    },
-    {
-      id: 'app-2',
-      clientPortfolio: 'client-1#portfolio-1',
-      appRegex: '^api-.*',
-      name: 'Backend API Service',
-      environment: 'production',
-      account: 'prod-account',
-      zone: 'zone-1',
-      imageAliases: { 'api': 'node:18', 'db': 'postgres:14' },
-      repository: 'https://github.com/acme/ecommerce-api',
-      region: 'us-east-1',
-      tags: { 'team': 'backend', 'env': 'prod' },
-      enforceValidation: 'true',
-      metadata: { 'created': '2024-01-20', 'version': '2.1.0' },
-      slug: 'backend-api-service',
-      code: 'BAS',
-      description: 'Node.js API service handling e-commerce operations',
-      portfolioId: 'portfolio-1',
-      status: 'running',
-      version: '2.1.0',
-      lastDeploy: '2024-07-24T14:20:00Z',
-    },
-    {
-      id: 'app-3',
-      clientPortfolio: 'client-1#portfolio-2',
-      appRegex: '^analytics-.*',
-      name: 'Analytics Dashboard',
-      environment: 'production',
-      account: 'analytics-account',
-      zone: 'zone-2',
-      imageAliases: { 'dashboard': 'react:latest', 'worker': 'python:3.11' },
-      repository: 'https://github.com/acme/analytics-dashboard',
-      region: 'us-east-1',
-      tags: { 'team': 'analytics', 'env': 'prod' },
-      enforceValidation: 'true',
-      metadata: { 'created': '2024-02-01', 'version': '1.0.5' },
-      slug: 'analytics-dashboard',
-      code: 'AND',
-      description: 'Real-time analytics and reporting dashboard',
-      portfolioId: 'portfolio-2',
-      status: 'running',
-      version: '1.0.5',
-      lastDeploy: '2024-07-23T11:45:00Z',
-    },
-  ],
-  selectedApplicationId: null,
-  loading: false,
+  items: [],
+  status: 'idle',
   error: null,
+  lastFetched: null,
+  currentClient: null,
 };
+
+// Fetch applications list, optionally filtered by portfolio
+export const fetchApplications = createAsyncThunk<
+  { items: Application[]; client: string; portfolio: string },
+  { client: string; portfolio: string; limit?: number; cursor?: string | null },
+  { state: RootState }
+>(
+  'applications/fetchList',
+  async ({ client, portfolio, limit = 100, cursor }, { rejectWithValue }) => {
+    try {
+      const base = `/api/v1/registry/clients/${encodeURIComponent(client)}/portfolios/${encodeURIComponent(portfolio)}/apps`;
+      const url = new URL(buildApiUrl(base));
+      if (limit) url.searchParams.set('limit', String(limit));
+      if (cursor) url.searchParams.set('cursor', cursor);
+
+      const res = await apiFetch(url.toString(), { cookieFirst: true, contextLabel: 'Apps' });
+      if (!res.ok) {
+        const msg = `Failed to fetch applications (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+      const { data } = await parseApiEnvelope<Application[] | any>(res);
+      const rows: Application[] = Array.isArray(data) ? data as Application[] : [];
+      return { items: rows, client, portfolio };
+    } catch (e: any) {
+      return rejectWithValue(e?.message || 'Unknown error');
+    }
+  }
+);
 
 const applicationsSlice = createSlice({
   name: 'applications',
   initialState,
   reducers: {
-    setApplications: (state, action: PayloadAction<Application[]>) => {
-      state.applications = action.payload;
+    clear(state) {
+      state.items = [];
+      state.status = 'idle';
+      state.error = null;
+      state.lastFetched = null;
     },
-    addApplication: (state, action: PayloadAction<Application>) => {
-      state.applications.push(action.payload);
-    },
-    updateApplication: (state, action: PayloadAction<Application>) => {
-      const index = state.applications.findIndex(app => app.id === action.payload.id);
-      if (index !== -1) {
-        state.applications[index] = action.payload;
-      }
-    },
-    removeApplication: (state, action: PayloadAction<string>) => {
-      state.applications = state.applications.filter(app => app.id !== action.payload);
-    },
-    setSelectedApplication: (state, action: PayloadAction<string | null>) => {
-      state.selectedApplicationId = action.payload;
-    },
-    setLoading: (state, action: PayloadAction<boolean>) => {
-      state.loading = action.payload;
-    },
-    setError: (state, action: PayloadAction<string | null>) => {
-      state.error = action.payload;
+    setItems(state, action: PayloadAction<Application[]>) {
+      state.items = action.payload || [];
+      state.status = 'succeeded';
+      state.error = null;
+      state.lastFetched = Date.now();
     },
   },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchApplications.pending, (state, action) => {
+        state.status = 'loading';
+        state.error = null;
+        state.currentClient = action.meta.arg.client;
+      })
+      .addCase(fetchApplications.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        state.items = action.payload.items;
+        state.error = null;
+        state.lastFetched = Date.now();
+        state.currentClient = action.payload.client;
+      })
+      .addCase(fetchApplications.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = (action.payload as string) || action.error.message || 'Failed to fetch applications';
+      });
+  }
 });
 
-export const {
-  setApplications,
-  addApplication,
-  updateApplication,
-  removeApplication,
-  setSelectedApplication,
-  setLoading,
-  setError,
-} = applicationsSlice.actions;
+export const { clear, setItems } = applicationsSlice.actions;
+
+// Selectors
+export const selectApplications = (state: RootState) => (state as any).applications?.items as Application[];
+export const selectApplicationsStatus = (state: RootState) => (state as any).applications?.status as Status;
 
 export default applicationsSlice.reducer;

@@ -62,6 +62,7 @@ import {
   updateSystemTheme
 } from '@/store/slices/themeSlice';
 import type { Zone } from '@/store/types';
+import { fetchApplications, selectApplications as selectApps, selectApplicationsStatus } from '@/store/slices/applicationsSlice';
 
 export const useReduxData = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -94,7 +95,10 @@ export const useReduxData = () => {
     hasMore: useSelector(selectHasMorePortfolios),
   };
 
-  const applications = useSelector((state: RootState) => state.applications || { items: [], loading: false, error: null });
+  const applications = {
+    items: useSelector(selectApps),
+    status: useSelector(selectApplicationsStatus),
+  } as any;
   const deployments = useSelector((state: RootState) => state.deployments || { items: [], loading: false, error: null });
   // zones slice shape: { zones: Zone[], ... } -> expose the list
   const zones = useSelector((state: RootState) => (state.zones as any)?.zones ?? []) as Zone[];
@@ -147,6 +151,12 @@ export const useReduxData = () => {
       updateApplicationCount: (portfolioId: string, count: number) => 
         dispatch(updatePortfolioApplicationCount({ portfolioId, count })),
       clear: () => dispatch(clearPortfolios())
+    },
+    applications: {
+      fetch: (client: string, opts: { portfolio: string; limit?: number; cursor?: string | null }) =>
+        dispatch(fetchApplications({ client, portfolio: opts.portfolio, limit: opts?.limit, cursor: opts?.cursor } as any)),
+      clear: () => dispatch({ type: 'applications/clear' }),
+      setItems: (items: any[]) => dispatch({ type: 'applications/setItems', payload: items }),
     },
     theme: {
       setTheme: (themeName: string) => dispatch(setTheme(themeName)),

@@ -1,7 +1,5 @@
 import { createSlice, type PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
-import { buildApiUrl } from '@/lib/api-config';
-import { apiFetch } from '@/lib/api-fetch';
-import { parseApiEnvelope } from '@/store/api/envelope';
+// NOTE: Builds endpoint is not available; thunk returns empty list to avoid 404 noise.
 import type { AppDeploymentBuild } from '@/store/types';
 
 function toArray<T>(v: T | T[] | null | undefined): T[] {
@@ -66,31 +64,9 @@ export const fetchBuilds = createAsyncThunk<
   { state: any }
 >(
   'deployments/fetchBuilds',
-  async (args, { getState }) => {
-    const limit = args?.limit ?? 10;
-    const url = new URL(buildApiUrl('/api/v1/item/builds'));
-    url.searchParams.set('limit', String(limit));
-    // optional: order desc by created_at if backend supports; otherwise comment out
-    // url.searchParams.set('order', 'desc');
-
-    const res = await apiFetch(url.toString(), {
-      method: 'GET',
-      contextLabel: 'Deployments',
-    });
-    if (!res.ok) {
-      let msg = `Failed to load builds (HTTP ${res.status})`;
-      try {
-        const j = await res.json();
-        msg = j?.message || msg;
-      } catch {
-        // ignore
-      }
-      throw new Error(msg);
-    }
-  // All /api endpoints return an envelope: { data, metadata: { cursor } }
-  const { data } = await parseApiEnvelope<AppDeploymentBuild[] | AppDeploymentBuild>(res);
-  const builds = Array.isArray(data) ? data : toArray(data);
-    return { builds, when: Date.now() };
+  async () => {
+    // No backend yet; return empty set to avoid 404 log noise
+    return { builds: [], when: Date.now() };
   },
   {
     condition: (args, { getState }) => {

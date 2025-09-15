@@ -198,7 +198,7 @@ export default function CreateApplication() {
     };
 
     try {
-  const url = `${buildApiUrl(API_CONFIG.ENDPOINTS.API.APPLICATIONS)}`;
+      const url = buildApiUrl(`/api/v1/registry/clients/${encodeURIComponent(currentClient)}/portfolios/${encodeURIComponent(data.portfolio)}/apps`);
       const res = await fetch(url, {
         method: "POST",
         headers: getAuthHeaders(),
@@ -215,11 +215,11 @@ export default function CreateApplication() {
         throw new Error(msg);
       }
 
-      toast({
+  toast({
         title: "Application created",
         description: `"${data.name}" was added to ${data.portfolio}.`,
       });
-      navigate("/applications");
+  navigate(`/portfolios/${encodeURIComponent(data.portfolio)}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Create failed";
       toast({ title: "Create failed", description: msg, variant: "destructive" });
@@ -331,9 +331,9 @@ export default function CreateApplication() {
         {/* Header actions (right-aligned) */}
         <div className="flex items-center justify-end">
           <Button variant="ghost" size="sm" asChild>
-            <Link to="/applications">
+            <Link to="/portfolios">
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Applications
+              Back to Portfolios
             </Link>
           </Button>
         </div>
@@ -636,7 +636,7 @@ export default function CreateApplication() {
           {/* Footer */}
           <div className="flex items-center justify-between">
             <Button variant="ghost" size="sm" asChild>
-              <Link to="/applications">
+              <Link to="/portfolios">
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Cancel
               </Link>
