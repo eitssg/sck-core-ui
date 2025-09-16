@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { useTheme } from "@/hooks/useTheme";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { sendAuthEvent } from "@/lib/cross-tab";
 import { buildApiUrl, buildOAuthAuthorizeUrl, API_CONFIG } from "@/lib/api-config";
 import { apiFetch } from "@/lib/api-fetch";
@@ -53,7 +53,7 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const { auth, dispatch } = useReduxData();
-  const { isDark } = useTheme();
+  // Theme is applied globally via ThemeProvider; no per-page overrides needed
 
   const isAuthenticated = useSelector((s: RootState) => s.auth?.isAuthenticated) ?? false;
 
@@ -219,36 +219,35 @@ export default function Login() {
 
   const banner = (() => {
     if (!reason) return null;
-    const base = 'flex items-start gap-2 rounded-md px-3 py-2 text-sm shadow-sm border';
-    switch (reason) {
-      case 'idle_timeout':
-        return (
-          <div className={`${base} border-amber-300 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-100`}> 
-            <Clock className="h-4 w-4 mt-0.5" />
-            <span><strong>NOTICE:</strong> You have been auto-logged out due to inactivity.</span>
-          </div>
-        );
-      case 'session_expired':
-        return (
-          <div className={`${base} border-red-300 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-100`}> 
-            <ShieldAlert className="h-4 w-4 mt-0.5" />
-            <span><strong>NOTICE:</strong> Your session expired. Please sign in again.</span>
-          </div>
-        );
-      case 'manual':
-        return (
-          <div className={`${base} border-blue-300 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-100`}> 
-            <LogOut className="h-4 w-4 mt-0.5" />
-            <span><strong>NOTICE:</strong> You have been signed out.</span>
-          </div>
-        );
-      default:
-        return null;
+    if (reason === 'session_expired') {
+      return (
+        <Alert variant="destructive">
+          <ShieldAlert className="h-4 w-4" />
+          <AlertDescription>Your session expired. Please sign in again.</AlertDescription>
+        </Alert>
+      );
     }
+    if (reason === 'idle_timeout') {
+      return (
+        <Alert>
+          <Clock className="h-4 w-4" />
+          <AlertDescription>You have been auto-logged out due to inactivity.</AlertDescription>
+        </Alert>
+      );
+    }
+    if (reason === 'manual') {
+      return (
+        <Alert>
+          <LogOut className="h-4 w-4" />
+          <AlertDescription>You have been signed out.</AlertDescription>
+        </Alert>
+      );
+    }
+    return null;
   })();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dashboard-bg to-primary/5 flex items-center justify-center p-4">
+  <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-lg space-y-4">
         {banner}
         {/* Login Card */}
@@ -265,16 +264,10 @@ export default function Login() {
 
           <CardContent className="space-y-6">
             {errorMsg && (
-              <div
-                ref={errorRef}
-                role="alert"
-                aria-live="assertive"
-                tabIndex={-1}
-                className="flex items-start gap-3 p-3.5 text-sm rounded-md border bg-destructive/20 border-destructive/40 text-destructive-foreground ring-1 ring-destructive/30 shadow-sm"
-              >
-                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                <span className="leading-5">{errorMsg}</span>
-              </div>
+              <Alert ref={errorRef as any} variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{errorMsg}</AlertDescription>
+              </Alert>
             )}
 
             {!needMfa && (

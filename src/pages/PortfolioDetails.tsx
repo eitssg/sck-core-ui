@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import EnvBadge from "@/components/ui/env-badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -29,6 +30,7 @@ import type { Portfolio, Application } from "@/store/types";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useApiHeaders } from "@/hooks/useApiHeaders";
 import SecureImg from "@/components/SecureImg";
+import { appDetailsPath, appCreatePath } from "@/lib/routes";
 
 export default function PortfolioDetails() {
   const navigate = useNavigate();
@@ -94,6 +96,21 @@ export default function PortfolioDetails() {
     if (!portfolio) return [];
     return appsList.filter((a) => a.portfolio === portfolio.portfolio);
   }, [appsList, portfolio]);
+
+  // Applications env filter: [PRD][NPRD][DEV][ALL]
+  type EnvFilter = "all" | "prd" | "nprd" | "dev";
+  const [appEnvFilter, setAppEnvFilter] = useState<EnvFilter>("all");
+  const normalizeEnv = useCallback((raw?: string | null): "prd" | "nprd" | "dev" | "" => {
+    const s = (raw || "").trim().toLowerCase();
+    if (["production", "prod", "prd"].includes(s)) return "prd";
+    if (["nonprod", "non-production", "non production", "nprod", "nprd"].includes(s)) return "nprd";
+    if (["dev", "development"].includes(s)) return "dev";
+    return "";
+  }, []);
+  const portfolioApplicationsFiltered = useMemo<Application[]>(() => {
+    if (appEnvFilter === "all") return portfolioApplications;
+    return portfolioApplications.filter((a) => normalizeEnv((a as any).environment) === appEnvFilter);
+  }, [portfolioApplications, appEnvFilter, normalizeEnv]);
 
   // Edit state
   const [isEditing, setIsEditing] = useState(false);
@@ -1126,19 +1143,45 @@ export default function PortfolioDetails() {
               {/* Applications (Overview only) */}
               <Card className="shadow-soft mt-6">
                 <CardHeader>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
                     <CardTitle className="sck-section-title flex items-center gap-2">
                       <Briefcase className="h-5 w-5 text-primary" />
-                      Applications ({portfolioApplications.length})
+                      Applications ({portfolioApplicationsFiltered.length})
                     </CardTitle>
-                    {/* Application creation temporarily disabled
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to={`/applications/create`}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        Add Application
-                      </Link>
-                    </Button>
-                    */}
+                    <div className="flex items-center gap-2 ml-auto">
+                      <div className="inline-flex rounded-md shadow-sm overflow-hidden">
+                      {([
+                        { label: "prd", value: "prd" },
+                        { label: "nprd", value: "nprd" },
+                        { label: "dev", value: "dev" },
+                        { label: "all", value: "all" },
+                      ] as const).map((b, idx, arr) => (
+                        <Button
+                          key={b.value}
+                          variant={appEnvFilter === b.value ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setAppEnvFilter(b.value)}
+                          aria-pressed={appEnvFilter === b.value}
+                          className={
+                            idx === 0
+                              ? "rounded-r-none"
+                              : idx === arr.length - 1
+                              ? "rounded-l-none"
+                              : "rounded-none border-l-0"
+                          }
+                        >
+                          {b.label}
+                        </Button>
+                      ))}
+                      </div>
+                      {portfolio && (
+                        <Button asChild size="sm" variant="ghost" className="gap-1 text-muted-foreground hover:text-foreground">
+                          <Link to={appCreatePath({ portfolio: portfolio.portfolio })}>
+                            <Plus className="h-4 w-4" /> Add
+                          </Link>
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   <CardDescription className="sck-section-subtitle">Applications that belong to this portfolio</CardDescription>
                 </CardHeader>
@@ -1147,26 +1190,27 @@ export default function PortfolioDetails() {
                     className={`space-y-3 overscroll-contain ${dragActive ? 'touch-none select-none' : ''}`}
                     onTouchMove={(e) => { if (dragActive) e.preventDefault(); }}
                   >
-                    {portfolioApplications.map((app) => {
-                      const env = app.environment || "unknown";
+                    {portfolioApplicationsFiltered.map((app) => {
+                      const envNorm = normalizeEnv((app as any).environment);
+                      const envLabel = envNorm || "unknown";
                       const sub = `${app.region} • ${app.zone}`;
                       return (
                         <div
-                          key={`${app.portfolio}:${app.app_regex}:${app.region}:${app.zone}`}
+                          key={`${app.portfolio}:${(app as any).app || (app as any).app_regex}:${app.region}:${app.zone}`}
                           className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
-                          onClick={() => navigate(`/applications/${encodeURIComponent((app as any).app_regex || (app as any).appRegex || '')}?portfolio=${encodeURIComponent(app.portfolio)}`)}
+                          onClick={() => navigate(appDetailsPath({ portfolio: app.portfolio, app: (app as any).app }))}
                         >
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
                               <Briefcase className="h-5 w-5 text-primary" />
                             </div>
                             <div>
-                              <h4 className="font-medium text-foreground">{app.name || app.app_regex}</h4>
+                              <h4 className="font-medium text-foreground">{app.name || (app as any).app}</h4>
                               <p className="text-sm text-muted-foreground">{sub}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-3">
-                            <Badge variant={env === "production" ? "destructive" : "secondary"}>{env}</Badge>
+                            <EnvBadge env={envNorm} />
                             <ExternalLink className="h-4 w-4 text-muted-foreground" />
                           </div>
                         </div>
@@ -1174,7 +1218,7 @@ export default function PortfolioDetails() {
                     })}
                   </div>
 
-                  {portfolioApplications.length === 0 && (
+                  {portfolioApplicationsFiltered.length === 0 && (
                     <div className="text-center py-8">
                       <Briefcase className="mx-auto h-12 w-12 text-muted-foreground" />
                       <h3 className="mt-2 text-sm font-medium text-foreground">No applications</h3>
@@ -1664,48 +1708,7 @@ export default function PortfolioDetails() {
 
         {/* Stack previously-sidebar cards below main content to make them full width */}
         {activeTab === "overview" && (
-          <div className="space-y-6 lg:col-span-2">
-            <Card className="shadow-soft">
-              <CardHeader>
-                <CardTitle>Quick Actions</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button variant="outline" className="w-full justify-start" asChild>
-                  <a
-                    href={portfolio.domain ? `https://${portfolio.domain}` : "#"}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    Visit Domain
-                  </a>
-                </Button>
-                <Button variant="outline" className="w-full justify-start">
-                  <Users className="mr-2 h-4 w-4" />
-                  Manage Members
-                </Button>
-                <Button variant="outline" className="w-full justify-start">
-                  <Activity className="mr-2 h-4 w-4" />
-                  View Analytics
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-soft">
-              <CardHeader>
-                <CardTitle>Recent Activity</CardTitle>
-                <CardDescription>Last changes and updates</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="text-center py-4">
-                    <Clock className="mx-auto h-8 w-8 text-muted-foreground" />
-                    <p className="mt-2 text-sm text-muted-foreground">No recent activity</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <div className="space-y-6 lg:col-span-2" />
         )}
       </div>
 

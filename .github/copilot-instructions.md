@@ -84,5 +84,22 @@
 - **Output**: Provide code diffs, explanations, and contradiction warnings.
 - **Strictness**: Enforce rules exactly as documented; flag deviations with specific file references.
 
+## Redux Store: Data Access Policy (MANDATORY)
+- All data operations to `/api/v1/**` MUST be implemented in Redux slices as async thunks. Do not fetch in React components.
+  - Actions covered: `GET` (list/detail), `POST` (create), `PUT` (update), `PATCH`, `DELETE`.
+  - Components should only dispatch thunks and select state using exported selectors.
+- Caching and invalidation:
+  - Maintain `status`, `error`, and `lastFetched` in each slice. Prefer updating in-place (merge by key) on detail fetches.
+  - Provide targeted selectors (e.g., `selectApplicationByKey(state, portfolio, app)`).
+  - After create/update/delete, either merge the returned item into state or refetch the affected list (bounded by `limit`) via a thunk.
+- API envelope and headers:
+  - Use `apiFetch` with `cookieFirst: true` and parse responses with `parseApiEnvelope`.
+  - Include `Authorization` via `useApiHeaders().getAuthHeaders()` or equivalent helper used by `apiFetch`.
+- Route params vs. model keys:
+  - Use canonical keys in paths (e.g., `apps/{app}` for app slug). Non-key fields (e.g., `app_regex`) belong only in request bodies, not URLs.
+- Testing and type safety:
+  - Export thunk types and ensure all slices pass `yarn type-check`.
+  - Prefer minimal, composable thunks and small helpers for URL building.
+
 ## Precedence Note
 - When used within the monorepo, this file is the canonical UI rule set. If any root instruction appears to conflict, prefer this file and raise a contradiction notice.

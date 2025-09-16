@@ -1,4 +1,4 @@
-import { string } from "zod";
+// zod not used in this file
 
 // ==========================
 // OAuth 2.0 / OIDC Types
@@ -337,7 +337,7 @@ export interface Portfolio {
   code?: string;
   status?: string;
   clientId?: string;
-  applicationCount?: number;
+  app_count?: number;
   lastUpdated?: string;
   homePageUrl?: string;
 }
@@ -352,8 +352,9 @@ export interface ApplicationList {
 // Replace the old Application interface with the model-accurate one
 export interface Application {
   // Keys
-  portfolio: string;       // Hash key / portfoluio slug this app linked to
-  app_regex: string;       // Range key regular expression matching one or more deployment unit (app)
+  portfolio: string;       // Hash key / portfolio slug this app is linked to
+  app: string;             // Range key slug (unique within portfolio)
+  app_regex: string;       // Regex used to match one or more deployment unit names
 
   // App configuration
   name?: string;           // Descriptive name for the App or Apps matching the app_regex
@@ -362,7 +363,7 @@ export interface Application {
   zone: string;            // Zone where the app deployment unit will be deployed (aws account, region(s) (more than one), network, etc)
   region: string;          // Specify which region in the zone to deploy this to.  MUST match a region name defined in the zone
   repository?: string;     // The artefact repository where to find the "install.exe" for this deployment
-  enforce_validation?: string;  // if any template fails compilation, fail the deployment
+  enforce_validation?: string;  // if any template fails compilation, fail the deployment ("true"/"false")
 
   // Complex attributes
   image_aliases?: Record<string, string>;  // If you know what type of EC2 you want, specify the image name here (in the zone)

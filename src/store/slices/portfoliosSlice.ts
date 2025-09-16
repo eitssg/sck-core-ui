@@ -111,7 +111,7 @@ export interface Portfolio {
   status?: string; // Derived status (active/inactive based on enabled state)
   
   // Calculated/derived fields for UI
-  applicationCount?: number; // Number of deployments under this portfolio
+  app_count?: number; // Number of deployments under this portfolio (from backend)
   lastUpdated?: string; // Will be set to updated_at for display
   homePageUrl?: string; // Will be derived from domain
 }
@@ -161,7 +161,7 @@ const initialState: PortfoliosState = {
 };
 
 // Helper function to transform portfolio data for UI compatibility
-const transformPortfolioForUI = (portfolio: Portfolio, clientId?: string): Portfolio => {
+const transformPortfolioForUI = (portfolio: Portfolio & { app_count?: number }, clientId?: string): Portfolio => {
   const displayName = portfolio.name || portfolio.project?.name || portfolio.portfolio;
   const description = portfolio.description || portfolio.project?.description || portfolio.bizapp?.description;
   const code = portfolio.code || portfolio.project?.code || portfolio.bizapp?.code;
@@ -174,8 +174,11 @@ const transformPortfolioForUI = (portfolio: Portfolio, clientId?: string): Portf
     clientId: clientId || portfolio.clientId,
     status: portfolio.lifecycle_status || (portfolio.contacts?.some(c => c.enabled !== false) ? 'active' : 'inactive'),
     lastUpdated: portfolio.updated_at,
-    homePageUrl: portfolio.domain ? `https://${portfolio.domain}` : undefined,
-    applicationCount: 0,
+  homePageUrl: portfolio.domain ? `https://${portfolio.domain}` : undefined,
+  // app_count is the canonical field; accept legacy counters if present
+  app_count: typeof (portfolio as any).app_count === 'number'
+      ? (portfolio as any).app_count
+      : (typeof (portfolio as any).counter === 'number' ? (portfolio as any).counter : undefined),
   };
 };
 
@@ -431,11 +434,11 @@ const portfoliosSlice = createSlice({
         state.items.push(portfolio);
       }
     },
-    updatePortfolioApplicationCount(state, action: PayloadAction<{ portfolioId: string; count: number }>) {
+    updatePortfolioAppCount(state, action: PayloadAction<{ portfolioId: string; count: number }>) {
       // Helper to update application count when deployment data is loaded
       const portfolio = state.items.find(p => p.portfolio === action.payload.portfolioId);
       if (portfolio) {
-        portfolio.applicationCount = action.payload.count;
+        (portfolio as any).app_count = action.payload.count;
       }
     },
   },
@@ -485,8 +488,14 @@ const portfoliosSlice = createSlice({
           const technical_owner = (summary as any).technical_owner;
           const created_at = (summary as any).created_at;
           const updated_at = (summary as any).updated_at;
+          // Merge new and legacy fields for application counts present in summaries
+          const app_count = (summary as any).app_count
+            ?? (summary as any).application_count
+            ?? (summary as any).applications_count
+            ?? (summary as any).apps_count
+            ?? (summary as any).counter;
 
-          const base: Portfolio = {
+          const base: Portfolio & { app_count?: number } = {
             portfolio: slug,
             domain,
             icon_url,
@@ -498,6 +507,7 @@ const portfoliosSlice = createSlice({
             technical_owner,
             created_at,
             updated_at,
+            app_count,
           } as Portfolio;
 
           // Map fields from summary into UI model
@@ -513,6 +523,15 @@ const portfoliosSlice = createSlice({
 
           return transformPortfolioForUI(base, client);
         });
+        // Preserve existing app_count when API doesn't provide it in summaries
+        const prevMap = new Map(state.items.map(p => [p.portfolio, p] as const));
+        for (let i = 0; i < portfolios.length; i++) {
+          const p = portfolios[i];
+          const prev = prevMap.get(p.portfolio);
+          if ((p as any).app_count == null && typeof (prev as any)?.app_count === 'number') {
+            (portfolios[i] as any).app_count = (prev as any).app_count;
+          }
+        }
         
         // Either replace or append based on append flag
         if (append) {
@@ -543,7 +562,13 @@ const portfoliosSlice = createSlice({
         // Update or add the portfolio in the list
         const existingIndex = state.items.findIndex(p => p.portfolio === action.payload.portfolio.portfolio);
         if (existingIndex >= 0) {
-          state.items[existingIndex] = action.payload.portfolio;
+          // Preserve app_count if incoming payload doesn't include it
+          const incoming = action.payload.portfolio as any;
+          const prev = state.items[existingIndex] as any;
+          if (incoming.app_count == null && typeof prev?.app_count === 'number') {
+            incoming.app_count = prev.app_count;
+          }
+          state.items[existingIndex] = incoming;
         } else {
           state.items.push(action.payload.portfolio);
         }
@@ -567,7 +592,12 @@ const portfoliosSlice = createSlice({
         // Update the portfolio in the list
         const index = state.items.findIndex(p => p.portfolio === action.payload.portfolio.portfolio);
         if (index >= 0) {
-          state.items[index] = action.payload.portfolio;
+          const incoming = action.payload.portfolio as any;
+          const prev = state.items[index] as any;
+          if (incoming.app_count == null && typeof prev?.app_count === 'number') {
+            incoming.app_count = prev.app_count;
+          }
+          state.items[index] = incoming;
         }
         
         state.currentClient = action.payload.client;
@@ -589,7 +619,12 @@ const portfoliosSlice = createSlice({
         // Update the portfolio in the list
         const index = state.items.findIndex(p => p.portfolio === action.payload.portfolio.portfolio);
         if (index >= 0) {
-          state.items[index] = action.payload.portfolio;
+          const incoming = action.payload.portfolio as any;
+          const prev = state.items[index] as any;
+          if (incoming.app_count == null && typeof prev?.app_count === 'number') {
+            incoming.app_count = prev.app_count;
+          }
+          state.items[index] = incoming;
         }
         
         state.currentClient = action.payload.client;
@@ -631,7 +666,7 @@ export const {
   setSelectedPortfolio, 
   setCurrentClient, 
   syncFromAPI,
-  updatePortfolioApplicationCount 
+  updatePortfolioAppCount 
 } = portfoliosSlice.actions;
 
 // Selectors for accessing portfolio state

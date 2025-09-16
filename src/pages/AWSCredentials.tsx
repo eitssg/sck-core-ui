@@ -13,7 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LockKeyhole, KeyRound, Eye, EyeOff } from "lucide-react";
+import { LockKeyhole, KeyRound, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useLocation } from "react-router-dom";
 
@@ -75,42 +75,41 @@ export default function AWSCredentials() {
         return;
       }
 
-      // Refresh token for immediate API access
-      const refresh = await dispatch(refreshAccessToken('aws_credentials'));
-      if (refreshAccessToken.rejected.match(refresh)) {
-        toast({ title: 'Saved, but token refresh failed', description: String(refresh.payload || 'You may need to reload.'), variant: 'default' });
-      }
+      // Queue token refresh and heavy bootstrap AFTER navigation to avoid flicker/remounts here
+      setTimeout(async () => {
+        try {
+          const refresh = await dispatch(refreshAccessToken('aws_credentials'));
+          // Proceed regardless; downstream calls will be cookie-first where possible
 
-      // Kick off initial data load now that creds exist (ALWAYS reload AWS-dependent data)
-      try {
-        // 1) Refresh clients list (force)
-        await dispatch(fetchClients({ force: true }) as any);
+          // 1) Refresh clients list (force)
+          await dispatch(fetchClients({ force: true }) as any);
 
-        // 2) Decide target client: keep current selection, or persisted, or fallback to 'core'
-        let target = selectedClient;
-        if (!target) {
-          try { target = localStorage.getItem('sck.selectedClient') || null; } catch { /* ignore */ }
+          // 2) Decide target client: keep current selection, or persisted, or fallback to 'core'
+          let target = selectedClient;
+          if (!target) {
+            try { target = localStorage.getItem('sck.selectedClient') || null; } catch { /* ignore */ }
+          }
+          if (!target) target = 'core';
+
+          // 3) Clear dependent caches and set selection using shared helper
+          await dispatch(selectClientContext(target) as any);
+
+          // 4) Portfolios: hard clear + set current client + force fetch first page
+          await dispatch(clearPortfolios() as any);
+          await dispatch(setPortfoliosCurrentClient(target) as any);
+          await dispatch(fetchPortfolios({ client: target, force: true }) as any);
+
+          // 5) Zones: reset paging and fetch first page
+          await dispatch(resetZonesPaging() as any);
+          await dispatch(fetchZonesPage({ client: target, limit: 50, append: false }) as any);
+
+          // 6) Deployments builds: clear cache and refetch latest
+          await dispatch(clearDeployments() as any);
+          await dispatch(fetchBuilds({ limit: 10 }) as any);
+        } catch {
+          // Non-fatal; dashboard will lazy-load as needed
         }
-        if (!target) target = 'core';
-
-        // 3) Clear dependent caches and set selection using shared helper
-        await dispatch(selectClientContext(target) as any);
-
-        // 4) Portfolios: hard clear + set current client + force fetch first page
-        await dispatch(clearPortfolios() as any);
-        await dispatch(setPortfoliosCurrentClient(target) as any);
-        await dispatch(fetchPortfolios({ client: target, force: true }) as any);
-
-        // 5) Zones: reset paging and fetch first page
-        await dispatch(resetZonesPaging() as any);
-        await dispatch(fetchZonesPage({ client: target, limit: 50, append: false }) as any);
-
-        // 6) Deployments builds: clear cache and refetch latest
-        await dispatch(clearDeployments() as any);
-        await dispatch(fetchBuilds({ limit: 10 }) as any);
-      } catch {
-        // Non-fatal; dashboard will lazy-load as needed
-      }
+      }, 0);
 
       // Clear any previous status banner flags
       try { sessionStorage.removeItem('aws_cred_status'); } catch { /* ignore */ }
@@ -126,9 +125,18 @@ export default function AWSCredentials() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dashboard-bg to-primary/5 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      {/* Busy overlay to prevent flicker during theme/context updates */}
+      {busy && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-background/70 backdrop-blur-[2px]">
+          <div className="flex items-center gap-3 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span>Saving credentials…</span>
+          </div>
+        </div>
+      )}
       <div className="w-full max-w-lg">
-        <Card className="shadow-large animate-fade-in">
+        <Card className="shadow-large">
           <CardHeader className="text-center space-y-4">
             <div className="mx-auto w-16 h-16 bg-theme-gradient rounded-full flex items-center justify-center shadow-medium">
               <LockKeyhole className="h-8 w-8 text-primary-foreground" />
@@ -184,8 +192,17 @@ export default function AWSCredentials() {
               </div>
               <div className="flex items-center gap-2 pt-2">
                 <Button type="submit" disabled={busy} className="gap-2 w-full">
-                  <KeyRound className="h-4 w-4" />
-                  {busy ? 'Saving…' : 'Save Credentials'}
+                  {busy ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Saving…
+                    </>
+                  ) : (
+                    <>
+                      <KeyRound className="h-4 w-4" />
+                      Save Credentials
+                    </>
+                  )}
                 </Button>
                 <Button
                   type="button"

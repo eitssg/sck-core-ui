@@ -145,8 +145,11 @@ export default function Portfolios() {
     });
   }, [clientPortfolios, searchTerms, categoryFilter, statusFilter, labelFilter]);
 
-  // App count per portfolio
-  const getAppCount = (portfolio: string) => appsList.filter((a) => a.portfolio === portfolio).length;
+  // App count per portfolio: use backend-provided app_count; fallback to local list
+  const getAppCount = (p: Portfolio) => {
+    if (typeof (p as any).app_count === 'number') return (p as any).app_count as number;
+    return appsList.filter((a) => a.portfolio === p.portfolio).length;
+  };
 
   const addSearchTerm = () => {
     const v = newTerm.trim();
@@ -445,7 +448,7 @@ export default function Portfolios() {
                     const key = `${currentClient}/${p.portfolio}`;
                     const name = p.name || p.portfolio;
                     const desc = p.description || "";
-                    const appCount = getAppCount(p.portfolio);
+                    const appCount = getAppCount(p);
                     const updated = p.updated_at ? new Date(p.updated_at).toLocaleDateString() : "—";
                     return (
                       <Card key={key} className="hover:shadow-lg transition-shadow cursor-pointer">

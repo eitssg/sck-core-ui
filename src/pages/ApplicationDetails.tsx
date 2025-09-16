@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import type { RootState } from "@/store";
 
-import { Code, Info as InfoIcon, PlusCircle, Trash2, Pencil, ArrowLeft } from "lucide-react";
+import { Code, Info as InfoIcon, PlusCircle, Trash2, Pencil, ArrowLeft, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import EnvBadge from "@/components/ui/env-badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -14,12 +15,13 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 import { useReduxData } from "@/hooks/useReduxData";
+import { portfolioDetailsPath } from "@/lib/routes";
 import type { Application, Portfolio, Zone, Client } from "@/store/types";
-import DashboardLayout from "@/components/DashboardLayout";
+// DashboardLayout removed for single-card form layout
 import { useToast } from "@/hooks/use-toast";
 import { useAppDispatch } from "@/store";
 import { fetchZonesPage, fetchZoneByKey } from "@/store/slices/zonesSlice";
-import { buildApiUrl, getAuthHeaders } from "@/lib/api-config";
+import { fetchApplications, fetchApplicationDetail, updateApplication, deleteApplication, selectApplications, selectApplicationByKey, patchPortfolioAppCount } from "@/store/slices/applicationsSlice";
 
 function formatDateTime(v?: string) {
   if (!v) return "—";
@@ -33,11 +35,11 @@ export default function ApplicationDetails() {
   const { toast } = useToast();
 
   const { id: idFromPath, portfolio: portfolioParamFromPath } = useParams<{ id?: string; portfolio?: string }>();
-  const [searchParams] = useSearchParams();
-  const qpPortfolio = searchParams.get("portfolio") || portfolioParamFromPath || "";
-  const qpRegex = searchParams.get("app_regex") || searchParams.get("regex") || searchParams.get("app") || idFromPath || "";
+  // Use only path parameters (no query params): portfolio and app slug
+  const routePortfolio = portfolioParamFromPath || "";
+  const routeApp = idFromPath || "";
 
-  const { selectedClient, portfolios, applications, actions } = useReduxData();
+  const { selectedClient, portfolios, actions } = useReduxData();
   const currentClient = useMemo(() => (typeof selectedClient === "string" ? selectedClient : ""), [selectedClient]);
   const clientObj = useSelector((s: RootState) => (s as any)?.clients?.byId?.[currentClient]) as Client | undefined;
 
@@ -46,44 +48,49 @@ export default function ApplicationDetails() {
     return Array.isArray(p) ? (p as Portfolio[]) : [];
   }, [portfolios]);
 
-  const appsList = useMemo<Application[]>(() => {
-    const a: any = (applications as any)?.items ?? applications;
-    return Array.isArray(a) ? (a as Application[]) : [];
-  }, [applications]);
+  const appsList = useSelector(selectApplications);
 
   const zonesList = useSelector((s: RootState) => (s as any)?.zones?.zones ?? []) as Zone[];
 
-  // Stabilize actions to avoid refetch loops when actions object identity changes
-  const actionsRef = useRef(actions);
-  useEffect(() => { actionsRef.current = actions; }, [actions]);
+  // Fetch list for the selected portfolio from the store
   useEffect(() => {
-    if (!currentClient) return;
-    const scopePortfolio = qpPortfolio || null;
-    (actionsRef.current as any)?.applications?.fetch?.(currentClient, { portfolio: scopePortfolio, limit: 200 });
-  }, [currentClient, qpPortfolio]);
+    if (!currentClient || !routePortfolio) return;
+    dispatchTyped(fetchApplications({ client: currentClient, portfolio: routePortfolio, limit: 200 }) as any);
+  }, [currentClient, routePortfolio, dispatchTyped]);
 
   // const builds = useSelector((s: RootState) => (s as any)?.deployments?.builds ?? []) as AppDeploymentBuild[]; // not used
 
   const clientApps = useMemo<Application[]>(() => {
     const inClient = appsList;
-    if (!qpPortfolio) return inClient;
-    return inClient.filter((a) => a.portfolio === qpPortfolio);
-  }, [appsList, qpPortfolio]);
+    if (!routePortfolio) return inClient;
+    return inClient.filter((a) => a.portfolio === routePortfolio);
+  }, [appsList, routePortfolio]);
 
-  const application = useMemo<Application | null>(() => {
-    if (qpRegex) {
-      const decoded = qpRegex;
-      const exact = clientApps.find((a) => a.app_regex === decoded);
-      if (exact) return exact;
-      try {
-        const alt = decodeURIComponent(decoded);
-        const match = clientApps.find((a) => a.app_regex === alt);
-        if (match) return match;
-  } catch (e) { /* ignore */ }
+  // Prefer store-hydrated record over list entry
+  const applicationFromList = useMemo<Application | null>(() => {
+    if (routeApp) {
+      const exactBySlug = clientApps.find((a) => a.app === routeApp);
+      if (exactBySlug) return exactBySlug;
     }
     if (clientApps.length === 1) return clientApps[0];
     return null;
-  }, [clientApps, qpRegex]);
+  }, [clientApps, routeApp]);
+
+  const applicationFromStore = useSelector((s: RootState) => (routePortfolio && routeApp ? selectApplicationByKey(s, routePortfolio, routeApp) : undefined)) as Application | undefined;
+  const application = useMemo<Application | null>(() => (applicationFromStore || applicationFromList || null), [applicationFromStore, applicationFromList]);
+
+  // On open, hydrate the full app record via store thunk to ensure all fields are available
+  const lastFetchedKeyRef = useRef<string>("");
+  useEffect(() => {
+    if (!currentClient) return;
+    const appParam = routeApp;
+    const portfolioSlug = routePortfolio || (applicationFromList as any)?.portfolio || "";
+    if (!appParam || !portfolioSlug) return;
+    const key = `${currentClient}::${portfolioSlug}::${appParam}`;
+    if (lastFetchedKeyRef.current === key) return;
+    lastFetchedKeyRef.current = key;
+    dispatchTyped(fetchApplicationDetail({ client: currentClient, portfolio: portfolioSlug, app: appParam }) as any);
+  }, [currentClient, routePortfolio, routeApp, applicationFromList, dispatchTyped]);
 
   const zone = useMemo<Zone | null>(() => {
     if (!application?.zone) return null;
@@ -91,10 +98,10 @@ export default function ApplicationDetails() {
   }, [application?.zone, zonesList]);
 
   const currentPortfolioObj = useMemo<Portfolio | null>(() => {
-    const slug = qpPortfolio || application?.portfolio || "";
+    const slug = routePortfolio || application?.portfolio || "";
     if (!slug) return null;
     return portfoliosList.find((p) => p.portfolio === slug) || null;
-  }, [portfoliosList, qpPortfolio, application?.portfolio]);
+  }, [portfoliosList, routePortfolio, application?.portfolio]);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editZone, setEditZone] = useState<string>(application?.zone || "");
@@ -106,6 +113,25 @@ export default function ApplicationDetails() {
   const [editMetadata, setEditMetadata] = useState<Record<string, string>>(() => ({ ...(application as any)?.metadata || {} }));
   const [editAppRegex, setEditAppRegex] = useState<string>(application?.app_regex || "");
   const [editName, setEditName] = useState<string>(application?.name || "");
+  // Hidden env field (derived from selected zone); not displayed
+  const [editEnvironment, setEditEnvironment] = useState<string>((application as any)?.environment || "");
+
+  // When entering edit mode (or when the application record changes while editing),
+  // hydrate all edit fields from the current application so inputs aren't blank.
+  useEffect(() => {
+    if (!isEditing || !application) return;
+    setEditZone(application.zone || "");
+    setEditRegion(application.region || "");
+    setEditRepository(application.repository || undefined);
+    setEditEnforceValidation(coerceBool((application as any)?.enforce_validation));
+    setEditTags({ ...((application?.tags || {}) as Record<string, string>) });
+    setEditMetadata({ ...(((application as any)?.metadata || {}) as Record<string, string>) });
+    setEditAppRegex(application.app_regex || "");
+    setEditName(application.name || "");
+  // Initialize environment from current zone when entering edit (canonical: prd/nprd/dev)
+    const initEnv = mapZoneEnv(zone as Zone) || normalizeEnvString((application as any)?.environment) || "";
+    setEditEnvironment(initEnv);
+  }, [isEditing, application, zone]);
 
   useEffect(() => {
     if (!isEditing) return;
@@ -131,6 +157,13 @@ export default function ApplicationDetails() {
       dispatchTyped(fetchZoneByKey({ client: currentClient, zone: editZone }) as any);
     }
   }, [currentClient, editZone, selectedZone, dispatchTyped]);
+
+  // Keep hidden environment field in sync with selected zone (canonical lowercase)
+  useEffect(() => {
+    if (!isEditing) return;
+    const env = mapZoneEnv((selectedZone || zone) as Zone);
+    if (env) setEditEnvironment(env);
+  }, [isEditing, selectedZone, zone]);
 
   const regionAliases: string[] = useMemo(() => {
     const rf = selectedZone?.region_facts || {};
@@ -160,12 +193,25 @@ export default function ApplicationDetails() {
     const z = (selectedZone || zone) as Zone | null;
     const zTags = (z?.tags || {}) as Record<string, any>;
     const acctTags = ((z?.account_facts?.tags) || {}) as Record<string, any>;
-    const pSlug = qpPortfolio || application?.portfolio || '';
+    const pSlug = routePortfolio || application?.portfolio || '';
     const pObj = portfoliosList.find((p) => p.portfolio === pSlug) || null;
     const pTags = (pObj?.tags || {}) as Record<string, any>;
     const cTags = (clientObj?.tags || {}) as Record<string, any>;
     return { ...cTags, ...pTags, ...zTags, ...acctTags } as Record<string, string>;
-  }, [selectedZone, zone, qpPortfolio, application?.portfolio, portfoliosList, clientObj]);
+  }, [selectedZone, zone, routePortfolio, application?.portfolio, portfoliosList, clientObj]);
+
+  // View-mode resolved tags: app.tags overlaid by zone -> account -> portfolio -> client (later wins)
+  const resolvedTags = useMemo<Record<string, string>>(() => {
+    const base = { ...((application?.tags || {}) as Record<string, any>) } as Record<string, string>;
+    const z = (selectedZone || zone) as Zone | null;
+    const zTags = (z?.tags || {}) as Record<string, any>;
+    const acctTags = ((z?.account_facts?.tags) || {}) as Record<string, any>;
+    const pSlug = routePortfolio || application?.portfolio || '';
+    const pObj = portfoliosList.find((p) => p.portfolio === pSlug) || null;
+    const pTags = (pObj?.tags || {}) as Record<string, any>;
+    const cTags = (clientObj?.tags || {}) as Record<string, any>;
+    return { ...base, ...zTags, ...acctTags, ...pTags, ...cTags } as Record<string, string>;
+  }, [application?.tags, selectedZone, zone, routePortfolio, application?.portfolio, portfoliosList, clientObj]);
 
   const onSave = async () => {
     const inheritedSet = new Set(Object.keys(inheritedTags || {}).map((s) => s.toLowerCase()));
@@ -188,48 +234,34 @@ export default function ApplicationDetails() {
       if (!currentClient || !application) throw new Error('Missing client or application context');
   const client = currentClient;
   const portfolio = application.portfolio;
-  // Use the canonical 'app' key for the {app} path parameter; fall back to app_regex if needed
-  const appParam = (application as any)?.app || (application as any)?.app_regex;
+  const appParam = routeApp || (application as any)?.app;
 
-  const basePath = `/api/v1/registry/clients/${encodeURIComponent(client)}/portfolios/${encodeURIComponent(portfolio)}/apps/${encodeURIComponent(appParam)}`;
-
-      let existing: any = {};
-      try {
-        const resGet = await fetch(buildApiUrl(basePath), { headers: getAuthHeaders() });
-        if (resGet.ok) {
-          const j = await resGet.json().catch(() => null);
-          existing = j?.data || {};
-        }
-  } catch (e) { /* ignore */ }
-
+      const existing = application as any;
       const nextPayload: any = {
         ...existing,
         portfolio,
-  app_regex: (application as any)?.app_regex,
-  name: editName || undefined,
+        // Persist the edited regex; server validates and stores as AppRegex
+        app_regex: editAppRegex || (application as any)?.app_regex,
+        name: editName || undefined,
         region: editRegion || existing.region,
         zone: editZone || existing.zone,
         repository: editRepository || undefined,
         enforce_validation: editEnforceValidation ? 'true' : 'false',
+  // Set environment from selected zone (hidden field)
+  environment: editEnvironment || undefined,
         tags: { ...(editTags || {}) },
         metadata: { ...(editMetadata || {}) },
       };
 
-      const resPut = await fetch(buildApiUrl(basePath), {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(nextPayload),
-      });
-      if (!resPut.ok) {
-        let msg = `Failed to update application (HTTP ${resPut.status})`;
-        try {
-          const j = await resPut.json();
-          msg = j?.message || msg;
-  } catch (e) { /* ignore */ }
-        throw new Error(msg);
+    const actionResult: any = await dispatchTyped(updateApplication({ client, portfolio, app: appParam, payload: nextPayload }) as any);
+      if (actionResult?.meta?.requestStatus !== 'fulfilled') {
+        throw new Error(actionResult?.payload || 'Update failed');
       }
 
-  try { (actions as any)?.applications?.fetch?.(client, { portfolio, limit: 200 }); } catch (e) { /* ignore */ }
+  // Refresh applications list for this portfolio so PortfolioDetails reflects changes
+  await dispatchTyped(fetchApplications({ client, portfolio, limit: 200 }) as any);
+  // Optionally update backend app_count from current list snapshot
+  await dispatchTyped(patchPortfolioAppCount({ client, portfolio }) as any);
 
       setIsEditing(false);
   toast({ title: 'Application updated', description: `Saved changes to ${application.name || appParam}.` });
@@ -240,15 +272,24 @@ export default function ApplicationDetails() {
 
   const onDelete = async () => {
     try {
-      toast({ title: "Application deleted", description: application?.name || application?.app_regex || "" });
+      if (!currentClient || !application) throw new Error('Missing client or application context');
+      const client = currentClient;
+      const portfolio = application.portfolio;
+      const appParam = routeApp || (application as any)?.app;
+      const result: any = await dispatchTyped(deleteApplication({ client, portfolio, app: appParam }) as any);
+      if (result?.meta?.requestStatus !== 'fulfilled') {
+        throw new Error(result?.payload || 'Delete failed');
+      }
+  // Update portfolio app_count after confirmed delete
+  await dispatchTyped(patchPortfolioAppCount({ client, portfolio }) as any);
+      toast({ title: "Application deleted", description: application?.name || (application as any)?.app || "" });
       navigate(-1);
     } catch (e: any) {
       toast({ title: "Delete failed", description: e?.message || "Unknown error", variant: "destructive" });
     }
   };
 
-  const titleName = application?.name || (application?.app_regex ? "App (regex)" : "Application");
-  const subtitle = application ? `portfolio: ${application.portfolio} • zone: ${application.zone} • region: ${application.region}` : "";
+  // Using Card header/description for titles; no DashboardLayout titles
 
   if (!currentClient) {
     return (
@@ -275,15 +316,8 @@ export default function ApplicationDetails() {
         </div>
         <Card>
           <CardContent className="p-12 text-center">
-            <h3 className="text-lg font-semibold mb-2">Application Not Found</h3>
-            <p className="text-muted-foreground">
-              {qpPortfolio ? `No application found in portfolio “${qpPortfolio}”.` : "Specify portfolio and app_regex in the URL."}
-            </p>
-            <div className="mt-4">
-              <Button variant="outline" onClick={() => navigate("/dashboard")}>
-                Go to Dashboard
-              </Button>
-            </div>
+            <h3 className="text-lg font-semibold mb-2">Loading application…</h3>
+            <p className="text-muted-foreground">Fetching application details. This may take a moment.</p>
           </CardContent>
         </Card>
       </div>
@@ -291,55 +325,63 @@ export default function ApplicationDetails() {
   }
 
   return (
-    <DashboardLayout activeItem="applications" pageTitle={titleName} pageSubtitle={subtitle}>
-      <div className="space-y-6 animate-fade-in">
-        <div className="flex items-center justify-end gap-2">
-          {!isEditing ? (
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" aria-label="Edit application" onClick={() => setIsEditing(true)}>
-                <Pencil className="h-4 w-4 mr-2" />
-                Edit
-              </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="ghost" size="sm" aria-label="Delete application">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete application?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This action cannot be undone. This will permanently remove the application
-                      {application?.name ? ` “${application.name}”` : ""}.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction asChild>
-                      <Button variant="destructive" onClick={onDelete}>Delete</Button>
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          ) : (
-            <>
-              <Button variant="ghost" onClick={() => setIsEditing(false)}>Cancel</Button>
-              <Button variant="default" onClick={onSave}>Save</Button>
-            </>
-          )}
+    <div className="mx-auto max-w-lg md:max-w-xl p-4 md:p-6 space-y-6 animate-fade-in">
+        {/* Top bar: Back link (left) and actions (right) */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => navigate(portfolioDetailsPath({ portfolio: application.portfolio }))}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Portfolio
+            </Button>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            {isEditing ? (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)}>Cancel</Button>
+                <Button size="sm" onClick={onSave}>Save</Button>
+              </>
+            ) : (
+              <>
+                <Button variant="ghost" size="sm" aria-label="Edit application" onClick={() => setIsEditing(true)}>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" size="sm" aria-label="Delete application">
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete application?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action cannot be undone. This will permanently remove the application
+                        {application?.name ? ` “${application.name}”` : ""}.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction asChild>
+                        <Button variant="destructive" onClick={onDelete}>Delete</Button>
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            )}
+          </div>
         </div>
-
-        <div className="space-y-6">
-          <Card className="shadow-medium">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Code className="h-5 w-5 text-primary" />
-                  Application Information
-                </CardTitle>
-                <CardDescription>Deployment unit configuration and placement</CardDescription>
+        <Card className="shadow-medium">
+              <CardHeader className="flex flex-row items-start gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Code className="h-5 w-5 text-primary" />
+                    Application Information
+                  </CardTitle>
+                  <CardDescription>Deployment unit configuration and placement</CardDescription>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 {!isEditing ? (
@@ -347,27 +389,48 @@ export default function ApplicationDetails() {
                     <FormRow label="Portfolio"><div className="text-sm text-foreground">{application.portfolio}</div></FormRow>
                     <FormRow label="App Name"><div className="text-sm text-foreground">{application.name || "—"}</div></FormRow>
                     <FormRow label="App Regex"><div className="text-sm text-foreground font-mono break-all">{application.app_regex}</div></FormRow>
-                    <FormRow label="Zone"><div className="text-sm text-foreground">{application.zone}</div></FormRow>
+                    <FormRow label="Zone">
+                      <div className="text-sm text-foreground flex items-center gap-2">
+                        <span>{application.zone}</span>
+                        {zone && <EnvBadge zone={zone} />}
+                      </div>
+                    </FormRow>
                     <FormRow label="Region"><div className="text-sm text-foreground">{application.region}</div></FormRow>
-                    <FormRow label="Repository"><div className="text-sm text-foreground">{application.repository || "—"}</div></FormRow>
+                    <FormRow label="Repository">
+                      <div className="text-sm text-foreground flex items-center gap-2">
+                        <span className="break-all">{application.repository || "—"}</span>
+                        {application.repository ? (
+                          <a
+                            href={application.repository}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label="Open repository"
+                            className="inline-flex"
+                          >
+                            <ExternalLink className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                          </a>
+                        ) : null}
+                      </div>
+                    </FormRow>
                     <FormRow label="Account"><div className="text-sm text-foreground">{(zone as any)?.account_facts?.aws_account_id || "—"}</div></FormRow>
                     <FormRow label="Enforce Validation"><div className="text-sm text-foreground">{coerceBool((application as any)?.enforce_validation) ? "Yes" : "No"}</div></FormRow>
 
                     <FormRow label="Tags">
                       <div className="mt-1 flex flex-wrap gap-2">
-                        {Object.entries((application.tags || {}) as Record<string, any>).length === 0 ? (
+                        {Object.entries((resolvedTags || {}) as Record<string, any>).length === 0 ? (
                           <div className="text-xs text-muted-foreground">—</div>
                         ) : (
-                          Object.entries((application.tags || {}) as Record<string, any>).map(([k, v], i) => (
+                          Object.entries((resolvedTags || {}) as Record<string, any>).map(([k, v], i) => (
                             <Badge key={`tag-${k}-${i}`} variant="secondary" className="gap-2">
                               <span>{String(k)}</span>
                               <span className="opacity-70">=</span>
-                              <span>{String(v)}</span>
+                              <span className="break-all">{String(v)}</span>
                             </Badge>
                           ))
                         )}
                       </div>
                     </FormRow>
+
 
                     <FormRow label="Metadata">
                       <div className="mt-1 flex flex-wrap gap-2">
@@ -435,7 +498,7 @@ export default function ApplicationDetails() {
                             ))}
                           </SelectContent>
                         </Select>
-                        {selectedZone && renderZoneEnvBadge(selectedZone)}
+                        {selectedZone && <EnvBadge zone={selectedZone} />}
                       </div>
                     </FormRow>
 
@@ -463,10 +526,6 @@ export default function ApplicationDetails() {
 
                     <FormRow label="Repository">
                       <Input placeholder="https://..." value={editRepository || ""} onChange={(e) => setEditRepository(e.target.value)} />
-                    </FormRow>
-
-                    <FormRow label="Metadata">
-                      <TagEditor title="Metadata" values={editMetadata} onChange={setEditMetadata} helpText={<p>These values will be added to deployment context for use in your templates</p>} hideHeader />
                     </FormRow>
 
                     <FormRow label="Tags">
@@ -536,24 +595,23 @@ export default function ApplicationDetails() {
                         )}
                       </div>
                     </FormRow>
+
+                    <FormRow label="Metadata">
+                      <TagEditor title="Metadata" values={editMetadata} onChange={setEditMetadata} helpText={<p>These values will be added to deployment context for use in your templates</p>} hideHeader />
+                    </FormRow>
                   </FormGrid>
                 )}
               </CardContent>
+              {/* Footer actions removed; Save/Cancel are in the top-right */}
             </Card>
-        </div>
 
-  <Card className="shadow-soft">
-          <CardHeader>
-            <CardTitle className="text-lg">Audit</CardTitle>
-            <CardDescription>Timestamps</CardDescription>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Card className="shadow-soft">
+          <CardContent className="pt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Info label="Created" value={formatDateTime(application.created_at)} />
             <Info label="Updated" value={formatDateTime(application.updated_at)} />
           </CardContent>
         </Card>
-      </div>
-    </DashboardLayout>
+    </div>
   );
 }
 
@@ -585,20 +643,28 @@ function Info({ label, value, mono = false }: { label: string; value: React.Reac
 
 function renderZoneEnvBadge(z: Zone) {
   const env = mapZoneEnv(z);
-  const envLabel = env?.toUpperCase() || '-';
-  const badgeVariant = env === 'PROD' ? 'destructive' : env === 'NPROD' ? 'default' : env === 'DEV' ? 'secondary' : 'secondary';
-  return <Badge variant={badgeVariant as any} className="uppercase">{envLabel}</Badge>;
+  const badgeVariant = env === 'prd' ? 'destructive' : env === 'nprd' ? 'default' : env === 'dev' ? 'secondary' : 'secondary';
+  return <Badge variant={badgeVariant as any} className="uppercase">{env || '-'}</Badge>;
 }
 
-function mapZoneEnv(z: Zone): 'PROD' | 'NPROD' | 'DEV' | '' {
+function mapZoneEnv(z: Zone): 'prd' | 'nprd' | 'dev' | '' {
   const raw = (z?.account_facts?.environment ?? '').toString().trim().toLowerCase();
-  if (["production", "prod", "prd"].includes(raw)) return 'PROD';
-  if (["nonprod", "non-production", "non production", "nprod", "nprd"].includes(raw)) return 'NPROD';
-  if (["dev", "development"].includes(raw)) return 'DEV';
+  if (["production", "prod", "prd"].includes(raw)) return 'prd';
+  if (["nonprod", "non-production", "non production", "nprod", "nprd"].includes(raw)) return 'nprd';
+  if (["dev", "development"].includes(raw)) return 'dev';
   return '';
 }
 
 // normalizeEnvOption removed (environment deprecated)
+
+// Normalize a raw env string to canonical values
+function normalizeEnvString(raw?: string | null): 'prd' | 'nprd' | 'dev' | '' {
+  const s = (raw || '').toString().trim().toLowerCase();
+  if (["production", "prod", "prd"].includes(s)) return 'prd';
+  if (["nonprod", "non-production", "non production", "nprod", "nprd"].includes(s)) return 'nprd';
+  if (["dev", "development"].includes(s)) return 'dev';
+  return '';
+}
 
 function coerceBool(v: unknown): boolean {
   if (v === null || v === undefined) return true;
@@ -662,14 +728,17 @@ function TagEditor({ values, onChange, policies, requiredNames, inherited, title
   const [newVal, setNewVal] = useState("");
   const [open, setOpen] = useState(false);
   const filtered = useMemo(() => {
-    const q = newKey.trim().toLowerCase();
-    return (q ? options.filter((o) => o.toLowerCase().includes(q)) : options).slice(0, 100);
-  }, [newKey, options]);
+    const needle = newKey.trim().toLowerCase();
+    if (!needle) return [] as string[];
+    const existing = new Set(Object.keys(values).map((k) => k.toLowerCase()));
+    return options
+      .filter((o) => o.toLowerCase().includes(needle))
+      .filter((o) => !existing.has(o.toLowerCase()));
+  }, [newKey, options, values]);
   const addRow = () => {
     const k = newKey.trim();
     if (!k) return;
-    const next = { ...values } as Record<string, string>;
-    next[k] = newVal;
+    const next = { ...values, [k]: newVal } as Record<string, string>;
     onChange(next);
     setNewKey("");
     setNewVal("");

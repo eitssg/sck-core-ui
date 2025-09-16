@@ -43,7 +43,7 @@ import {
   setSelectedPortfolio,
   setCurrentClient,
   syncFromAPI as syncPortfolioFromAPI,
-  updatePortfolioApplicationCount,
+  updatePortfolioAppCount,
   clear as clearPortfolios,
   selectPortfolios,
   selectPortfoliosStatus,
@@ -149,7 +149,7 @@ export const useReduxData = () => {
       syncFromAPI: (portfolio: any, client: string) => 
         dispatch(syncPortfolioFromAPI({ portfolio, client })),
       updateApplicationCount: (portfolioId: string, count: number) => 
-        dispatch(updatePortfolioApplicationCount({ portfolioId, count })),
+        dispatch(updatePortfolioAppCount({ portfolioId, count })),
       clear: () => dispatch(clearPortfolios())
     },
     applications: {
