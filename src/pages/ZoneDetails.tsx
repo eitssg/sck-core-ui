@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef, ReactNode } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Save, X, Globe, Trash2, SquarePen, ClipboardCopy, Download, Upload, Plus } from "lucide-react";
+import { Save, X, Globe, Trash2, SquarePen, ClipboardCopy, Download, Upload, Plus, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -18,7 +18,7 @@ import { selectSelectedClient, selectClientBySlug } from "@/store/slices/clients
 import type { Zone, AccountFacts, RegionFacts } from "@/store/types";
 import { AWS_REGION_NAME_BY_CODE, AWS_REGION_AZ_COUNT } from "@/constants/aws-regions";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import DashboardLayout from "@/components/DashboardLayout";
+// DashboardLayout removed for single-card form layout
 
 // --- Small inline editors -------------------------------------------------
 type KV = Record<string, string>;
@@ -92,7 +92,7 @@ function KeyValueListEditor({
         <div className="flex gap-2 items-center">
           <Input className="w-56" placeholder={keyPlaceholder} value={newKey} onChange={(e)=> setNewKey(e.target.value)} />
           <Input className="flex-1" placeholder={valuePlaceholder} value={newVal} onChange={(e)=> setNewVal(e.target.value)} />
-          <Button variant="outline" size="sm" onClick={add}><Plus className="h-4 w-4 mr-1"/>{addLabel}</Button>
+          <Button variant="ghost" size="sm" onClick={add} className="text-muted-foreground hover:text-foreground"><Plus className="h-4 w-4 mr-1"/>{addLabel}</Button>
         </div>
       )}
     </div>
@@ -141,7 +141,7 @@ function StringArrayEditor({ value, onChange, addLabel = "Add", placeholder = "v
       {!readOnly && (
         <div className="flex gap-2 items-center">
           <Input className="flex-1" placeholder={placeholder} value={draft} onChange={(e)=> setDraft(e.target.value)} />
-          <Button variant="outline" size="sm" onClick={add}><Plus className="h-4 w-4 mr-1"/>{addLabel}</Button>
+          <Button variant="ghost" size="sm" onClick={add} className="text-muted-foreground hover:text-foreground"><Plus className="h-4 w-4 mr-1"/>{addLabel}</Button>
         </div>
       )}
     </div>
@@ -255,7 +255,7 @@ function SecurityAliasesEditor({ value, onChange, readOnly = false }: { value?: 
       {!readOnly && (
         <div className="flex gap-2 items-center">
           <Input className="w-64" placeholder="new alias group name" value={newName} onChange={(e)=> setNewName(e.target.value)} />
-          <Button variant="outline" size="sm" onClick={addGroup}><Plus className="h-4 w-4 mr-1"/>Add group</Button>
+          <Button variant="ghost" size="sm" onClick={addGroup} className="text-muted-foreground hover:text-foreground"><Plus className="h-4 w-4 mr-1"/>Add group</Button>
         </div>
       )}
     </div>
@@ -684,28 +684,39 @@ const ZoneDetails = () => {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [hasUnsaved]);
 
-  // (Back navigation link removed for DashboardLayout)
+  // Form layout with explicit Back button
 
   if (!zone && !draft) {
-    // Show loading state if we have a zoneSlug and are fetching
-    if (zoneSlug && (zonesLoading || (clientParam || selectedClient))) {
-      return (
-        <DashboardLayout pageTitle="Zones" pageSubtitle="Loading zone…">
-          <div className="space-y-6 animate-fade-in">
-            <div className="text-center py-12 text-sm text-muted-foreground">Loading…</div>
-          </div>
-        </DashboardLayout>
-      );
-    }
+    // Show loading/not-found in form layout with back button
+    const isLoading = Boolean(zoneSlug && (zonesLoading || (clientParam || selectedClient)));
     return (
-      <DashboardLayout pageTitle="Zones" pageSubtitle="Zone not found">
-        <div className="space-y-6 animate-fade-in">
-          <div className="text-center py-12">
-            <h2 className="sck-section-title">Zone not found</h2>
-            <p className="sck-section-subtitle">The zone you are looking for does not exist.</p>
+      <div className="sck-form-container space-y-6 animate-fade-in">
+        {/* Top bar */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => navigate('/zones')}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Zones
+            </Button>
           </div>
+          <div className="ml-auto" />
         </div>
-      </DashboardLayout>
+        <Card>
+          <CardContent className="p-12 text-center">
+            {isLoading ? (
+              <>
+                <h3 className="text-lg font-semibold mb-2">Loading zone…</h3>
+                <p className="text-muted-foreground">Fetching zone details. This may take a moment.</p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold mb-2">Zone not found</h3>
+                <p className="text-muted-foreground">The zone you are looking for does not exist.</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -713,14 +724,43 @@ const ZoneDetails = () => {
   const current = (draft || zone) as Zone;
 
   return (
-    <DashboardLayout
-      pageTitle="Landing Zone"
-      pageSubtitle="Account, regions, deployments, and delegates"
-    >
-      <div className="space-y-6 animate-fade-in">
-  {/* Removed sticky header actions; actions now live in CardHeader */}
-
-  {/* New Zone Dialog removed; creation is initiated from Zones list page */}
+  <div className="sck-form-container space-y-6 animate-fade-in">
+      {/* Top bar: Back link (left) and actions (right) */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => navigate('/zones')}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Zones
+          </Button>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {editing ? (
+            <>
+              <Button variant="ghost" size="sm" disabled={saving} onClick={handleCancel} className="gap-1 text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4 mr-1" /> Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={saving || !(draft?.account_facts?.aws_account_id && Object.keys(draft?.region_facts || {}).length > 0)}
+                onClick={handleSave}
+                className="gap-1"
+              >
+                <Save className="h-4 w-4 mr-1" />
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" size="sm" onClick={()=> setDeleteDialogOpen(true)} className="gap-1 text-muted-foreground hover:text-foreground">
+                <Trash2 className="h-4 w-4 mr-1" /> Delete
+              </Button>
+              <Button variant="ghost" size="sm" onClick={()=> setEditing(true)} className="gap-1 text-muted-foreground hover:text-foreground">
+                <SquarePen className="h-4 w-4 mr-1" /> Edit
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* Delete Dialog (placeholder) */}
       <Dialog open={deleteDialogOpen} onOpenChange={(o)=> setDeleteDialogOpen(o)}>
@@ -751,33 +791,6 @@ const ZoneDetails = () => {
             </CardTitle>
             <CardDescription className="sck-section-subtitle">Landing zone details for this client</CardDescription>
             <div className="text-sm text-muted-foreground">Zone: <span className="contrast-value">{current.zone}</span></div>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            {editing ? (
-              <>
-                <Button variant="ghost" size="sm" disabled={saving} onClick={handleCancel} className="gap-1 text-muted-foreground hover:text-foreground">
-                  <X className="h-4 w-4 mr-1" /> Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={saving || !(draft?.account_facts?.aws_account_id && Object.keys(draft?.region_facts || {}).length > 0)}
-                  onClick={handleSave}
-                  className="gap-1"
-                >
-                  <Save className="h-4 w-4 mr-1" />
-                  {saving ? 'Saving…' : 'Save'}
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button variant="ghost" size="sm" onClick={()=> setDeleteDialogOpen(true)} className="gap-1 text-muted-foreground hover:text-foreground">
-                  <Trash2 className="h-4 w-4 mr-1" /> Delete
-                </Button>
-                <Button variant="ghost" size="sm" onClick={()=> setEditing(true)} className="gap-1 text-muted-foreground hover:text-foreground">
-                  <SquarePen className="h-4 w-4 mr-1" /> Edit
-                </Button>
-              </>
-            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -868,6 +881,29 @@ const ZoneDetails = () => {
                   )}
                 </DetailsRow>
               </div>
+              {/* Tags (moved from Deployments tab) */}
+              <div>
+                <div className="text-sm font-medium text-muted-foreground mb-2">Zone Tags</div>
+                <KeyValueListEditor
+                  readOnly={!editing}
+                  value={allTags as any}
+                  onChange={(next)=> setDraft((d)=> d ? ({ ...d, tags: next as any }) : d)}
+                  addLabel="Add tag"
+                  keyPlaceholder="tag"
+                  valuePlaceholder="value"
+                />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-muted-foreground mb-2">Account Tags</div>
+                <KeyValueListEditor
+                  readOnly={!editing}
+                  value={(af.tags as any) || {}}
+                  onChange={(next)=> updateAccount({ tags: next as any })}
+                  addLabel="Add tag"
+                  keyPlaceholder="tag"
+                  valuePlaceholder="value"
+                />
+              </div>
             </TabsContent>
 
       <TabsContent value="regions" className="space-y-4 pt-4">
@@ -883,47 +919,36 @@ const ZoneDetails = () => {
             </TabsContent>
 
       <TabsContent value="deployments" className="space-y-4 pt-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Zone Type</label>
-                  {editing ? (
-                    <Select
-                      value={(() => {
-                        const raw = (af.environment || '').toString().toLowerCase();
-                        return raw === 'prd' || raw === 'nprd' || raw === 'dev' ? raw : undefined;
-                      })()}
-                      onValueChange={(v)=> updateAccount({ environment: v })}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select zone type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="dev">Development</SelectItem>
-                        <SelectItem value="nprd">Non-Production</SelectItem>
-                        <SelectItem value="prd">Production</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <div className="text-sm contrast-value break-all mt-2">
-                      {(() => {
-                        const raw = (af.environment || '').toString().toLowerCase();
-                        if (raw === 'prd') return 'Production';
-                        if (raw === 'nprd') return 'Non-Production';
-                        if (raw === 'dev') return 'Development';
-                        return '—';
-                      })()}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-muted-foreground mb-2">Zone Tags</div>
-                <KeyValueListEditor readOnly={!editing} value={allTags as any} onChange={(next)=> setDraft((d)=> d ? ({ ...d, tags: next as any }) : d)} addLabel="Add tag" keyPlaceholder="tag" valuePlaceholder="value" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-muted-foreground mb-2">Account Tags</div>
-                <KeyValueListEditor readOnly={!editing} value={(af.tags as any) || {}} onChange={(next)=> updateAccount({ tags: next as any })} addLabel="Add tag" keyPlaceholder="tag" valuePlaceholder="value" />
-              </div>
+              <DetailsRow label="Environment">
+                {editing ? (
+                  <Select
+                    value={(() => {
+                      const raw = (af.environment || '').toString().toLowerCase();
+                      return raw === 'prd' || raw === 'nprd' || raw === 'dev' ? raw : undefined;
+                    })()}
+                    onValueChange={(v)=> updateAccount({ environment: v })}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select zone type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="dev">Development</SelectItem>
+                      <SelectItem value="nprd">Non-Production</SelectItem>
+                      <SelectItem value="prd">Production</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="text-sm contrast-value break-all">
+                    {(() => {
+                      const raw = (af.environment || '').toString().toLowerCase();
+                      if (raw === 'prd') return 'Production';
+                      if (raw === 'nprd') return 'Non-Production';
+                      if (raw === 'dev') return 'Development';
+                      return '—';
+                    })()}
+                  </div>
+                )}
+              </DetailsRow>
             </TabsContent>
 
             <TabsContent value="delegates" className="space-y-4 pt-4">
@@ -982,8 +1007,7 @@ const ZoneDetails = () => {
           </Tabs>
         </CardContent>
       </Card>
-      </div>
-    </DashboardLayout>
+    </div>
   );
 };
 

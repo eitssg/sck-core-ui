@@ -19,7 +19,8 @@ const Switch = React.forwardRef<
   SwitchProps
 >(({ className, size = "md", ...props }, ref) => {
   const s = sizeClasses[size]
-  const checkedBg = size === "sm" ? "data-[state=checked]:bg-white/80" : "data-[state=checked]:bg-primary"
+  // Always use primary for checked state; avoid white/80 which disappears in light mode
+  const checkedBg = "data-[state=checked]:bg-primary"
   return (
     <SwitchPrimitives.Root
       className={cn(

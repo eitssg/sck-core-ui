@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { Plus, Code, Braces, Save, ArrowLeft } from "lucide-react";
+import EnvBadge from "@/components/ui/env-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,17 +60,41 @@ export default function CreateApplication() {
   }, [currentClient, zone, selectedZone, dispatch]);
 
   const regions = useMemo(() => Object.keys(selectedZone?.region_facts || {}), [selectedZone]);
+  // Keep region selection in sync with selected zone's available aliases
   useEffect(() => {
-    if (regions.length > 0 && !region) {
+    // If no regions available for selected zone, clear region
+    if (!regions || regions.length === 0) {
+      if (region) setRegion("");
+      return;
+    }
+    // If current region is empty or not valid for this zone, select the first alias
+    if (!region || !regions.includes(region)) {
       setRegion(regions[0]);
     }
   }, [regions, region]);
 
-  // Default regex from name: if appRegex empty, use ^<slug(name)>$
+  // Build PRN-based default regex: ^prn:{portfolio}:{app}:.*:.*
+  const [regexEdited, setRegexEdited] = useState(false);
+  const portfolioSlug = routePortfolio || "";
   useEffect(() => {
-    if (!name) return;
-    if (!appRegex) setAppRegex(`^${slugify(name)}$`);
-  }, [name, appRegex]);
+    if (!portfolioSlug) return;
+    if (regexEdited) return; // don't override manual edits
+    const appPart = name ? slugify(name) : "*";
+    const rawEnv = (selectedZone as any)?.account_facts?.environment
+      ? String((selectedZone as any).account_facts.environment).toLowerCase()
+      : "";
+    const envKey = ["production","prod","prd"].includes(rawEnv)
+      ? "prd"
+      : ["nonprod","non-production","non production","nprod","nprd"].includes(rawEnv)
+      ? "nprd"
+      : ["dev","development"].includes(rawEnv)
+      ? "dev"
+      : "*";
+    const next = `^prn:${portfolioSlug}:${appPart}:${envKey}:*`;
+    if (!appRegex || appRegex.startsWith('^prn:')) {
+      setAppRegex(next);
+    }
+  }, [name, portfolioSlug, regexEdited, appRegex, selectedZone]);
 
   const canSubmit = !!currentClient && !!routePortfolio && !!zone && !!region && !!appRegex;
 
@@ -149,20 +174,26 @@ export default function CreateApplication() {
                 <div className="space-y-2">
                   <Label>Zone *</Label>
                   <Select value={zone} onValueChange={setZone}>
-                    <SelectTrigger>
+                    <SelectTrigger className="pl-3">
                       <SelectValue placeholder="Select a zone" />
                     </SelectTrigger>
                     <SelectContent>
                       {(zonesList || []).map((z) => (
-                        <SelectItem key={z.zone} value={z.zone}>{z.zone}</SelectItem>
+                        <SelectItem key={z.zone} value={z.zone}>
+                          <div className="flex items-center justify-between gap-2">
+                            <span>{z.zone}</span>
+                            <EnvBadge zone={z} />
+                          </div>
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {/* Environment badge already displayed alongside zone in the dropdown; redundant helper removed */}
                 </div>
                 <div className="space-y-2">
                   <Label>Region *</Label>
                   <Select value={region} onValueChange={setRegion} disabled={!zone || regions.length === 0}>
-                    <SelectTrigger>
+                    <SelectTrigger className="pl-3">
                       <SelectValue placeholder={zone ? "Select a region" : "Select zone first"} />
                     </SelectTrigger>
                     <SelectContent>
@@ -175,12 +206,30 @@ export default function CreateApplication() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="app_regex">App Regex *</Label>
+                <Label htmlFor="app_regex">Pipeline Reference Number Regex:</Label>
                 <div className="relative">
                   <Braces className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input id="app_regex" className="pl-10 font-mono" placeholder="^payments$" value={appRegex} onChange={(e) => setAppRegex(e.target.value)} required />
+                  <Input
+                    id="app_regex"
+                    className="pl-10 font-mono"
+                    placeholder={`^prn:${portfolioSlug || 'portfolio'}:*:*:*`}
+                    value={appRegex}
+                    onChange={(e) => {
+                      setRegexEdited(true);
+                      setAppRegex(e.target.value.toLowerCase());
+                    }}
+                    required
+                  />
                 </div>
-                <p className="text-xs text-muted-foreground">Matches one or more deployment unit names</p>
+                <p className="text-xs text-muted-foreground">
+                  Regex matches the PRN. The Pipeline Reference Number to match will be
+                  {" "}
+                  <span className="font-mono">prn:{portfolioSlug || 'portfolio'}:{'{app}'}:{'{branch}'}:{'{build}'}</span>.
+                  Deployments are identified by PRN.
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Infrastructure As Code GitOps should have a branch in your infrastructure repository for each environment. Verify the regex branch code is correct.
+                </p>
               </div>
 
               <div className="flex gap-3 pt-4">

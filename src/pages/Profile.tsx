@@ -4,7 +4,7 @@ import { useAppSelector } from "@/store";
 import { AlertTriangle } from "lucide-react";
 import { selectUser } from "@/store/slices/authSlice";
 import { Link, useNavigate } from "react-router-dom";
-import { User as UserIcon, Save, Edit, Camera, Calendar, Building2, Trash2, Cloud, LogOut, ArrowLeftRight, Plus } from "lucide-react";
+import { User as UserIcon, Save, Edit, Camera, Calendar, Building2, Trash2, Cloud, LogOut, ArrowLeftRight, Plus, Pencil, Check, X, KeyRound } from "lucide-react";
 import { deleteAuthProfile } from '@/store/slices/profileSlice';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandList, CommandInput, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import {
@@ -57,7 +58,28 @@ import { SUPPORTED_LANGUAGES } from "@/constants/languages";
 import { getTimezones } from "@/constants/timezones";
 import { authAPI } from "@/lib/auth-api";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { apiFetch } from '@/lib/api-fetch';
+import { buildApiUrl } from '@/lib/api-config';
 // ...existing imports...
+import { useAppDispatch } from '@/store';
+import { selectPasskeys, selectPasskeysStatus, fetchPasskeys, renamePasskey, deletePasskeyAction } from '@/store/slices/passkeysSlice';
+
+// Base64url helpers for WebAuthn
+function base64urlToBytes(b64url: string): Uint8Array {
+  const pad = (s: string) => s + '==='.slice((s.length + 3) % 4);
+  const b64 = pad(b64url.replace(/-/g, '+').replace(/_/g, '/'));
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function bytesToBase64url(buf: ArrayBuffer | Uint8Array): string {
+  const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
 
 // Helper to create new profile via new /auth/v1/profiles endpoint
 async function createProfileClone(base: any, newName: string, dispatch: any) {
@@ -105,6 +127,100 @@ export default function Profile() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  // Passkeys state
+  const passkeys = useAppSelector(selectPasskeys as any);
+  const passkeysStatus = useAppSelector(selectPasskeysStatus as any);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState<string>('');
+  const passkeysEnabled = useMemo(() => Array.isArray(passkeys) && (passkeys as any[]).length > 0, [passkeys]);
+  const [passkeyDeleteAllOpen, setPasskeyDeleteAllOpen] = useState(false);
+  const [passkeyBulkDeleting, setPasskeyBulkDeleting] = useState(false);
+
+  // WebAuthn support detection (gate Add passkey)
+  const webAuthnSupported = useMemo(() => {
+    try {
+      const hasCreds = typeof window !== 'undefined' && !!(navigator as any)?.credentials;
+      const hasPKC = typeof window !== 'undefined' && 'PublicKeyCredential' in window;
+      const isSecure = typeof window !== 'undefined' && (window.isSecureContext ?? location.protocol === 'https:');
+      return Boolean(hasCreds && hasPKC && isSecure);
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // Add Passkey handler (register flow)
+  const handleAddPasskey = async () => {
+    try {
+      // 1) Begin: issue challenge + options (cookie-bound)
+      const beginRes = await apiFetch(buildApiUrl('/auth/v1/webauthn/register/begin'), {
+        method: 'POST',
+        contextLabel: 'PasskeyRegisterBegin',
+      });
+      if (!beginRes.ok) {
+        const err = await beginRes.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to begin registration');
+      }
+      const beginJson = await beginRes.json();
+      const options = (beginJson?.data) ? beginJson.data : beginJson; // tolerate envelope or raw
+
+      // 2) Convert options to proper WebAuthn shapes (ArrayBuffers)
+      const publicKey: PublicKeyCredentialCreationOptions = {
+        challenge: base64urlToBytes(String(options.challenge)),
+        attestation: options.attestation || 'none',
+        timeout: options.timeout || 60000,
+        pubKeyCredParams: options.pubKeyCredParams || [ { type: 'public-key', alg: -7 } ],
+        authenticatorSelection: {
+          ...(options.authenticatorSelection || {}),
+          // Nudge toward external authenticators when possible
+          authenticatorAttachment: (options.authenticatorSelection?.authenticatorAttachment as any) || 'cross-platform',
+        } as any,
+        rp: options.rp || { name: 'Simple Cloud Kit', id: window.location.hostname },
+        user: options.user ? {
+          id: base64urlToBytes(String(options.user.id || '')),
+          name: String(options.user.name || ''),
+          displayName: String(options.user.displayName || options.user.name || ''),
+        } : undefined,
+        excludeCredentials: Array.isArray(options.excludeCredentials)
+          ? options.excludeCredentials.map((c: any) => ({ type: 'public-key', id: base64urlToBytes(String(c.id)), transports: c.transports }))
+          : undefined,
+      } as any;
+
+      // 3) Create credential
+      const cred = await navigator.credentials.create({ publicKey }) as PublicKeyCredential;
+      if (!cred) throw new Error('User cancelled or credential not created');
+
+      const attResp = cred.response as AuthenticatorAttestationResponse & { getTransports?: () => string[] };
+
+      // 4) Complete: send attestation back (server verifies + persists)
+      const completePayload: any = {
+        key_id: cred.id,
+        clientDataJSON: bytesToBase64url(attResp.clientDataJSON),
+        attestationObject: bytesToBase64url(attResp.attestationObject),
+        clientDataChallenge: String(options.challenge),
+      };
+      try {
+        if (typeof (attResp as any).getTransports === 'function') {
+          completePayload.transports = (attResp as any).getTransports();
+        }
+      } catch { /* ignore */ }
+
+      const finishRes = await apiFetch(buildApiUrl('/auth/v1/webauthn/register/complete'), {
+        method: 'POST',
+        body: JSON.stringify(completePayload),
+        contextLabel: 'PasskeyRegisterComplete',
+      });
+      if (!finishRes.ok) {
+        const err = await finishRes.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to complete registration');
+      }
+
+      // 5) Refresh list and notify
+      await dispatch(fetchPasskeys() as any);
+      toast({ title: 'Passkey added', description: 'Your new passkey is ready to use.' });
+    } catch (e: any) {
+      toast({ title: 'Add passkey failed', description: e?.message || 'Unable to register passkey', variant: 'destructive' });
+    }
+  };
   // Theme presets selection (per profile)
   const allPresetThemes = useMemo(() => getThemesList(), []);
   const lightThemes = useMemo(() => allPresetThemes.filter((t:any) => !t.isDark), [allPresetThemes]);
@@ -139,6 +255,11 @@ export default function Profile() {
       actions.clients.fetch({ limit: 100 });
     }
   }, [clients, actions.clients]);
+
+  // Fetch passkeys on mount (5m cached in slice)
+  useEffect(() => {
+    dispatch(fetchPasskeys() as any);
+  }, [dispatch]);
 
   // Ensure client details are loaded when we have a slug
   useEffect(() => {
@@ -459,6 +580,8 @@ export default function Profile() {
 
             {/* Removed redundant current client label; dropdown above is sufficient */}
 
+            {/* Passkeys indicator moved into Passkeys card below */}
+
             {/* Shared avatar menu */}
             <UserMenu />
           </div>
@@ -526,28 +649,31 @@ export default function Profile() {
               {/* Removed redundant helper description per request */}
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Avatar */}
-              <div className="flex items-center gap-4">
-                <Avatar className="h-20 w-20">
-                  <AvatarImage src={String(editData.avatar_url || "")} alt={fullName} />
-                  <AvatarFallback className="text-lg">{initials}</AvatarFallback>
-                </Avatar>
-                {editing && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="gap-2 text-muted-foreground hover:text-foreground"
-                    onClick={() => {
-                      setPhotoUrlDraft(String(editData.avatar_url || ""));
-                      setPhotoError(undefined);
-                      setPhotoDialogOpen(true);
-                    }}
-                  >
-                    <Camera className="h-4 w-4" />
-                    Change Photo URL
-                  </Button>
-                )}
+              {/* Avatar row with passkeys status on the right */}
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-4">
+                  <Avatar className="h-20 w-20">
+                    <AvatarImage src={String(editData.avatar_url || "")} alt={fullName} />
+                    <AvatarFallback className="text-lg">{initials}</AvatarFallback>
+                  </Avatar>
+                  {editing && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="gap-2 text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        setPhotoUrlDraft(String(editData.avatar_url || ""));
+                        setPhotoError(undefined);
+                        setPhotoDialogOpen(true);
+                      }}
+                    >
+                      <Camera className="h-4 w-4" />
+                      Change Photo URL
+                    </Button>
+                  )}
+                </div>
+                {/* Passkeys status badge removed as redundant; detailed section exists below */}
               </div>
 
               {!editing ? (
@@ -603,6 +729,13 @@ export default function Profile() {
                         </Button>
                       </div>
                       <p className="mt-1 text-sm">{mfaEnabled ? 'Active' : 'Inactive'}</p>
+                    </div>
+                    {/* Passkeys Enabled/Disabled */}
+                    <div>
+                      <Label className="text-sm font-medium text-muted-foreground">Passkeys</Label>
+                      <div className="mt-1">
+                        <Badge variant={passkeysEnabled ? 'default' : 'secondary'}>{passkeysEnabled ? 'Enabled' : 'Disabled'}</Badge>
+                      </div>
                     </div>
                     <FieldView label="My Home AWS Account" value={String((profileUser as any)?.aws_account_id || '—')} />
                     <FieldView label="Preferred Region" value={String(editData.preferred_region || "us-east-1")} />
@@ -1005,10 +1138,194 @@ export default function Profile() {
 
   {/* Sidebar */}
   <div className="space-y-6">
-      <Card>
+          {/* Delete All Passkeys Confirmation Dialog */}
+          <Dialog open={passkeyDeleteAllOpen} onOpenChange={(o) => { if(!passkeyBulkDeleting) setPasskeyDeleteAllOpen(o); }}>
+            <DialogContent className="w-[92vw] max-w-sm p-4 sm:p-6">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="h-5 w-5" />
+                  Delete All Passkeys
+                </DialogTitle>
+                <DialogDescription>
+                  This will remove all registered passkeys from your account. You can add new passkeys later. Continue?
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="pt-4 gap-2">
+                <Button variant="ghost" disabled={passkeyBulkDeleting} onClick={() => setPasskeyDeleteAllOpen(false)}>Cancel</Button>
+                <Button
+                  variant="destructive"
+                  disabled={passkeyBulkDeleting}
+                  onClick={async () => {
+                    try {
+                      setPasskeyBulkDeleting(true);
+                      const list = Array.isArray(passkeys) ? (passkeys as any[]) : [];
+                      for (const pk of list) {
+                        try {
+                          await (dispatch as any)(deletePasskeyAction({ key_id: pk.key_id } as any));
+                        } catch {/* ignore per-item */}
+                      }
+                      await (dispatch as any)(fetchPasskeys());
+                      setPasskeyDeleteAllOpen(false);
+                      toast({ title: 'Passkeys deleted', description: 'All passkeys were removed.' });
+                    } catch (e:any) {
+                      toast({ title: 'Delete failed', description: e?.message || 'Error deleting passkeys', variant: 'destructive' });
+                    } finally {
+                      setPasskeyBulkDeleting(false);
+                    }
+                  }}
+                >
+                  {passkeyBulkDeleting ? 'Deleting…' : 'Yes, Delete All'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Passkeys section (moved before Account info) */}
+          <Card>
             <CardHeader>
-        <CardTitle className="text-base font-medium text-muted-foreground">Account info</CardTitle>
-        <CardDescription className="text-xs">Metadata and usage</CardDescription>
+              <CardTitle className="text-base font-medium">Passkeys</CardTitle>
+              <CardDescription className="text-xs">Passwordless devices registered to your account</CardDescription>
+              <div className="ml-auto flex items-center gap-2 justify-end">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground"
+                          onClick={handleAddPasskey}
+                          disabled={!webAuthnSupported}
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          Add passkey
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {!webAuthnSupported && (
+                      <TooltipContent side="left">
+                        Your browser must support WebAuthn in a secure context (HTTPS) to add a passkey.
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
+                {Array.isArray(passkeys) && (passkeys as any[]).length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground"
+                    onClick={() => setPasskeyDeleteAllOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Delete all
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+        {passkeysStatus === 'loading' ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : !passkeys || (passkeys as any[]).length === 0 ? (
+                <p className="text-sm text-muted-foreground">No passkeys registered.</p>
+              ) : (
+                <div className="space-y-2">
+          {(passkeys as any[]).map((pk: any) => (
+                    <div key={pk.key_id} className="flex items-center gap-2 justify-between border rounded-md px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          {renamingId === pk.key_id ? (
+                            <Input
+                              value={renameDraft}
+                              onChange={(e) => setRenameDraft(e.target.value)}
+                              className="h-8"
+                            />
+                          ) : (
+                            <span className="text-sm font-medium truncate">
+                              {pk.name || 'Unnamed device'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {pk.device_type || 'device'} • {pk.key_id}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Last used {formatDateTime(pk.last_used_at, userTimezone)}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {renamingId === pk.key_id ? (
+                          <>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              onClick={async () => {
+                                const name = renameDraft.trim();
+                                try {
+                                  const act: any = await dispatch(renamePasskey({ key_id: pk.key_id, name }) as any);
+                                  if (renamePasskey.rejected.match(act)) throw new Error(act.payload as any);
+                                  setRenamingId(null);
+                                  setRenameDraft('');
+                                  toast({ title: 'Renamed', description: 'Passkey name updated.' });
+                                } catch (e: any) {
+                                  toast({ title: 'Rename failed', description: e?.message || 'Error', variant: 'destructive' });
+                                }
+                              }}
+                              aria-label="Save name"
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              onClick={() => { setRenamingId(null); setRenameDraft(''); }}
+                              aria-label="Cancel rename"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            onClick={() => { setRenamingId(pk.key_id); setRenameDraft(String(pk.name || '')); }}
+                            aria-label="Rename"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-destructive"
+                          onClick={async () => {
+                            try {
+                              const act: any = await dispatch(deletePasskeyAction({ key_id: pk.key_id }) as any);
+                              if (deletePasskeyAction.rejected.match(act)) throw new Error(act.payload as any);
+                              toast({ title: 'Deleted', description: 'Passkey removed.' });
+                            } catch (e: any) {
+                              toast({ title: 'Delete failed', description: e?.message || 'Error', variant: 'destructive' });
+                            }
+                          }}
+                          aria-label="Delete passkey"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Account info (moved after Passkeys) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-medium text-muted-foreground">Account info</CardTitle>
+              <CardDescription className="text-xs">Metadata and usage</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Row label="Created" icon={<Calendar className="h-4 w-4 text-muted-foreground" />} muted>

@@ -9,6 +9,7 @@ import profileSlice from './slices/profileSlice';
 import authSlice from './slices/authSlice';
 import themeSlice from './slices/themeSlice';
 import dashboardSlice from './slices/dashboardSlice';
+import passkeysSlice from './slices/passkeysSlice';
 import { registerTokenSelector } from '@/lib/api-config';
 import { selectTokens } from './slices/authSlice';
 
@@ -23,6 +24,7 @@ export const store = configureStore({
     profile: profileSlice,
     auth: authSlice,
     theme: themeSlice, // ← Theme is already here!
+  passkeys: passkeysSlice,
   },
 });
 

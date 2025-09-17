@@ -21,7 +21,7 @@ import type { Application, Portfolio, Zone, Client } from "@/store/types";
 import { useToast } from "@/hooks/use-toast";
 import { useAppDispatch } from "@/store";
 import { fetchZonesPage, fetchZoneByKey } from "@/store/slices/zonesSlice";
-import { fetchApplications, fetchApplicationDetail, updateApplication, deleteApplication, selectApplications, selectApplicationByKey, patchPortfolioAppCount } from "@/store/slices/applicationsSlice";
+import { fetchApplications, fetchApplicationDetail, updateApplication, deleteApplication, selectApplicationByKey, patchPortfolioAppCount } from "@/store/slices/applicationsSlice";
 
 function formatDateTime(v?: string) {
   if (!v) return "—";
@@ -48,49 +48,26 @@ export default function ApplicationDetails() {
     return Array.isArray(p) ? (p as Portfolio[]) : [];
   }, [portfolios]);
 
-  const appsList = useSelector(selectApplications);
-
   const zonesList = useSelector((s: RootState) => (s as any)?.zones?.zones ?? []) as Zone[];
-
-  // Fetch list for the selected portfolio from the store
-  useEffect(() => {
-    if (!currentClient || !routePortfolio) return;
-    dispatchTyped(fetchApplications({ client: currentClient, portfolio: routePortfolio, limit: 200 }) as any);
-  }, [currentClient, routePortfolio, dispatchTyped]);
 
   // const builds = useSelector((s: RootState) => (s as any)?.deployments?.builds ?? []) as AppDeploymentBuild[]; // not used
 
-  const clientApps = useMemo<Application[]>(() => {
-    const inClient = appsList;
-    if (!routePortfolio) return inClient;
-    return inClient.filter((a) => a.portfolio === routePortfolio);
-  }, [appsList, routePortfolio]);
-
-  // Prefer store-hydrated record over list entry
-  const applicationFromList = useMemo<Application | null>(() => {
-    if (routeApp) {
-      const exactBySlug = clientApps.find((a) => a.app === routeApp);
-      if (exactBySlug) return exactBySlug;
-    }
-    if (clientApps.length === 1) return clientApps[0];
-    return null;
-  }, [clientApps, routeApp]);
-
+  // Always select the full application record by key from Redux; do not fallback to list items
   const applicationFromStore = useSelector((s: RootState) => (routePortfolio && routeApp ? selectApplicationByKey(s, routePortfolio, routeApp) : undefined)) as Application | undefined;
-  const application = useMemo<Application | null>(() => (applicationFromStore || applicationFromList || null), [applicationFromStore, applicationFromList]);
+  const application = useMemo<Application | null>(() => (applicationFromStore || null), [applicationFromStore]);
 
   // On open, hydrate the full app record via store thunk to ensure all fields are available
   const lastFetchedKeyRef = useRef<string>("");
   useEffect(() => {
     if (!currentClient) return;
     const appParam = routeApp;
-    const portfolioSlug = routePortfolio || (applicationFromList as any)?.portfolio || "";
+    const portfolioSlug = routePortfolio;
     if (!appParam || !portfolioSlug) return;
     const key = `${currentClient}::${portfolioSlug}::${appParam}`;
     if (lastFetchedKeyRef.current === key) return;
     lastFetchedKeyRef.current = key;
     dispatchTyped(fetchApplicationDetail({ client: currentClient, portfolio: portfolioSlug, app: appParam }) as any);
-  }, [currentClient, routePortfolio, routeApp, applicationFromList, dispatchTyped]);
+  }, [currentClient, routePortfolio, routeApp, dispatchTyped]);
 
   const zone = useMemo<Zone | null>(() => {
     if (!application?.zone) return null;
@@ -179,6 +156,19 @@ export default function ApplicationDetails() {
 
   // environment options removed
 
+  // Region-level tags for current zone + selected alias (used in edit + view computations)
+  const selectedRegionAlias = useMemo(() => (isEditing ? editRegion : (application?.region || '')),
+    [isEditing, editRegion, application?.region]);
+  const regionTags = useMemo<Record<string, any>>(() => {
+    const z = (selectedZone || zone) as Zone | null;
+    if (!z || !z.region_facts) return {};
+    const rf = z.region_facts as unknown as Record<string, any>;
+    const alias = selectedRegionAlias || '';
+    const entry = (alias && rf && typeof rf === 'object') ? (rf[alias] || {}) : {};
+    const tags = (entry?.tags || {}) as Record<string, any>;
+    return tags;
+  }, [selectedZone, zone, selectedRegionAlias]);
+
   type UITagPolicy = { tag_name: string; required: boolean; description?: string };
   const tagPolicies: UITagPolicy[] = useMemo(() => {
     const raw: any = (clientObj as any)?.tags_policy ?? (clientObj as any)?.tag_policy;
@@ -197,8 +187,9 @@ export default function ApplicationDetails() {
     const pObj = portfoliosList.find((p) => p.portfolio === pSlug) || null;
     const pTags = (pObj?.tags || {}) as Record<string, any>;
     const cTags = (clientObj?.tags || {}) as Record<string, any>;
-    return { ...cTags, ...pTags, ...zTags, ...acctTags } as Record<string, string>;
-  }, [selectedZone, zone, routePortfolio, application?.portfolio, portfoliosList, clientObj]);
+    // Precedence (low → high) excluding app layer: region → zone → account → portfolio → client
+    return { ...regionTags, ...zTags, ...acctTags, ...pTags, ...cTags } as Record<string, string>;
+  }, [selectedZone, zone, regionTags, routePortfolio, application?.portfolio, portfoliosList, clientObj]);
 
   // View-mode resolved tags: app.tags overlaid by zone -> account -> portfolio -> client (later wins)
   const resolvedTags = useMemo<Record<string, string>>(() => {
@@ -210,8 +201,10 @@ export default function ApplicationDetails() {
     const pObj = portfoliosList.find((p) => p.portfolio === pSlug) || null;
     const pTags = (pObj?.tags || {}) as Record<string, any>;
     const cTags = (clientObj?.tags || {}) as Record<string, any>;
-    return { ...base, ...zTags, ...acctTags, ...pTags, ...cTags } as Record<string, string>;
-  }, [application?.tags, selectedZone, zone, routePortfolio, application?.portfolio, portfoliosList, clientObj]);
+    // Merge order (lowest to highest priority): app -> region -> zone -> account -> portfolio -> client
+    return { ...base, ...regionTags, ...zTags, ...acctTags, ...pTags, ...cTags } as Record<string, string>;
+  }, [application?.tags, regionTags, selectedZone, zone, routePortfolio, application?.portfolio, portfoliosList, clientObj]);
+
 
   const onSave = async () => {
     const inheritedSet = new Set(Object.keys(inheritedTags || {}).map((s) => s.toLowerCase()));
@@ -293,7 +286,7 @@ export default function ApplicationDetails() {
 
   if (!currentClient) {
     return (
-      <div className="space-y-6">
+  <div className="sck-form-container space-y-6">
         <Card>
           <CardContent className="p-12 text-center">
             <h3 className="text-lg font-semibold mb-2">No Client Selected</h3>
@@ -307,7 +300,7 @@ export default function ApplicationDetails() {
 
   if (!application) {
     return (
-      <div className="space-y-6">
+  <div className="sck-form-container space-y-6">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -325,7 +318,7 @@ export default function ApplicationDetails() {
   }
 
   return (
-    <div className="mx-auto max-w-lg md:max-w-xl p-4 md:p-6 space-y-6 animate-fade-in">
+  <div className="sck-form-container space-y-6 animate-fade-in">
         {/* Top bar: Back link (left) and actions (right) */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -388,7 +381,7 @@ export default function ApplicationDetails() {
                   <FormGrid>
                     <FormRow label="Portfolio"><div className="text-sm text-foreground">{application.portfolio}</div></FormRow>
                     <FormRow label="App Name"><div className="text-sm text-foreground">{application.name || "—"}</div></FormRow>
-                    <FormRow label="App Regex"><div className="text-sm text-foreground font-mono break-all">{application.app_regex}</div></FormRow>
+                    <FormRow label="Pipeline Reference Number Regex"><div className="text-sm text-foreground font-mono break-all">{application.app_regex}</div></FormRow>
                     <FormRow label="Zone">
                       <div className="text-sm text-foreground flex items-center gap-2">
                         <span>{application.zone}</span>
@@ -474,8 +467,8 @@ export default function ApplicationDetails() {
                       <Input placeholder="Descriptive name" value={editName} onChange={(e) => setEditName(e.target.value)} />
                     </FormRow>
 
-                    <FormRow label="App Regex">
-                      <Input placeholder="e.g., myapp-.*" value={editAppRegex} onChange={(e) => setEditAppRegex(e.target.value)} />
+                    <FormRow label="Pipeline Reference Number Regex">
+                      <Input placeholder="e.g., PRN-.*" value={editAppRegex} onChange={(e) => setEditAppRegex(e.target.value)} />
                     </FormRow>
 
                     <FormRow label="Zone">
@@ -530,6 +523,22 @@ export default function ApplicationDetails() {
 
                     <FormRow label="Tags">
                       <TagEditor values={editTags} onChange={setEditTags} policies={tagPolicies} requiredNames={requiredTagNames} inherited={inheritedTags} hideHeader />
+                    </FormRow>
+
+                    <FormRow label="Tags from Region">
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries((regionTags || {}) as Record<string, any>).length === 0 ? (
+                          <div className="text-xs text-muted-foreground">No tags found</div>
+                        ) : (
+                          Object.entries((regionTags || {}) as Record<string, any>).map(([key, val], idx) => (
+                            <Badge key={`${key}-${idx}`} variant="secondary" className="gap-2">
+                              <span>{String(key)}</span>
+                              <span className="opacity-70">=</span>
+                              <span>{String(val)}</span>
+                            </Badge>
+                          ))
+                        )}
+                      </div>
                     </FormRow>
 
                     <FormRow label="Tags from Zone">
@@ -643,8 +652,9 @@ function Info({ label, value, mono = false }: { label: string; value: React.Reac
 
 function renderZoneEnvBadge(z: Zone) {
   const env = mapZoneEnv(z);
-  const badgeVariant = env === 'prd' ? 'destructive' : env === 'nprd' ? 'default' : env === 'dev' ? 'secondary' : 'secondary';
-  return <Badge variant={badgeVariant as any} className="uppercase">{env || '-'}</Badge>;
+  const badgeVariant: "destructive" | "default" | "secondary" | "outline" =
+    env === 'prd' ? 'destructive' : env === 'nprd' ? 'default' : env === 'dev' ? 'secondary' : 'secondary';
+  return <Badge variant={badgeVariant} className="uppercase">{env || '-'}</Badge>;
 }
 
 function mapZoneEnv(z: Zone): 'prd' | 'nprd' | 'dev' | '' {

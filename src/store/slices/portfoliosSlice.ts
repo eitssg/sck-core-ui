@@ -533,11 +533,22 @@ const portfoliosSlice = createSlice({
           }
         }
         
-        // Either replace or append based on append flag
+        // Merge summaries into existing items to preserve detailed fields
         if (append) {
-          state.items = [...state.items, ...portfolios];
+          const existing = state.items || [];
+          const map = new Map(existing.map(p => [p.portfolio, p] as const));
+          const merged = portfolios.map(p => {
+            const prev = map.get(p.portfolio);
+            return prev ? ({ ...prev, ...p }) : p;
+          });
+          state.items = [...existing.filter(p => !merged.find(m => m.portfolio === p.portfolio)), ...merged];
         } else {
-          state.items = portfolios;
+          const existing = state.items || [];
+          const map = new Map(existing.map(p => [p.portfolio, p] as const));
+          state.items = portfolios.map(p => {
+            const prev = map.get(p.portfolio);
+            return prev ? ({ ...prev, ...p }) : p;
+          });
         }
         
         state.cursor = action.payload.data.metadata?.cursor ?? null;

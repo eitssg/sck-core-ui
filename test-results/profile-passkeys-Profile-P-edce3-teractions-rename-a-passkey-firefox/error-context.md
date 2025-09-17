@@ -1,0 +1,142 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - button "Permission issues 2" [ref=e4] [cursor=pointer]:
+    - text: Permission issues
+    - generic [ref=e5] [cursor=pointer]: "2"
+  - generic [ref=e6]:
+    - banner [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - img [ref=e11]
+          - 'heading "Profile: default" [level=1] [ref=e13]'
+        - button "User menu" [ref=e15] [cursor=pointer]:
+          - generic [ref=e17] [cursor=pointer]: EU
+    - generic [ref=e19]:
+      - generic [ref=e21]:
+        - generic [ref=e22]:
+          - heading "Personal Information" [level=3] [ref=e23]:
+            - img [ref=e24]
+            - text: Personal Information
+          - generic [ref=e27]:
+            - button "Edit" [ref=e28] [cursor=pointer]:
+              - img [ref=e29] [cursor=pointer]
+              - text: Edit
+            - button "Add" [ref=e32] [cursor=pointer]:
+              - img [ref=e33] [cursor=pointer]
+              - text: Add
+            - button "Delete" [disabled]:
+              - img
+              - text: Delete
+        - generic [ref=e36]:
+          - generic [ref=e40]: EU
+          - generic [ref=e41]:
+            - generic [ref=e42]:
+              - generic [ref=e43]:
+                - generic [ref=e44]: Client
+                - paragraph [ref=e45]: Core (core)
+              - generic [ref=e46]:
+                - generic [ref=e47]: Organization
+                - paragraph [ref=e48]: —
+              - generic [ref=e50]:
+                - generic [ref=e51]: Display Name
+                - paragraph [ref=e52]: E2E User
+              - generic [ref=e53]:
+                - generic [ref=e54]: Email
+                - paragraph [ref=e55]: user@example.com
+              - generic [ref=e56]:
+                - generic [ref=e57]: First Name
+                - paragraph [ref=e58]: —
+              - generic [ref=e59]:
+                - generic [ref=e60]: Last Name
+                - paragraph [ref=e61]: —
+              - generic [ref=e62]:
+                - generic [ref=e63]: Language
+                - paragraph [ref=e64]: en-US
+              - generic [ref=e65]:
+                - generic [ref=e66]:
+                  - generic [ref=e67]: AWS Credentials
+                  - link "Edit AWS Credentials" [ref=e68] [cursor=pointer]:
+                    - /url: /aws-credentials
+                    - img [ref=e69] [cursor=pointer]
+                - paragraph [ref=e72]: Available
+              - generic [ref=e73]:
+                - generic [ref=e74]:
+                  - generic [ref=e75]: MFA
+                  - link "Edit MFA Settings" [ref=e76] [cursor=pointer]:
+                    - /url: /mfa-token
+                    - img [ref=e77] [cursor=pointer]
+                - paragraph [ref=e80]: Inactive
+              - generic [ref=e81]:
+                - generic [ref=e82]: Passkeys
+                - generic [ref=e84]: Enabled
+              - generic [ref=e85]:
+                - generic [ref=e86]: My Home AWS Account
+                - paragraph [ref=e87]: —
+              - generic [ref=e88]:
+                - generic [ref=e89]: Preferred Region
+                - paragraph [ref=e90]: us-east-1
+            - generic [ref=e91]:
+              - generic [ref=e92]: Profile Description
+              - paragraph [ref=e93]: No description
+            - generic [ref=e94]:
+              - generic [ref=e95]:
+                - generic [ref=e96]: Light Theme Preset
+                - paragraph [ref=e97]: Default
+              - generic [ref=e98]:
+                - generic [ref=e99]: Dark Theme Preset
+                - paragraph [ref=e100]: Default
+      - generic [ref=e101]:
+        - generic [ref=e102]:
+          - generic [ref=e103]:
+            - heading "Passkeys" [level=3] [ref=e104]
+            - paragraph [ref=e105]: Passwordless devices registered to your account
+            - generic [ref=e106]:
+              - button "Add passkey" [ref=e108] [cursor=pointer]:
+                - img [ref=e109] [cursor=pointer]
+                - text: Add passkey
+              - button "Delete all" [ref=e112] [cursor=pointer]:
+                - img [ref=e113] [cursor=pointer]
+                - text: Delete all
+          - generic [ref=e120]:
+            - generic [ref=e121]:
+              - generic [ref=e122]:
+                - textbox [ref=e124]: Work Laptop
+                - generic [ref=e125]: cross-platform • pk-1
+                - generic [ref=e126]: Last used Sep 17, 2025, 04:16 AM
+              - generic [ref=e127]:
+                - button "Save name" [ref=e128] [cursor=pointer]:
+                  - img [ref=e129] [cursor=pointer]
+                - button "Cancel rename" [ref=e131] [cursor=pointer]:
+                  - img [ref=e132] [cursor=pointer]
+                - button "Delete passkey" [ref=e135] [cursor=pointer]:
+                  - img [ref=e136] [cursor=pointer]
+            - generic [ref=e142]:
+              - generic [ref=e143]:
+                - generic [ref=e145]: Phone
+                - generic [ref=e146]: platform • pk-2
+                - generic [ref=e147]: Last used Sep 16, 2025, 04:16 AM
+              - generic [ref=e148]:
+                - button "Rename" [ref=e149] [cursor=pointer]:
+                  - img [ref=e150] [cursor=pointer]
+                - button "Delete passkey" [ref=e153] [cursor=pointer]:
+                  - img [ref=e154] [cursor=pointer]
+        - generic [ref=e160]:
+          - generic [ref=e161]:
+            - heading "Account info" [level=3] [ref=e162]
+            - paragraph [ref=e163]: Metadata and usage
+          - generic [ref=e164]:
+            - generic [ref=e165]:
+              - generic [ref=e166]:
+                - img [ref=e167]
+                - generic [ref=e172]: Created
+              - generic [ref=e173]: —
+            - generic [ref=e174]:
+              - generic [ref=e175]:
+                - img [ref=e176]
+                - generic [ref=e181]: Last Login
+              - generic [ref=e182]: —
+  - region "Notifications (F8)":
+    - list
+```

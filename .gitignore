@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Yarn Berry cache/artifacts
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.pnp.*
+
 # Environment files
 .env.local
 .env.*.local

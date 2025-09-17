@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "@/store";
 
 import { Briefcase, Building2, Plus, Search, X, GitBranch, Filter as FilterIcon } from "lucide-react";
+import EnvBadge from "@/components/ui/env-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -306,8 +307,15 @@ export default function Applications() {
                 const zoneNames = Array.from(new Set(appUnits.map((a) => a.zone).filter(Boolean)));
                 const zoneBadges = zoneNames.map((zn) => {
                   const z = zonesByName.get(zn);
-                  const label = z ? `${z.zone}${z.account_facts?.environment ? ` (${z.account_facts.environment})` : ""}` : zn;
-                  return label;
+                  if (!z) return (
+                    <Badge key={`${key}:${zn}`} variant="outline">{zn}</Badge>
+                  );
+                  return (
+                    <Badge key={`${key}:${zn}`} variant="outline" className="gap-1">
+                      <span>{z.zone}</span>
+                      <EnvBadge zone={z} />
+                    </Badge>
+                  );
                 });
 
                 // FUTURE: resolve latest build per portfolio via PRN mapping
@@ -337,11 +345,7 @@ export default function Applications() {
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {zoneBadges.length > 0
-                          ? zoneBadges.slice(0, 4).map((z) => (
-                              <Badge key={`${key}:${z}`} variant="outline">
-                                {z}
-                              </Badge>
-                            ))
+                          ? zoneBadges.slice(0, 4)
                           : <span className="text-muted-foreground">—</span>}
                         {zoneBadges.length > 4 && (
                           <Badge variant="secondary">+{zoneBadges.length - 4}</Badge>

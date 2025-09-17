@@ -57,10 +57,17 @@ export default function Login() {
 
   const isAuthenticated = useSelector((s: RootState) => s.auth?.isAuthenticated) ?? false;
 
+  // Controls password input visibility (text vs password)
   const [showPassword, setShowPassword] = useState(false);
+  // Controls whether the password panel is shown (slides in on passkey unavailability)
+  const [showPasswordPanel, setShowPasswordPanel] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const canSubmit = useMemo(() => email.trim().length > 3 && password.length >= 1, [email, password]);
+  const passwordRef = useRef<HTMLInputElement | null>(null);
+  const canSubmit = useMemo(
+    () => email.trim().length > 3 && (showPasswordPanel ? password.length >= 1 : true),
+    [email, password, showPasswordPanel]
+  );
 
   const [isLoading, setIsLoading] = useState(false);
   const [needMfa, setNeedMfa] = useState(false);
@@ -69,6 +76,35 @@ export default function Login() {
   const [mfaError, setMfaError] = useState("");
   const errorMsg = auth?.error || "";
   const errorRef = useRef<HTMLDivElement | null>(null);
+
+  // Base64url helpers for WebAuthn
+  const base64urlToBytes = (b64url: string): Uint8Array => {
+    const pad = (s: string) => s + "===".slice((s.length + 3) % 4);
+    const b64 = pad(b64url.replace(/-/g, "+").replace(/_/g, "/"));
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  };
+  const bytesToBase64url = (buf: ArrayBuffer | Uint8Array): string => {
+    const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+    let bin = "";
+    for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  };
+
+  // Detect WebAuthn support
+  const webAuthnSupported = useMemo(() => {
+    try {
+      const hasCreds = typeof window !== "undefined" && !!(navigator as any)?.credentials;
+      const hasPKC = typeof window !== "undefined" && "PublicKeyCredential" in window;
+      const isSecure = typeof window !== "undefined" && (((window as any).isSecureContext) ?? (window.location?.protocol === "https:"));
+      return Boolean(hasCreds && hasPKC && isSecure);
+    } catch (e) {
+      // ignore support detection errors
+      return false;
+    }
+  }, []);
 
   useEffect(() => {
     // On entering /login: perform a logout only if we likely have a session.
@@ -112,15 +148,130 @@ export default function Login() {
     }
   }, [errorMsg]);
 
+  // Focus password when we slide it in
+  useEffect(() => {
+    if (showPasswordPanel) {
+      setTimeout(() => passwordRef.current?.focus(), 50);
+    }
+  }, [showPasswordPanel]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
   dispatch(clearError());
   setMfaError("");
   setNeedMfa(false);
-
     try {
-      // Step 1: Login to obtain a session credential (cookie)
+      const emailVal = email.trim();
+      if (!showPasswordPanel && webAuthnSupported) {
+        // Passkey-first attempt
+        try {
+          const beginRes = await apiFetch(buildApiUrl('/auth/v1/webauthn/authenticate/begin'), {
+            method: 'POST',
+            body: JSON.stringify({ user_id: emailVal, rp_id: window.location.hostname }),
+            contextLabel: 'PasskeyLoginBegin',
+            noAuthRetryOn401: true,
+          });
+          if (!beginRes.ok) {
+            // If server indicates no passkeys or unauthorized, fall back with targeted message
+            let server: any = {}; const status = beginRes.status; try { server = await beginRes.json(); } catch (e) { /* ignore parse error */ }
+            const msg = status === 401 || status === 403
+              ? 'Passkeys Unauthorized'
+              : (server?.message || 'Passkey sign-in unavailable. Use your password.');
+            dispatch(setError(msg));
+            setShowPasswordPanel(true);
+            setIsLoading(false);
+            return;
+          }
+          const beginJson = await beginRes.json();
+          const options = beginJson?.data || beginJson;
+
+          const allow = Array.isArray(options.allowCredentials) ? options.allowCredentials : [];
+          if (!allow.length) {
+            // No passkeys for this email
+            dispatch(setError('No passkeys found for this email. Enter your password.'));
+            setShowPasswordPanel(true);
+            setIsLoading(false);
+            return;
+          }
+
+          // Build request options
+          const publicKey: PublicKeyCredentialRequestOptions = {
+            challenge: base64urlToBytes(String(options.challenge)),
+            timeout: options.timeout || 60000,
+            userVerification: options.userVerification || 'preferred',
+            rpId: options.rpId || window.location.hostname,
+            allowCredentials: allow.map((c: any) => ({
+              type: 'public-key',
+              id: base64urlToBytes(String(c.id)),
+              transports: c.transports,
+            })),
+            hints: options.hints,
+          } as any;
+
+          // Prompt user
+          let cred: PublicKeyCredential | null = null;
+          try {
+            cred = await navigator.credentials.get({ publicKey }) as PublicKeyCredential;
+          } catch (err: any) {
+            // User canceled or platform not available
+            dispatch(setError('Passkey prompt canceled or unavailable. Enter your password.'));
+            setShowPasswordPanel(true);
+            setIsLoading(false);
+            return;
+          }
+          if (!cred) {
+            dispatch(setError('Passkey not provided. Enter your password.'));
+            setShowPasswordPanel(true);
+            setIsLoading(false);
+            return;
+          }
+
+          const a = cred.response as AuthenticatorAssertionResponse;
+          const completePayload: any = {
+            user_id: emailVal,
+            key_id: cred.id,
+            clientDataJSON: bytesToBase64url(a.clientDataJSON),
+            authenticatorData: bytesToBase64url(a.authenticatorData),
+            signature: bytesToBase64url(a.signature),
+            userHandle: a.userHandle ? bytesToBase64url(a.userHandle) : undefined,
+            clientDataChallenge: String(options.challenge),
+          };
+
+          const completeRes = await apiFetch(buildApiUrl('/auth/v1/webauthn/authenticate/complete'), {
+            method: 'POST',
+            body: JSON.stringify(completePayload),
+            contextLabel: 'PasskeyLoginComplete',
+            noAuthRetryOn401: true,
+          });
+          if (!completeRes.ok) {
+            let server: any = {}; const status = completeRes.status; try { server = await completeRes.json(); } catch (e) { /* ignore parse error */ }
+            const rawMsg = (server?.message || '').toLowerCase();
+            const msg = (status === 401 || status === 403)
+              ? 'Passkeys Unauthorized'
+              : rawMsg.includes('challenge_mismatch')
+                ? 'Security check failed. Please try again or use your password.'
+                : (server?.message || 'Passkey sign-in failed. Use your password.');
+            dispatch(setError(msg));
+            setShowPasswordPanel(true);
+            setIsLoading(false);
+            return;
+          }
+
+          // Success: Backend set session cookie; proceed to authorize
+          const authorizeUrl = await buildOAuthAuthorizeUrl();
+          window.location.href = authorizeUrl;
+          return;
+        } catch (err) {
+          // Any unexpected error: fall back to password
+          dispatch(setError('Passkey sign-in unavailable. Use your password.'));
+          setShowPasswordPanel(true);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // Password flow
       const url = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGIN);
       const res = await apiFetch(url, {
         method: "POST",
@@ -128,7 +279,7 @@ export default function Login() {
         noAuthRetryOn401: true,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email,
+          email: emailVal,
           password,
           client_id: API_CONFIG.OAUTH.CLIENT_ID,
         }),
@@ -141,21 +292,14 @@ export default function Login() {
       }
       if (!res.ok) {
         let server = { message: "" as string };
-        try {
-          server = await res.json();
-        } catch {
-          // ignore parse errors
-        }
-  const msg = mapOAuthErrorToUserMessage(server.message || "Login failed", res.status);
-  dispatch(setError(msg));
+        try { server = await res.json(); } catch (e) { /* ignore parse error */ }
+        const msg = mapOAuthErrorToUserMessage(server.message || "Login failed", res.status);
+        dispatch(setError(msg));
         setIsLoading(false);
         return;
       }
-
-  // Success: Redirect to OAuth authorize (session cookie will be sent automatically)
       const authorizeUrl = await buildOAuthAuthorizeUrl();
       window.location.href = authorizeUrl;
-      // No further code executes after navigation
     } catch (err) {
       dispatch(setError(mapOAuthErrorToUserMessage(err instanceof Error ? err.message : "Login failed")));
       setIsLoading(false);
@@ -314,33 +458,50 @@ export default function Login() {
                     required
                   />
                 </div>
+                  {!showPasswordPanel && (
+                    <div className="text-right">
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:text-foreground underline"
+                        onClick={() => setShowPasswordPanel(true)}
+                      >
+                        Use password instead
+                      </button>
+                    </div>
+                  )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="password"
-                    name="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="current-password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 pr-10"
-                    required
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-1 top-1 h-8 w-8"
-                    onClick={() => setShowPassword((s) => !s)}
-                    tabIndex={-1}
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
+              {/* Sliding password panel; hidden until passkey flow is unavailable */}
+              <div className={`overflow-hidden transition-all duration-300 ${showPasswordPanel ? 'max-h-32 opacity-100 mx-[-8px]' : 'max-h-0 opacity-0 mx-[-8px]'}`}>
+                <div className="space-y-2 px-2 py-2">
+                  <Label htmlFor="password">Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="password"
+                      name="password"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="current-password"
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-10 pr-10"
+                      ref={passwordRef}
+                      required={showPasswordPanel}
+                      disabled={!showPasswordPanel}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1 h-8 w-8"
+                      onClick={() => setShowPassword((s) => !s)}
+                      tabIndex={-1}
+                      disabled={!showPasswordPanel}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -351,7 +512,7 @@ export default function Login() {
                 variant="gradient"
                 disabled={isLoading || !canSubmit}
               >
-                {isLoading ? "Signing in..." : "Sign In"}
+                {isLoading ? "Signing in..." : (showPasswordPanel ? "Sign In" : "Continue")}
               </Button>
             </form>
             )}

@@ -529,40 +529,39 @@ const clientsSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchClients.fulfilled, (state, action: PayloadAction<ApiResponse<Client>>) => {
-            const data = toArray<Client>(action.payload.data);
-            const now = Date.now();
+        const data = toArray<Client>(action.payload.data);
+        const now = Date.now();
+        const existing = state.items || [];
+        const bySlug = new Map(existing.map(c => [c.client, c] as const));
 
-            state.items = data.map((c) => {
-              const slug = (c as any).client || (c as any).Client || '';
-              // Keep full data for the current active client; otherwise store minimal fields
-              if (slug && slug === state.currentActiveClient) {
-                state.fullClientDataCache[slug] = true;
-                state.individualClientCache[slug] = now;
-                return normalizeClient({ ...(c as Client), client: slug });
-              }
-              const minimal: Client = {
-                client: slug,
-                client_status: (c as any).client_status,
-                client_name: (c as any).client_name || (c as any).Name,
-                client_description: (c as any).client_description,
-                organization_name: (c as any).organization_name,
-                organization_account: (c as any).organization_account,
-                created_at: (c as any).created_at,
-              };
-              state.fullClientDataCache[slug] = false;
-              state.individualClientCache[slug] = now;
-              return minimal;
-            });
-            // Rebuild maps
-            state.byId = {};
-            state.ids = [];
-            state.items.forEach(c => { state.byId[c.client] = c; state.ids.push(c.client); });
+        const nextList = data.map((c) => {
+          const slug = ((c as any).client || (c as any).Client || '') as string;
+          const minimal: Client = {
+            client: slug,
+            client_status: (c as any).client_status,
+            client_name: (c as any).client_name || (c as any).Name,
+            client_description: (c as any).client_description,
+            organization_name: (c as any).organization_name,
+            organization_account: (c as any).organization_account,
+            created_at: (c as any).created_at,
+          };
+          state.fullClientDataCache[slug] = state.fullClientDataCache[slug] || false;
+          state.individualClientCache[slug] = now;
+          const prev = bySlug.get(slug);
+          // Preserve any previously fetched full data
+          return prev ? ({ ...prev, ...minimal }) : minimal;
+        });
 
-            state.cursor = action.payload.metadata?.cursor ?? null;
-            state.status = 'succeeded';
-            state.lastFetched = now;
-            state.error = null;
-          })
+        state.items = nextList;
+        state.byId = {};
+        state.ids = [];
+        state.items.forEach(c => { state.byId[c.client] = c; state.ids.push(c.client); });
+
+        state.cursor = action.payload.metadata?.cursor ?? null;
+        state.status = 'succeeded';
+        state.lastFetched = now;
+        state.error = null;
+      })
       .addCase(fetchClients.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.error.message ?? 'Failed to load clients';

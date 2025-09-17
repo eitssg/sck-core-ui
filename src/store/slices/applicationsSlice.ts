@@ -14,6 +14,10 @@ interface ApplicationsState {
   error: string | null;
   lastFetched: number | null;
   currentClient: string | null;
+  // Per-application draft edits keyed by "{portfolio}::{app}"
+  drafts: Record<string, Partial<Application>>;
+  // Track which apps are in edit mode (UI can also derive from drafts)
+  editing: Record<string, boolean>;
 }
 
 const initialState: ApplicationsState = {
@@ -22,6 +26,8 @@ const initialState: ApplicationsState = {
   error: null,
   lastFetched: null,
   currentClient: null,
+  drafts: {},
+  editing: {},
 };
 
 // Fetch applications list, optionally filtered by portfolio
@@ -208,12 +214,33 @@ const applicationsSlice = createSlice({
       state.status = 'idle';
       state.error = null;
       state.lastFetched = null;
+      state.drafts = {};
+      state.editing = {};
     },
     setItems(state, action: PayloadAction<Application[]>) {
       state.items = action.payload || [];
       state.status = 'succeeded';
       state.error = null;
       state.lastFetched = Date.now();
+    },
+    beginEdit(state, action: PayloadAction<{ portfolio: string; app: string }>) {
+      const key = `${action.payload.portfolio}::${action.payload.app}`;
+      if (!state.drafts[key]) state.drafts[key] = {};
+      state.editing[key] = true;
+    },
+    updateDraft(
+      state,
+      action: PayloadAction<{ portfolio: string; app: string; changes: Partial<Application> }>
+    ) {
+      const key = `${action.payload.portfolio}::${action.payload.app}`;
+      const next = { ...(state.drafts[key] || {}), ...(action.payload.changes || {}) } as Partial<Application>;
+      state.drafts[key] = next;
+      state.editing[key] = true;
+    },
+    cancelEdit(state, action: PayloadAction<{ portfolio: string; app: string }>) {
+      const key = `${action.payload.portfolio}::${action.payload.app}`;
+      delete state.drafts[key];
+      delete state.editing[key];
     },
   },
   extraReducers: (builder) => {
@@ -225,10 +252,22 @@ const applicationsSlice = createSlice({
       })
       .addCase(fetchApplications.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        state.items = action.payload.items;
+        const { items: rows, client, portfolio } = action.payload;
+        const existing = state.items || [];
+        // Keep items from other portfolios as-is
+        const keep = existing.filter((it) => it.portfolio !== portfolio);
+        // For this portfolio, merge each list row into any existing detailed record to preserve fields not returned by the list
+        const merged = rows.map((row) => {
+          const idx = existing.findIndex((a) => a.portfolio === row.portfolio && (a as any).app === (row as any).app);
+          if (idx >= 0) {
+            return { ...existing[idx], ...row } as Application;
+          }
+          return row;
+        });
+        state.items = [...keep, ...merged];
         state.error = null;
         state.lastFetched = Date.now();
-        state.currentClient = action.payload.client;
+        state.currentClient = client;
       })
       .addCase(fetchApplications.rejected, (state, action) => {
         state.status = 'failed';
@@ -240,7 +279,11 @@ const applicationsSlice = createSlice({
       })
       .addCase(fetchApplicationDetail.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        state.items = mergeItem(state.items, action.payload.item);
+        const srv = action.payload.item as any;
+        const portfolio = (action as any).meta?.arg?.portfolio || srv?.portfolio;
+        const appSlug = srv?.app || srv?.slug || srv?.id;
+        const normalized = { portfolio, app: appSlug, ...(srv || {}) } as Application;
+        state.items = mergeItem(state.items, normalized);
         state.error = null;
         state.lastFetched = Date.now();
       })
@@ -254,9 +297,17 @@ const applicationsSlice = createSlice({
       })
       .addCase(updateApplication.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        state.items = mergeItem(state.items, action.payload.item);
+        // Ensure we always have the identifying keys even if server omits them in the response
+        const arg = (action as any).meta?.arg as { portfolio: string; app: string };
+        const srv = action.payload.item as any;
+        const normalized = { portfolio: arg?.portfolio, app: arg?.app, ...(srv || {}) } as Application;
+        state.items = mergeItem(state.items, normalized);
         state.error = null;
         state.lastFetched = Date.now();
+        // Clear draft/editing for this app
+        const key = `${normalized.portfolio}::${(normalized as any).app}`;
+        delete state.drafts[key];
+        delete state.editing[key];
       })
       .addCase(updateApplication.rejected, (state, action) => {
         state.status = 'failed';
@@ -274,6 +325,9 @@ const applicationsSlice = createSlice({
         );
         state.error = null;
         state.lastFetched = Date.now();
+  const key = `${portfolio}::${app}`;
+  delete state.drafts[key];
+  delete state.editing[key];
       })
       .addCase(deleteApplication.rejected, (state, action) => {
         state.status = 'failed';
@@ -285,7 +339,12 @@ const applicationsSlice = createSlice({
       })
       .addCase(createApplication.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        state.items = mergeItem(state.items, action.payload.item);
+        const arg = (action as any).meta?.arg as { portfolio: string };
+        const srv = action.payload.item as any;
+        // Some backends may use 'slug' or 'id' for app
+        const appSlug = srv?.app || srv?.slug || srv?.id;
+        const normalized = { portfolio: arg?.portfolio, app: appSlug, ...(srv || {}) } as Application;
+        state.items = mergeItem(state.items, normalized);
         state.error = null;
         state.lastFetched = Date.now();
       })
@@ -296,7 +355,7 @@ const applicationsSlice = createSlice({
   }
 });
 
-export const { clear, setItems } = applicationsSlice.actions;
+export const { clear, setItems, beginEdit, updateDraft, cancelEdit } = applicationsSlice.actions;
 
 // Selectors
 export const selectApplications = (state: RootState) => (state as any).applications?.items as Application[];
@@ -304,6 +363,15 @@ export const selectApplicationsStatus = (state: RootState) => (state as any).app
 export const selectApplicationByKey = (state: RootState, portfolio: string, app: string) => {
   const list = (state as any).applications?.items as Application[];
   return (list || []).find((a) => a.portfolio === portfolio && (a as any).app === app);
+};
+export const selectDraftByKey = (state: RootState, portfolio: string, app: string) => {
+  const drafts = (state as any).applications?.drafts as Record<string, Partial<Application>>;
+  return (drafts || {})[`${portfolio}::${app}`] || undefined;
+};
+export const selectEffectiveApplication = (state: RootState, portfolio: string, app: string) => {
+  const base = selectApplicationByKey(state, portfolio, app);
+  const draft = selectDraftByKey(state, portfolio, app);
+  return base ? ({ ...base, ...(draft || {}) } as Application) : undefined;
 };
 
 export default applicationsSlice.reducer;

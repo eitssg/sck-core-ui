@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import EnvBadge from "@/components/ui/env-badge";
 import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/components/ui/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -35,6 +36,7 @@ import { appDetailsPath, appCreatePath } from "@/lib/routes";
 export default function PortfolioDetails() {
   const navigate = useNavigate();
   const { getAuthHeaders } = useApiHeaders();
+  const { toast } = useToast();
   
 
   // Auth guard via authSlice: avoid redirect if refresh token exists (refresh may be in-flight)
@@ -887,10 +889,25 @@ export default function PortfolioDetails() {
             <TabsContent value="overview">
               <Card className="shadow-soft">
                 <CardHeader className="flex flex-row items-start gap-2">
-                  <div>
-                    <CardTitle className="sck-section-title">Portfolio</CardTitle>
-                    <CardDescription className="sck-section-subtitle">Overview and basic information</CardDescription>
-                  </div>
+                  {!isEditing && (
+                    <div className="flex items-start gap-2">
+                      <div className="relative">
+                        {portfolio.icon_url ? (
+                          <SecureImg src={portfolio.icon_url} alt={portfolio.name || portfolio.project?.name || portfolio.portfolio} containerClassName="bg-white rounded-md" className="w-12 h-12 object-cover" />
+                        ) : (
+                          <div className="w-12 h-12 bg-primary/10 rounded-md flex items-center justify-center">
+                            <Briefcase className="h-6 w-6 text-primary" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-base font-semibold truncate">{portfolio.name || portfolio.project?.name || portfolio.portfolio}</div>
+                        {(portfolio as any)?.portfolio_version && (
+                          <div className="text-xs text-muted-foreground truncate">Version: {(portfolio as any).portfolio_version}</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   {/* Actions for overview tab: Edit/Delete on the right when not editing */}
                   {!isEditing && (
                     <div className="ml-auto flex items-center gap-2">
@@ -930,24 +947,6 @@ export default function PortfolioDetails() {
                 <CardContent className="space-y-4">
                   {!isEditing ? (
                     <div className="space-y-4">
-                      {/* Header row with icon and names */}
-                      <div className="flex items-center gap-4">
-            <div className="relative">
-                          {portfolio.icon_url ? (
-              <SecureImg src={portfolio.icon_url} alt={portfolio.name || portfolio.project?.name || portfolio.portfolio} containerClassName="bg-white rounded-md" className="w-12 h-12 object-cover" />
-                          ) : (
-                            <div className="w-12 h-12 bg-primary/10 rounded-md flex items-center justify-center">
-                              <Briefcase className="h-6 w-6 text-primary" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-base font-semibold truncate">{portfolio.name || portfolio.project?.name || portfolio.portfolio}</div>
-                          {(portfolio as any)?.portfolio_version && (
-                            <div className="text-xs text-muted-foreground truncate">Version: {(portfolio as any).portfolio_version}</div>
-                          )}
-                        </div>
-                      </div>
 
                       {(portfolio.category || portfolio.lifecycle_status) && (
                         <div className="flex gap-2 flex-wrap">
@@ -1245,7 +1244,13 @@ export default function PortfolioDetails() {
                       <CardTitle className="sck-section-title">Approvers</CardTitle>
                       <CardDescription className="sck-section-subtitle">Define approval workflow and roles</CardDescription>
                     </div>
-                    <Button variant="outline" size="sm" onClick={openNewApprover} className="gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={openNewApprover}
+                      className="gap-1 text-muted-foreground hover:text-foreground"
+                      aria-label="Add approver"
+                    >
                       <Plus className="h-4 w-4" />
                       Add
                     </Button>
@@ -1406,8 +1411,10 @@ export default function PortfolioDetails() {
                                             copy[gIdx].items[iIdx].enabled = v;
                                             setApproverGroups(copy);
                                             await normalizeAndPersistApprovers(copy);
+                                            toast({ title: v ? "Approver enabled" : "Approver disabled" });
                                           }}
                                           size="sm"
+                                          className="sck-toggle-enabled"
                                         />
                                       </div>
               {/* Mobile subtle more icon; desktop pencil */}
@@ -1469,7 +1476,7 @@ export default function PortfolioDetails() {
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-medium text-foreground">Contacts</div>
                     {isEditing && (
-                      <Button variant="outline" size="sm" onClick={addContact} className="gap-1">
+                      <Button variant="ghost" size="sm" onClick={addContact} className="gap-1 text-muted-foreground hover:text-foreground">
                         <PlusCircle className="h-4 w-4" /> Add Contact
                       </Button>
                     )}
@@ -1505,6 +1512,7 @@ export default function PortfolioDetails() {
                                   checked={!!c.enabled}
                                   onCheckedChange={(v) => updateContact(i, "enabled", v)}
                                   size="sm"
+                                  className="sck-toggle-enabled"
                                 />
                                 <Label htmlFor={`enabled-${i}`} className="text-xs">Enabled</Label>
                               </div>

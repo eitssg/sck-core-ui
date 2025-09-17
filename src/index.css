@@ -195,4 +195,16 @@ All colors MUST be HSL.
   /* Optional: slightly boost read contrast for displayed values in view mode */
   .contrast-value { color: hsl(var(--foreground)); }
   .dark .contrast-value { color: hsl(210 20% 96%); }
+
+  /* Standard form container width for detail pages (centralized) */
+  .sck-form-container { @apply mx-auto w-full max-w-xl md:max-w-2xl lg:max-w-3xl xl:max-w-4xl p-4 md:p-6; }
+
+  /* Themed toggle style for "enabled" switches (used in PortfolioDetails)
+    - Keep component sizing via size="sm" prop
+    - In dark mode: apply custom track colors
+    - In light mode: do not override colors (defaults apply) */
+  /* Light mode: no overrides (use default blue when ON, gray when OFF) */
+  .sck-toggle-enabled {}
+  /* Dark mode: apply custom track colors */
+  .dark .sck-toggle-enabled { @apply bg-muted data-[state=checked]:bg-primary; }
 }

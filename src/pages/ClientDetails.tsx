@@ -79,13 +79,84 @@ const RegionSelect: React.FC<RegionSelectProps> = ({ value, onChange }) => {
     </Popover>
   );
 };
+
+// Simple key/value tags editor (mirrors ZoneDetails UX)
+type KV = Record<string, string>;
+const KeyValueListEditor: React.FC<{
+  value: KV | undefined;
+  onChange: (next: KV) => void;
+  addLabel?: string;
+  keyPlaceholder?: string;
+  valuePlaceholder?: string;
+  readOnly?: boolean;
+}> = ({ value, onChange, addLabel = 'Add pair', keyPlaceholder = 'key', valuePlaceholder = 'value', readOnly = false }) => {
+  const entries = Object.entries(value || {});
+  const [newKey, setNewKey] = useState('');
+  const [newVal, setNewVal] = useState('');
+  const upsert = (k: string, v: string) => {
+    const next = { ...(value || {}) } as KV;
+    if (!k) return;
+    if (v === '') delete next[k];
+    else next[k] = v;
+    onChange(next);
+  };
+  const remove = (k: string) => {
+    const next = { ...(value || {}) } as KV;
+    delete next[k];
+    onChange(next);
+  };
+  const add = () => {
+    const k = newKey.trim();
+    if (!k) return;
+    const v = newVal;
+    const next = { ...(value || {}) } as KV;
+    next[k] = v;
+    onChange(next);
+    setNewKey('');
+    setNewVal('');
+  };
+  return (
+    <div className="space-y-2">
+      {entries.length === 0 && <p className="text-sm text-muted-foreground">No entries</p>}
+      {entries.map(([k, v]) => (
+        <div key={k} className="flex gap-2 items-center">
+          {readOnly ? (
+            <>
+              <div className="w-56 text-sm contrast-value truncate" title={k}>{k}</div>
+              <div className="flex-1 text-sm contrast-value break-all" title={v}>{v || '—'}</div>
+            </>
+          ) : (
+            <>
+              <Input className="w-56" value={k} onChange={(e)=>{
+                const nk = e.target.value;
+                const next = { ...(value || {}) } as KV;
+                delete next[k];
+                if (nk) next[nk] = v;
+                onChange(next);
+              }} />
+              <Input className="flex-1" value={v} onChange={(e)=> upsert(k, e.target.value)} />
+              <Button variant="ghost" size="icon" onClick={()=>remove(k)}><Trash2 className="h-4 w-4"/></Button>
+            </>
+          )}
+        </div>
+      ))}
+      {!readOnly && (
+        <div className="flex gap-2 items-center">
+          <Input className="w-56" placeholder={keyPlaceholder} value={newKey} onChange={(e)=> setNewKey(e.target.value)} />
+          <Input className="flex-1" placeholder={valuePlaceholder} value={newVal} onChange={(e)=> setNewVal(e.target.value)} />
+          <Button variant="ghost" size="sm" onClick={add} className="text-muted-foreground hover:text-foreground"><Plus className="h-4 w-4 mr-1"/>{addLabel}</Button>
+        </div>
+      )}
+    </div>
+  );
+};
 import { Label } from '@/components/ui/label';
 import { selectClientBySlug, fetchClient, selectIsClientCachedWithFullData, patchClient } from '@/store/slices/clientsSlice';
 import { useToast } from '@/components/ui/use-toast';
 import type { RootState } from '@/store';
 import type { Client } from '@/store/types';
-import { ArrowLeft, Pencil, Save, X, Shield, Network, KeyRound, Repeat2, FileSearch, UserCheck } from 'lucide-react';
-import DashboardLayout from '@/components/DashboardLayout';
+import { ArrowLeft, Pencil, Save, X, Shield, Network, KeyRound, Repeat2, FileSearch, UserCheck, Trash2, Plus } from 'lucide-react';
+// DashboardLayout removed in favor of single-card form layout
 
 interface FieldProps { label: string; value?: string; onChange?: (v: string)=>void; readOnly?: boolean; mono?: boolean; placeholder?: string }
 const Field: React.FC<FieldProps> = ({ label, value, onChange, readOnly, mono, placeholder }) => (
@@ -233,7 +304,7 @@ const ClientDetails: React.FC = () => {
   }, [slug, navigate]);
   if (!slug) return <div className="p-6 text-sm text-destructive">Client identifier missing – redirecting…</div>;
   if (loading) return (
-    <div className="p-6 space-y-4">
+    <div className="sck-form-container space-y-4">
       <div className="h-6 w-40 bg-muted animate-pulse rounded" />
       <div className="h-4 w-72 bg-muted animate-pulse rounded" />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -243,160 +314,150 @@ const ClientDetails: React.FC = () => {
       </div>
     </div>
   );
-  if (error) return <div className="p-6 text-sm text-destructive">{error}</div>;
-  if (!client) return <div className="p-6">Client not found.</div>;
+  if (error) return <div className="sck-form-container text-sm text-destructive">{error}</div>;
+  if (!client) return <div className="sck-form-container">Client not found.</div>;
 
   const status = client.client_status || 'active';
 
   return (
-    <DashboardLayout
-      activeItem="clients"
-      pageTitle={client.client_name || client.client}
-      pageSubtitle={client.client_description || 'No description provided.'}
-    >
-      <div className="space-y-6 animate-fade-in">
-        {/* Page-level subtle actions row (right-aligned) */}
-        <div className="sck-header-actions sticky top-16 z-30 bg-background/95 supports-[backdrop-filter]:bg-background/60 backdrop-blur border-b border-border py-2 px-2">
-          <div className="mr-auto flex items-center gap-3">
-            <span className="font-mono text-xs px-2 py-0.5 rounded bg-muted contrast-value">{client.client}</span>
-            <span className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-              <span className={`h-2 w-2 rounded-full ${status === 'inactive' ? 'bg-muted-foreground' : status === 'suspended' ? 'bg-accent-foreground' : 'bg-primary'}`}></span>{status}
-            </span>
-          </div>
+    <div className="sck-form-container space-y-6 animate-fade-in">
+      {/* Top bar: Back and actions */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={()=> navigate('/clients')}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Clients
+          </Button>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
           {!editing ? (
-            <>
-              <Button variant="ghost" size="sm" onClick={()=> setEditing(true)} className="gap-1 text-muted-foreground hover:text-foreground">
-                <Pencil className="h-4 w-4" />
-                Edit
-              </Button>
-              <Button variant="ghost" size="sm" onClick={()=> navigate('/clients')} className="gap-1 text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="h-4 w-4" />
-                Back
-              </Button>
-            </>
+            <Button variant="ghost" size="sm" onClick={()=> setEditing(true)} className="gap-1 text-muted-foreground hover:text-foreground">
+              <Pencil className="h-4 w-4" /> Edit
+            </Button>
           ) : (
             <>
               <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1">
                 <Save className="h-4 w-4" />{saving? 'Saving...':'Save'}
               </Button>
               <Button size="sm" variant="ghost" onClick={()=> { setEditing(false); setDraft(client); }} className="gap-1 text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-                Cancel
+                <X className="h-4 w-4" /> Cancel
               </Button>
             </>
           )}
         </div>
+      </div>
 
-        <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="accounts">Accounts</TabsTrigger>
-          <TabsTrigger value="buckets">Buckets</TabsTrigger>
-          <TabsTrigger value="metadata">Metadata</TabsTrigger>
-        </TabsList>
+      <Card className="shadow-soft">
+        <CardHeader className="flex flex-row items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <CardTitle className="sck-section-title">{client.client_name || client.client}</CardTitle>
+            <CardDescription className="sck-section-subtitle">Client details</CardDescription>
+            <div className="text-sm text-muted-foreground">
+              Client: <span className="font-mono contrast-value">{client.client}</span>
+              <span className="ml-3 inline-flex items-center gap-2 text-xs uppercase tracking-wide">
+                <span className={`h-2 w-2 rounded-full ${status === 'inactive' ? 'bg-muted-foreground' : status === 'suspended' ? 'bg-accent-foreground' : 'bg-primary'}`} />
+                {status}
+              </span>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="overview">
+            <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="accounts">Accounts</TabsTrigger>
+              <TabsTrigger value="buckets">Buckets</TabsTrigger>
+              <TabsTrigger value="metadata">Metadata</TabsTrigger>
+            </TabsList>
 
-        <TabsContent value="overview">
-          <Card>
-            <CardHeader>
-              <CardTitle className="sck-section-title">Overview</CardTitle>
-              <CardDescription className="sck-section-subtitle">Identity & organization basics.</CardDescription>
-            </CardHeader>
-            <CardContent className={grid}>
-              <Field label="Client Name" value={draft?.client_name} onChange={(v)=> setField('client_name', v)} readOnly={!editing} />
-              <Field label="Organization Name" value={draft?.organization_name} onChange={(v)=> setField('organization_name', v)} readOnly={!editing} />
-              <div>
-                <Field label="Organization Account" value={draft?.organization_account} onChange={(v)=> setField('organization_account', v)} readOnly={!editing} mono />
-                {editing && acctErrors.organization_account && acctErrors.organization_account !== '' && (
-                  <p className="mt-1 text-xs error-text">{acctErrors.organization_account}</p>
-                )}
-              </div>
-              <Field label="Organization Email" value={draft?.organization_email} onChange={(v)=> setField('organization_email', v)} readOnly={!editing} />
-              <Field label="Scope Prefix" value={draft?.scope} onChange={(v)=> setField('scope', v)} readOnly={!editing} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="accounts">
-          <Card>
-            <CardHeader>
-              <CardTitle className="sck-section-title">AWS Accounts</CardTitle>
-              <CardDescription className="sck-section-subtitle">Landing zone account mapping.</CardDescription>
-            </CardHeader>
-            <CardContent className={grid}>
-              <RegionField
-                label="Master Region"
-                value={draft?.master_region}
-                onChange={(v)=> setField('master_region', v)}
-                editing={editing}
-              />
-              {(['iam_account','audit_account','automation_account','network_account','security_account'] as (keyof Client)[]).map(f => (
-                <AccountFieldRow
-                  key={f}
-                  field={f}
-                  value={(draft as any)?.[f]}
-                  editing={editing}
-                  setField={setField}
-                  error={acctErrors[f]}
-                />
-              ))}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="buckets">
-          <Card>
-            <CardHeader>
-              <CardTitle className="sck-section-title">S3 Buckets</CardTitle>
-              <CardDescription className="sck-section-subtitle">Artifact & UI storage.</CardDescription>
-            </CardHeader>
-            <CardContent className={grid}>
-              <Field label="Automation Bucket" value={draft?.bucket_name} onChange={(v)=> setField('bucket_name', v)} readOnly={!editing} mono />
-              <Field label="Docs Bucket" value={draft?.docs_bucket_name} onChange={(v)=> setField('docs_bucket_name', v)} readOnly={!editing} mono />
-              <Field label="Artefact Bucket" value={draft?.artefact_bucket_name} onChange={(v)=> setField('artefact_bucket_name', v)} readOnly={!editing} mono />
-              <Field label="UI Bucket" value={draft?.ui_bucket_name || draft?.ui_bucket} onChange={(v)=> setField('ui_bucket_name', v)} readOnly={!editing} mono />
-              <RegionField
-                label="Bucket Region"
-                value={draft?.bucket_region}
-                onChange={(v)=> setField('bucket_region', v)}
-                editing={editing}
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-  {/* Security tab removed per request */}
-
-        <TabsContent value="metadata">
-          <Card>
-            <CardHeader>
-              <CardTitle className="sck-section-title">Metadata</CardTitle>
-              <CardDescription className="sck-section-subtitle">Additional descriptors.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground">Description</Label>
-                {editing ? (
-                  <Textarea rows={5} value={draft?.client_description || ''} onChange={(e)=> setField('client_description', e.target.value)} />
-                ) : <div className="text-sm whitespace-pre-wrap min-h-[4rem]">{draft?.client_description || <span className="opacity-50">No description</span>}</div>}
-              </div>
+            <TabsContent value="overview">
               <div className={grid}>
-                <Field label="Domain" value={draft?.domain} onChange={(v)=> setField('domain', v)} readOnly={!editing} />
-                <Field label="Homepage" value={draft?.homepage} onChange={(v)=> setField('homepage', v)} readOnly={!editing} />
-                <Field label="Created At" value={draft?.created_at} readOnly />
-                <Field label="Updated At" value={draft?.updated_at} readOnly />
+                <Field label="Client Name" value={draft?.client_name} onChange={(v)=> setField('client_name', v)} readOnly={!editing} />
+                <Field label="Organization Name" value={draft?.organization_name} onChange={(v)=> setField('organization_name', v)} readOnly={!editing} />
+                <div>
+                  <Field label="Organization Account" value={draft?.organization_account} onChange={(v)=> setField('organization_account', v)} readOnly={!editing} mono />
+                  {editing && acctErrors.organization_account && acctErrors.organization_account !== '' && (
+                    <p className="mt-1 text-xs error-text">{acctErrors.organization_account}</p>
+                  )}
+                </div>
+                <Field label="Organization Email" value={draft?.organization_email} onChange={(v)=> setField('organization_email', v)} readOnly={!editing} />
+                <Field label="Scope Prefix" value={draft?.scope} onChange={(v)=> setField('scope', v)} readOnly={!editing} />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="accounts">
+              <div className={grid}>
                 <RegionField
-                  label="Client Region"
-                  value={draft?.client_region}
-                  onChange={(v)=> setField('client_region', v)}
+                  label="Master Region"
+                  value={draft?.master_region}
+                  onChange={(v)=> setField('master_region', v)}
+                  editing={editing}
+                />
+                {(['iam_account','audit_account','automation_account','network_account','security_account'] as (keyof Client)[]).map(f => (
+                  <AccountFieldRow
+                    key={f}
+                    field={f}
+                    value={(draft as any)?.[f]}
+                    editing={editing}
+                    setField={setField}
+                    error={acctErrors[f]}
+                  />
+                ))}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="buckets">
+              <div className={grid}>
+                <Field label="Automation Bucket" value={draft?.bucket_name} onChange={(v)=> setField('bucket_name', v)} readOnly={!editing} mono />
+                <Field label="Docs Bucket" value={draft?.docs_bucket_name} onChange={(v)=> setField('docs_bucket_name', v)} readOnly={!editing} mono />
+                <Field label="Artefact Bucket" value={draft?.artefact_bucket_name} onChange={(v)=> setField('artefact_bucket_name', v)} readOnly={!editing} mono />
+                <Field label="UI Bucket" value={draft?.ui_bucket_name || draft?.ui_bucket} onChange={(v)=> setField('ui_bucket_name', v)} readOnly={!editing} mono />
+                <RegionField
+                  label="Bucket Region"
+                  value={draft?.bucket_region}
+                  onChange={(v)=> setField('bucket_region', v)}
                   editing={editing}
                 />
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </TabsContent>
+
+            <TabsContent value="metadata">
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-xs uppercase tracking-wide text-muted-foreground">Description</Label>
+                  {editing ? (
+                    <Textarea rows={5} value={draft?.client_description || ''} onChange={(e)=> setField('client_description', e.target.value)} />
+                  ) : <div className="text-sm whitespace-pre-wrap min-h-[4rem]">{draft?.client_description || <span className="opacity-50">No description</span>}</div>}
+                </div>
+                <div className={grid}>
+                  <Field label="Domain" value={draft?.domain} onChange={(v)=> setField('domain', v)} readOnly={!editing} />
+                  <Field label="Homepage" value={draft?.homepage} onChange={(v)=> setField('homepage', v)} readOnly={!editing} />
+                  <Field label="Created At" value={draft?.created_at} readOnly />
+                  <Field label="Updated At" value={draft?.updated_at} readOnly />
+                  <RegionField
+                    label="Client Region"
+                    value={draft?.client_region}
+                    onChange={(v)=> setField('client_region', v)}
+                    editing={editing}
+                  />
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-muted-foreground mb-2">Client Tags</div>
+                  <KeyValueListEditor
+                    readOnly={!editing}
+                    value={(draft?.tags as any) || {}}
+                    onChange={(next)=> setField('tags', next as any)}
+                    addLabel="Add tag"
+                    keyPlaceholder="tag"
+                    valuePlaceholder="value"
+                  />
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
     </div>
-    </DashboardLayout>
   );
 };
 
