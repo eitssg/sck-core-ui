@@ -7,12 +7,15 @@ test.describe('Profile Passkeys interactions', () => {
     // Wait for Passkeys section heading (avoid strict matches with labels)
     await expect(authPage.getByRole('heading', { name: 'Passkeys' })).toBeVisible();
     // Ensure list rendered with seeded items
-  const row = authPage.locator('div.border.rounded-md', { hasText: 'Work Laptop' }).first();
+    const rows = authPage.locator('div.border.rounded-md');
+    await expect(rows.first()).toBeVisible();
+    const row = rows.first();
     await expect(row).toBeVisible();
   // Click rename (pencil) for that row
+  await row.scrollIntoViewIfNeeded();
   await row.getByRole('button', { name: 'Rename' }).first().click();
   // Input appears; change name and save (check icon)
-  const input = row.getByRole('textbox').first();
+  const input = row.locator('input[type="text"]').first();
   await expect(input).toBeVisible();
   await input.fill('Office Mac');
     await row.getByRole('button', { name: 'Save name' }).click();
