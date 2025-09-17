@@ -14,7 +14,7 @@ test.describe('Protected redirects when unauthenticated', () => {
       await page.goto(path);
   // Expect redirect to login and login UI visible
   await expect(page).toHaveURL(/\/login/);
-  await expect(page.getByRole('heading', { name: /Welcome Back/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Welcome (Back|to Core Automation)/i })).toBeVisible();
     });
   }
 });

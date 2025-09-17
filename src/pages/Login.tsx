@@ -401,7 +401,17 @@ export default function Login() {
               <Briefcase className="h-8 w-8 text-primary-foreground" />
             </div>
             <div>
-              <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
+              {/* Heading depends on localStorage.sck.profileName */}
+              <CardTitle className="text-2xl font-bold">
+                {(() => {
+                  try {
+                    const hasName = typeof window !== 'undefined' && !!window.localStorage?.getItem('sck.profileName');
+                    return hasName ? 'Welcome Back' : 'Welcome to Core Automation';
+                  } catch {
+                    return 'Welcome to Core Automation';
+                  }
+                })()}
+              </CardTitle>
               <p className="text-muted-foreground">Sign in to your admin dashboard</p>
             </div>
           </CardHeader>

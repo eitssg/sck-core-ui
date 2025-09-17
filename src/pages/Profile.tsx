@@ -408,27 +408,7 @@ export default function Profile() {
   }, []);
 
 
-  // Immediate update on preferred_region selection (minimal PATCH with only changed field)
-  const patchPreferredRegion = async (regionCode: string) => {
-    if (!AWS_REGION_NAME_BY_CODE.has(regionCode)) {
-      toast({ title: 'Invalid region', description: 'Please select a valid AWS region.', variant: 'destructive' });
-      return;
-    }
-    try {
-  const minimal = { profile_name: editData.profile_name || 'default', preferred_region: regionCode } as any;
-  const action = await dispatch(patchAuthProfile({ profileName: minimal.profile_name, profileData: minimal }));
-  if (patchAuthProfile.rejected.match(action)) {
-        const err = action.payload as string | undefined;
-        toast({ title: 'Update failed', description: err || 'Failed to update preferred region', variant: 'destructive' });
-        return;
-      }
-      // Optimistically update local state from form as well
-      setEditData((s) => ({ ...s, preferred_region: regionCode }));
-      toast({ title: 'Preferred region updated', description: `${AWS_REGION_NAME_BY_CODE.get(regionCode)} (${regionCode})` });
-    } catch (e) {
-      toast({ title: 'Network error', description: 'Could not update preferred region.', variant: 'destructive' });
-    }
-  };
+  // Preferred region changes are staged and applied on Save (no immediate PATCH)
 
   // Compute diff helper
   function diffFields<T extends Record<string, any>>(current: T, original: T, fields: (keyof T)[]) {
@@ -597,15 +577,15 @@ export default function Profile() {
         <div className="lg:col-span-2 space-y-6">
           {/* Profile info */}
           <Card>
-            <CardHeader className="flex flex-row items-start gap-2">
+            <CardHeader data-testid="personal-info-header" className="flex flex-row items-start gap-2">
               <CardTitle className="flex items-center gap-2">
                 <UserIcon className="h-5 w-5 text-primary" />
                 Personal Information
               </CardTitle>
               <div className="ml-auto flex items-center gap-2">
-                {!editing ? (
+        {!editing ? (
                   <>
-                    <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground" onClick={() => setEditing(true)}>
+                    <Button data-testid="personal-info-edit" aria-label="Edit personal information" variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground" onClick={() => setEditing(true)}>
                       <Edit className="h-4 w-4" />
                       Edit
                     </Button>
@@ -639,7 +619,7 @@ export default function Profile() {
                     <Button variant="ghost" size="sm" onClick={() => { setEditData(initialForm); setEditing(false); }}>
                       Cancel
                     </Button>
-                    <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1">
+                    <Button data-testid="personal-info-save" aria-label="Save personal information" size="sm" onClick={handleSave} disabled={saving} className="gap-1">
                       <Save className="h-4 w-4" />
                       {saving ? "Saving..." : "Save"}
                     </Button>
@@ -874,7 +854,7 @@ export default function Profile() {
                     </div>
                     <PreferredRegionCombobox
                       value={String(editData.preferred_region || "us-east-1")}
-                      onChange={(v) => patchPreferredRegion(v)}
+                      onChange={(v) => setEditData((s) => ({ ...s, preferred_region: v }))}
                     />
                   </div>
                   <div className="space-y-2">
@@ -1230,11 +1210,12 @@ export default function Profile() {
               ) : (
                 <div className="space-y-2">
           {(passkeys as any[]).map((pk: any) => (
-                    <div key={pk.key_id} className="flex items-center gap-2 justify-between border rounded-md px-3 py-2">
+                    <div key={pk.key_id} data-testid={`passkey-row-${pk.key_id}`} className="flex items-center gap-2 justify-between border rounded-md px-3 py-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          {renamingId === pk.key_id ? (
+              {renamingId === pk.key_id ? (
                             <Input
+                data-testid={`passkey-rename-input-${pk.key_id}`}
                               value={renameDraft}
                               onChange={(e) => setRenameDraft(e.target.value)}
                               className="h-8"
@@ -1256,6 +1237,7 @@ export default function Profile() {
                         {renamingId === pk.key_id ? (
                           <>
                             <Button
+                              data-testid={`passkey-save-${pk.key_id}`}
                               size="icon"
                               variant="ghost"
                               className="h-8 w-8"
@@ -1287,6 +1269,7 @@ export default function Profile() {
                           </>
                         ) : (
                           <Button
+                            data-testid={`passkey-rename-${pk.key_id}`}
                             size="icon"
                             variant="ghost"
                             className="h-8 w-8"
@@ -1452,7 +1435,7 @@ function PreferredRegionCombobox({
             <CommandList>
               <CommandGroup heading="AWS Commercial">
                 {AWS_REGIONS.filter(r => r.partition === 'aws').map((r) => (
-                  <CommandItem key={r.code} value={r.code} onSelect={handleSelect}>
+                  <CommandItem key={r.code} value={r.code} onSelect={handleSelect} data-testid={`region-option-${r.code}`}>
                     <div className="flex flex-col">
                       <span className="font-medium">{r.name}</span>
                       <span className="text-xs text-muted-foreground">{r.code}</span>
@@ -1462,7 +1445,7 @@ function PreferredRegionCombobox({
               </CommandGroup>
               <CommandGroup heading="AWS GovCloud">
                 {AWS_REGIONS.filter(r => r.partition === 'aws-us-gov').map((r) => (
-                  <CommandItem key={r.code} value={r.code} onSelect={handleSelect}>
+                  <CommandItem key={r.code} value={r.code} onSelect={handleSelect} data-testid={`region-option-${r.code}`}>
                     <div className="flex flex-col">
                       <span className="font-medium">{r.name}</span>
                       <span className="text-xs text-muted-foreground">{r.code}</span>
@@ -1472,7 +1455,7 @@ function PreferredRegionCombobox({
               </CommandGroup>
               <CommandGroup heading="AWS China">
                 {AWS_REGIONS.filter(r => r.partition === 'aws-cn').map((r) => (
-                  <CommandItem key={r.code} value={r.code} onSelect={handleSelect}>
+                  <CommandItem key={r.code} value={r.code} onSelect={handleSelect} data-testid={`region-option-${r.code}`}>
                     <div className="flex flex-col">
                       <span className="font-medium">{r.name}</span>
                       <span className="text-xs text-muted-foreground">{r.code}</span>

@@ -7,7 +7,7 @@ export default defineConfig({
   webServer: {
     command: 'yarn dev',
     url: 'http://localhost:8080',
-    reuseExistingServer: true,
+  reuseExistingServer: true,
     timeout: 120_000,
   },
   use: {
