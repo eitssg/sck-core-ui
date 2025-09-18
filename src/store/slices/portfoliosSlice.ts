@@ -225,7 +225,7 @@ export const fetchPortfolios = createAsyncThunk<
     url.searchParams.set('limit', String(limit));
     if (reqCursor) url.searchParams.set('cursor', reqCursor);
 
-  const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: `portfolios-${client}-401`, contextLabel: 'Portfolios' });
+  const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: `portfolios-${client}-authz`, contextLabel: 'Portfolios' });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);

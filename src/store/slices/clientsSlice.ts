@@ -128,11 +128,10 @@ export const fetchClients = createAsyncThunk<
     if (typeof limit === 'number') url.searchParams.set('limit', String(limit));
   if (reqCursor) url.searchParams.set('cursor', reqCursor);
 
-    // Prefer cookie-based auth (no Authorization header) to avoid CORS preflight;
-    // then gracefully fall back to Bearer if the server rejects (401).
-  const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: 'clients-401', contextLabel: 'Clients' });
-    if (response.status === 401) {
-      // Treat 401 as an empty, cached result to prevent hammering the endpoint.
+    // Prefer cookie-based auth (no Authorization header) to avoid CORS preflight.
+    // Any unauthorized / forbidden (401/403) should short‑circuit as empty to avoid storms.
+  const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: 'clients-authz', contextLabel: 'Clients' });
+    if (response.status === 401 || response.status === 403) {
       return { data: [] as any, metadata: { cursor: null } } as ApiResponse<Client>;
     }
 
@@ -178,7 +177,7 @@ export const fetchClient = createAsyncThunk<
   'clients/fetchSingle',
   async ({ clientSlug }) => {
     // Same CORS-friendly approach for single-client fetch.
-  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${clientSlug}`), { cookieFirst: true, dedupeKey: `client-${clientSlug}-401`, contextLabel: 'Clients' });
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${clientSlug}`), { cookieFirst: true, dedupeKey: `client-${clientSlug}-authz`, contextLabel: 'Clients' });
 
     if (!response.ok) {
       throw new Error('Failed to fetch client');
@@ -331,8 +330,8 @@ export const switchToClient = createAsyncThunk<
         // cookie not needed; /token is OAuth endpoint and does not rely on session cookie here
       });
 
-      // 401 means unauthorized to switch to that client; do not logout, do not mutate current client
-      if (response.status === 401) {
+  // 401/403 mean unauthorized/forbidden to switch; do not logout, do not mutate current client
+  if (response.status === 401 || response.status === 403) {
         const msg = 'Unauthorized to switch to the selected client.';
         return thunkAPI.rejectWithValue(msg);
       }
