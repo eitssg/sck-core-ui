@@ -131,15 +131,20 @@ export const fetchClients = createAsyncThunk<
     // Prefer cookie-based auth (no Authorization header) to avoid CORS preflight;
     // then gracefully fall back to Bearer if the server rejects (401).
   const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: 'clients-401', contextLabel: 'Clients' });
+    if (response.status === 401) {
+      // Treat 401 as an empty, cached result to prevent hammering the endpoint.
+      return { data: [] as any, metadata: { cursor: null } } as ApiResponse<Client>;
+    }
 
     if (!response.ok) {
+      // Preserve previous behavior for non-401 errors.
       throw new Error(`HTTP ${response.status}`);
     }
-  const { data, cursor: apiCursor } = await parseApiEnvelope<Client[] | Client>(response);
-  // Server returns array in data for list
-  const normalized: ApiResponse<Client> = { data: (Array.isArray(data) ? data : (data ? [data] : [])) as any, metadata: { cursor: apiCursor } } as any;
-  // Keep backward shape for reducers that expect ApiResponse<Client>
-  return normalized;
+    const { data, cursor: apiCursor } = await parseApiEnvelope<Client[] | Client>(response);
+    // Server returns array in data for list
+    const normalized: ApiResponse<Client> = { data: (Array.isArray(data) ? data : (data ? [data] : [])) as any, metadata: { cursor: apiCursor } } as any;
+    // Keep backward shape for reducers that expect ApiResponse<Client>
+    return normalized;
   },
   {
     condition: (args, { getState }) => {
@@ -563,8 +568,9 @@ const clientsSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchClients.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.error.message ?? 'Failed to load clients';
+  // Only mark failed if not the synthetic empty-list 401 handling (which now returns fulfilled)
+  state.status = 'failed';
+  state.error = action.error.message ?? 'Failed to load clients';
       })
 
       // READ Single Client

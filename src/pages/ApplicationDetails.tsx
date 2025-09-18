@@ -15,7 +15,6 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 import { useReduxData } from "@/hooks/useReduxData";
-import { portfolioDetailsPath } from "@/lib/routes";
 import type { Application, Portfolio, Zone, Client } from "@/store/types";
 // DashboardLayout removed for single-card form layout
 import { useToast } from "@/hooks/use-toast";
@@ -322,7 +321,7 @@ export default function ApplicationDetails() {
         {/* Top bar: Back link (left) and actions (right) */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => navigate(portfolioDetailsPath({ portfolio: application.portfolio }))}>
+            <Button variant="ghost" size="sm" onClick={() => navigate(`/portfolios/${encodeURIComponent(application.portfolio)}`)}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Portfolio
             </Button>

@@ -59,7 +59,7 @@ import { getTimezones } from "@/constants/timezones";
 import { authAPI } from "@/lib/auth-api";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiFetch } from '@/lib/api-fetch';
-import { buildApiUrl } from '@/lib/api-config';
+import { API_CONFIG, buildApiUrl } from '@/lib/api-config';
 // ...existing imports...
 import { useAppDispatch } from '@/store';
 import { selectPasskeys, selectPasskeysStatus, fetchPasskeys, renamePasskey, deletePasskeyAction } from '@/store/slices/passkeysSlice';
@@ -154,6 +154,10 @@ export default function Profile() {
       // 1) Begin: issue challenge + options (cookie-bound)
       const beginRes = await apiFetch(buildApiUrl('/auth/v1/webauthn/register/begin'), {
         method: 'POST',
+        body: JSON.stringify({
+          client: (typeof window !== 'undefined' && window.localStorage?.getItem('sck.selectedClient')) || 'core',
+          client_id: API_CONFIG.OAUTH.CLIENT_ID,
+        }),
         contextLabel: 'PasskeyRegisterBegin',
       });
       if (!beginRes.ok) {
@@ -206,7 +210,11 @@ export default function Profile() {
 
       const finishRes = await apiFetch(buildApiUrl('/auth/v1/webauthn/register/complete'), {
         method: 'POST',
-        body: JSON.stringify(completePayload),
+        body: JSON.stringify({
+          ...completePayload,
+          client: (typeof window !== 'undefined' && window.localStorage?.getItem('sck.selectedClient')) || 'core',
+          client_id: API_CONFIG.OAUTH.CLIENT_ID,
+        }),
         contextLabel: 'PasskeyRegisterComplete',
       });
       if (!finishRes.ok) {

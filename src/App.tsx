@@ -29,6 +29,7 @@ const EnterCode = lazy(() => import("./pages/EnterCode"));
 const NewPassword = lazy(() => import("./pages/NewPassword"));
 const NoAccount = lazy(() => import("./pages/NoAccount"));
 const NewPasswordSuccess = lazy(() => import("./pages/NewPasswordSuccess"));
+const ErrorBridge = lazy(() => import("./pages/ErrorBridge"));
 const Authorized = lazy(() => import("./pages/Authorized"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
@@ -120,6 +121,7 @@ const AppRoutes = () => (
     {createPublicRoute('/new-password', NewPassword)}
     {createPublicRoute('/no-account', NoAccount)}
     {createPublicRoute('/new-password-success', NewPasswordSuccess)}
+  {createPublicRoute('/error', ErrorBridge)}
     {createPublicRoute('/verify-email', VerifyEmail)}
     {createPublicRoute('/welcome', Welcome)}
     {createPublicRoute('/authorized', Authorized)}

@@ -13,6 +13,7 @@ import { buildApiUrl, buildOAuthAuthorizeUrl, API_CONFIG } from "@/lib/api-confi
 import { apiFetch } from "@/lib/api-fetch";
 import { authAPI } from "@/lib/auth-api";
 import { clearError, setError, logoutUser, selectLogoutReason, clearLogoutReason } from "@/store/slices/authSlice";
+import { consumePendingAuthError } from "@/lib/error-bridge";
 import { useReduxData } from "@/hooks/useReduxData";
 import type { RootState } from "@/store";
 
@@ -33,6 +34,15 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   cid: "Invalid OAuth Client ID.",
   cnm: "Client configuration mismatch.",
   rnr: "Redirect URI not registered for this application.",
+  // GitHub OAuth specific (from /auth/github/callback)
+  ghe_invalid_code: "GitHub sign-in expired or invalid. Please try again.",
+  ghe_token: "GitHub sign-in failed. Please try again.",
+  ghe_reauth: "GitHub session invalid. Please sign in again.",
+  ghe_scope: "GitHub app permission issue. Please contact support.",
+  ghe_user: "GitHub user info unavailable. Please try again.",
+  ghe_unknown: "GitHub login failed. Please try again.",
+  // Profile creation
+  upro: "Cannot create user profile.",
 };
 
 function mapOAuthErrorToUserMessage(error: string, statusCode?: number): string {
@@ -107,8 +117,16 @@ export default function Login() {
   }, []);
 
   useEffect(() => {
-    // On entering /login: perform a logout only if we likely have a session.
-    // Signals: Redux isAuthenticated OR presence of refresh_token in sessionStorage.
+    // Capture and remove any pending error from /error handoff up front
+    let pendingCode: string | undefined;
+    let pendingMsg: string | undefined;
+    try {
+      const pending = consumePendingAuthError();
+      pendingCode = pending?.code || undefined;
+      pendingMsg = pending?.message || undefined;
+    } catch { /* ignore */ }
+
+    // Then perform logout only if we likely have a session, and apply the error AFTER logout completes
     let cancelled = false;
     (async () => {
       try {
@@ -123,14 +141,21 @@ export default function Login() {
           await dispatch(logoutUser()).unwrap();
         }
       } catch { /* ignore */ }
-      if (!cancelled) dispatch(clearError());
+      if (cancelled) return;
+      // Only clear if no pending error; otherwise set the pending error now
+      if (pendingCode || pendingMsg) {
+        const msg = pendingMsg || AUTH_ERROR_MESSAGES[(pendingCode || '').toLowerCase()] || 'Login failed. Please try again.';
+        dispatch(setError(msg));
+      } else {
+        dispatch(clearError());
+      }
     })();
     return () => { cancelled = true; };
   }, [dispatch, isAuthenticated]);
 
   // Remove previous custom hard-logout block; centralized in the effect above
 
-  // Read ?err=code or ?error=code placed by the authorization server
+  // Read ?err=code or ?error=code for legacy paths; prefer /error bridge
   useEffect(() => {
     const params = new URLSearchParams(location.search || "");
     const code = params.get("err") || params.get("error");
@@ -168,7 +193,12 @@ export default function Login() {
         try {
           const beginRes = await apiFetch(buildApiUrl('/auth/v1/webauthn/authenticate/begin'), {
             method: 'POST',
-            body: JSON.stringify({ user_id: emailVal, rp_id: window.location.hostname }),
+            body: JSON.stringify({
+              user_id: emailVal,
+              rp_id: window.location.hostname,
+              client: (typeof window !== 'undefined' && window.localStorage?.getItem('sck.selectedClient')) || 'core',
+              client_id: API_CONFIG.OAUTH.CLIENT_ID,
+            }),
             contextLabel: 'PasskeyLoginBegin',
             noAuthRetryOn401: true,
           });
@@ -240,7 +270,11 @@ export default function Login() {
 
           const completeRes = await apiFetch(buildApiUrl('/auth/v1/webauthn/authenticate/complete'), {
             method: 'POST',
-            body: JSON.stringify(completePayload),
+            body: JSON.stringify({
+              ...completePayload,
+              client: (typeof window !== 'undefined' && window.localStorage?.getItem('sck.selectedClient')) || 'core',
+              client_id: API_CONFIG.OAUTH.CLIENT_ID,
+            }),
             contextLabel: 'PasskeyLoginComplete',
             noAuthRetryOn401: true,
           });
@@ -272,7 +306,7 @@ export default function Login() {
       }
 
       // Password flow
-      const url = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGIN);
+    const url = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGIN);
       const res = await apiFetch(url, {
         method: "POST",
         cookieFirst: true,
@@ -281,7 +315,8 @@ export default function Login() {
         body: JSON.stringify({
           email: emailVal,
           password,
-          client_id: API_CONFIG.OAUTH.CLIENT_ID,
+      client_id: API_CONFIG.OAUTH.CLIENT_ID,
+      client: (typeof window !== 'undefined' && window.localStorage?.getItem('sck.selectedClient')) || 'core',
         }),
       });
       // MFA required
@@ -340,8 +375,8 @@ export default function Login() {
   const handleGitHubLogin = async () => {
     try {
       setIsLoading(true);
-      // Backend handles redirect to GitHub
-      window.location.href = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.GITHUB_LOGIN);
+      // Backend handles redirect to GitHub; submit POST with client info
+      await authAPI.githubLogin();
     } catch {
       setIsLoading(false);
       dispatch(setError("GitHub login failed. Please try again."));

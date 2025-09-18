@@ -79,6 +79,16 @@ function extractTokenPayload(json: any): { token: string | null; token_type: str
   return { token, token_type };
 }
 
+// UI-only helper: resolve tenant slug from localStorage; default to "core"
+export function getSelectedClientSlug(): string {
+  try {
+    const v = (typeof window !== 'undefined') ? window.localStorage?.getItem('sck.selectedClient') : null;
+    return v && v.trim() ? v.trim() : 'core';
+  } catch {
+    return 'core';
+  }
+}
+
 export const authAPI = {
   // Resolve client secret from multiple sources in a consistent order
   _resolveClientSecret(): string | undefined {
@@ -719,8 +729,76 @@ export const authAPI = {
   },
 
   async githubLogin(): Promise<void> {
-    // Redirect to GitHub OAuth endpoint
-    window.location.href = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.GITHUB_LOGIN);
+    // Navigate via POST to /auth/github/login to avoid URL param logging.
+    // Before posting, prepare PKCE (S256) and a printable state; persist verifier/state in sessionStorage.
+    const action = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.GITHUB_LOGIN);
+    const clientId = API_CONFIG.OAUTH.CLIENT_ID;
+    const redirectUri = getRedirectUri();
+    const slug = getSelectedClientSlug();
+
+    // Generate a compact printable state (<=512 chars). Use hex prefix to aid debugging.
+    let state: string | undefined;
+    try {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+      state = `st:${hex}`;
+      sessionStorage.setItem('oauth_expected_state', state);
+    } catch {
+      // If crypto/state fails, proceed without state (server will not forward it).
+    }
+
+    // PKCE S256: generate verifier + challenge; persist verifier (generic and state-keyed)
+    let codeChallenge: string | undefined;
+    try {
+      const rand = crypto.getRandomValues(new Uint8Array(32));
+      let bin = '';
+      for (let i = 0; i < rand.length; i++) bin += String.fromCharCode(rand[i]);
+      const verifier = btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+
+      // Compute S256
+      const data = new TextEncoder().encode(verifier);
+      const digest = await crypto.subtle.digest('SHA-256', data);
+      const hashBytes = new Uint8Array(digest);
+      let hashBin = '';
+      for (let i = 0; i < hashBytes.length; i++) hashBin += String.fromCharCode(hashBytes[i]);
+      codeChallenge = btoa(hashBin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+
+      // Persist verifier for later /token call
+      try {
+        sessionStorage.setItem('pkce_code_verifier', verifier);
+        if (state) sessionStorage.setItem(`pkce_code_verifier_${state}`, verifier);
+        if (DEBUG_AUTH) console.log('[authAPI] PKCE prepared for GitHub login', { hasCodeChallenge: Boolean(codeChallenge), method: 'S256', hasState: Boolean(state) });
+      } catch { /* ignore storage errors */ }
+    } catch {
+      // If PKCE fails, proceed; backend may require it for public clients and reject later
+    }
+
+    // Build and submit a hidden POST form
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = action;
+    form.style.display = 'none';
+
+    const add = (name: string, value: string) => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    };
+
+    add('client_id', clientId);
+    add('response_type', 'code');
+    add('redirect_uri', redirectUri);
+    add('client', slug);
+    if (state) add('state', state);
+    if (codeChallenge) {
+      add('code_challenge', codeChallenge);
+      add('code_challenge_method', 'S256');
+    }
+
+    document.body.appendChild(form);
+    form.submit();
   },
 
   // Update forgot password to include client_id and normalize response shape

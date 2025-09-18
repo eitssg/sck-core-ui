@@ -1,4 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
+// Add Node types for process global
+/// <reference types="node" />
 
 export default defineConfig({
   testDir: './tests/e2e',

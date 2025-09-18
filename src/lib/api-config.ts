@@ -15,7 +15,8 @@ export const API_CONFIG = {
   // OAuth Configuration
   OAUTH: {
     CLIENT_ID: import.meta.env.VITE_OAUTH_CLIENT_ID || '',
-    REDIRECT_URI: import.meta.env.VITE_OAUTH_REDIRECT_URI || 'http://localhost:8080/authorized',
+  // Prefer explicit env; otherwise leave empty so getRedirectUri() derives from current origin
+  REDIRECT_URI: import.meta.env.VITE_OAUTH_REDIRECT_URI || '',
     SCOPE: import.meta.env.VITE_OAUTH_SCOPE || 'read:profile write:profile',
   CLIENT_SECRET: (import.meta as any)?.env?.VITE_OAUTH_CLIENT_SECRET || '',
   },
