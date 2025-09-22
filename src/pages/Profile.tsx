@@ -4,7 +4,7 @@ import { useAppSelector } from "@/store";
 import { AlertTriangle } from "lucide-react";
 import { selectUser } from "@/store/slices/authSlice";
 import { Link, useNavigate } from "react-router-dom";
-import { User as UserIcon, Save, Edit, Camera, Calendar, Building2, Trash2, Cloud, LogOut, ArrowLeftRight, Plus } from "lucide-react";
+import { User as UserIcon, Save, Edit, Camera, Calendar, Building2, Trash2, Cloud, LogOut, ArrowLeftRight, Plus, Pencil, Check, X, KeyRound } from "lucide-react";
 import { deleteAuthProfile } from '@/store/slices/profileSlice';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandList, CommandInput, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import {
@@ -33,6 +34,7 @@ import UserMenu from "@/components/UserMenu";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTheme } from "@/hooks/useTheme";
+import { getThemesList } from "@/lib/themes";
 import { useToast } from "@/hooks/use-toast";
 import { useDispatch } from "react-redux";
 import { AppDispatch } from "@/store";
@@ -56,7 +58,28 @@ import { SUPPORTED_LANGUAGES } from "@/constants/languages";
 import { getTimezones } from "@/constants/timezones";
 import { authAPI } from "@/lib/auth-api";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { apiFetch } from '@/lib/api-fetch';
+import { API_CONFIG, buildApiUrl } from '@/lib/api-config';
 // ...existing imports...
+import { useAppDispatch } from '@/store';
+import { selectPasskeys, selectPasskeysStatus, fetchPasskeys, renamePasskey, deletePasskeyAction } from '@/store/slices/passkeysSlice';
+
+// Base64url helpers for WebAuthn
+function base64urlToBytes(b64url: string): Uint8Array {
+  const pad = (s: string) => s + '==='.slice((s.length + 3) % 4);
+  const b64 = pad(b64url.replace(/-/g, '+').replace(/_/g, '/'));
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function bytesToBase64url(buf: ArrayBuffer | Uint8Array): string {
+  const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
 
 // Helper to create new profile via new /auth/v1/profiles endpoint
 async function createProfileClone(base: any, newName: string, dispatch: any) {
@@ -104,20 +127,127 @@ export default function Profile() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  // Passkeys state
+  const passkeys = useAppSelector(selectPasskeys as any);
+  const passkeysStatus = useAppSelector(selectPasskeysStatus as any);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState<string>('');
+  const passkeysEnabled = useMemo(() => Array.isArray(passkeys) && (passkeys as any[]).length > 0, [passkeys]);
+  const [passkeyDeleteAllOpen, setPasskeyDeleteAllOpen] = useState(false);
+  const [passkeyBulkDeleting, setPasskeyBulkDeleting] = useState(false);
 
-  // Derive client context from available sources (prefer explicit fields, fallback to JWT claim)
+  // WebAuthn support detection (gate Add passkey)
+  const webAuthnSupported = useMemo(() => {
+    try {
+      const hasCreds = typeof window !== 'undefined' && !!(navigator as any)?.credentials;
+      const hasPKC = typeof window !== 'undefined' && 'PublicKeyCredential' in window;
+      const isSecure = typeof window !== 'undefined' && (window.isSecureContext ?? location.protocol === 'https:');
+      return Boolean(hasCreds && hasPKC && isSecure);
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // Add Passkey handler (register flow)
+  const handleAddPasskey = async () => {
+    try {
+      // 1) Begin: issue challenge + options (cookie-bound)
+      const beginRes = await apiFetch(buildApiUrl('/auth/v1/webauthn/register/begin'), {
+        method: 'POST',
+        body: JSON.stringify({
+          client: (typeof window !== 'undefined' && window.localStorage?.getItem('sck.selectedClient')) || 'core',
+          client_id: API_CONFIG.OAUTH.CLIENT_ID,
+        }),
+        contextLabel: 'PasskeyRegisterBegin',
+      });
+      if (!beginRes.ok) {
+        const err = await beginRes.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to begin registration');
+      }
+      const beginJson = await beginRes.json();
+      const options = (beginJson?.data) ? beginJson.data : beginJson; // tolerate envelope or raw
+
+      // 2) Convert options to proper WebAuthn shapes (ArrayBuffers)
+      const publicKey: PublicKeyCredentialCreationOptions = {
+        challenge: base64urlToBytes(String(options.challenge)),
+        attestation: options.attestation || 'none',
+        timeout: options.timeout || 60000,
+        pubKeyCredParams: options.pubKeyCredParams || [ { type: 'public-key', alg: -7 } ],
+        authenticatorSelection: {
+          ...(options.authenticatorSelection || {}),
+          // Nudge toward external authenticators when possible
+          authenticatorAttachment: (options.authenticatorSelection?.authenticatorAttachment as any) || 'cross-platform',
+        } as any,
+        rp: options.rp || { name: 'Simple Cloud Kit', id: window.location.hostname },
+        user: options.user ? {
+          id: base64urlToBytes(String(options.user.id || '')),
+          name: String(options.user.name || ''),
+          displayName: String(options.user.displayName || options.user.name || ''),
+        } : undefined,
+        excludeCredentials: Array.isArray(options.excludeCredentials)
+          ? options.excludeCredentials.map((c: any) => ({ type: 'public-key', id: base64urlToBytes(String(c.id)), transports: c.transports }))
+          : undefined,
+      } as any;
+
+      // 3) Create credential
+      const cred = await navigator.credentials.create({ publicKey }) as PublicKeyCredential;
+      if (!cred) throw new Error('User cancelled or credential not created');
+
+      const attResp = cred.response as AuthenticatorAttestationResponse & { getTransports?: () => string[] };
+
+      // 4) Complete: send attestation back (server verifies + persists)
+      const completePayload: any = {
+        key_id: cred.id,
+        clientDataJSON: bytesToBase64url(attResp.clientDataJSON),
+        attestationObject: bytesToBase64url(attResp.attestationObject),
+        clientDataChallenge: String(options.challenge),
+      };
+      try {
+        if (typeof (attResp as any).getTransports === 'function') {
+          completePayload.transports = (attResp as any).getTransports();
+        }
+      } catch { /* ignore */ }
+
+      const finishRes = await apiFetch(buildApiUrl('/auth/v1/webauthn/register/complete'), {
+        method: 'POST',
+        body: JSON.stringify({
+          ...completePayload,
+          client: (typeof window !== 'undefined' && window.localStorage?.getItem('sck.selectedClient')) || 'core',
+          client_id: API_CONFIG.OAUTH.CLIENT_ID,
+        }),
+        contextLabel: 'PasskeyRegisterComplete',
+      });
+      if (!finishRes.ok) {
+        const err = await finishRes.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to complete registration');
+      }
+
+      // 5) Refresh list and notify
+      await dispatch(fetchPasskeys() as any);
+      toast({ title: 'Passkey added', description: 'Your new passkey is ready to use.' });
+    } catch (e: any) {
+      toast({ title: 'Add passkey failed', description: e?.message || 'Unable to register passkey', variant: 'destructive' });
+    }
+  };
+  // Theme presets selection (per profile)
+  const allPresetThemes = useMemo(() => getThemesList(), []);
+  const lightThemes = useMemo(() => allPresetThemes.filter((t:any) => !t.isDark), [allPresetThemes]);
+  const darkThemes = useMemo(() => allPresetThemes.filter((t:any) => t.isDark), [allPresetThemes]);
+  const currentLightPresetId = String(((profileUser as any)?.preferences?.ui?.lightThemeId) || '');
+  const currentDarkPresetId = String(((profileUser as any)?.preferences?.ui?.darkThemeId) || '');
+
+  // Derive client context (prefer selected client, then active slice, then profile, then JWT)
   const jwtClient = useMemo(() => authAPI.getCurrentClient(), []);
-  // Resolve client context via profile -> active client slice -> JWT
-  const clientSlug = useMemo(() => {
+  const effectiveClientSlug = useMemo(() => {
     const p: any = profileUser || {};
-    return p.client || activeClientSlug || jwtClient || "";
-  }, [profileUser, activeClientSlug, jwtClient]);
-  // Pull client details from clients slice if available
-  const clientObj = useAppSelector((state) => selectClientBySlug(state as any, clientSlug || ""));
+    return selectedClientSlug || activeClientSlug || p.client || jwtClient || "";
+  }, [selectedClientSlug, activeClientSlug, profileUser, jwtClient]);
+  // Pull client details for effective client
+  const clientObj = useAppSelector((state) => selectClientBySlug(state as any, effectiveClientSlug || ""));
   const clientName = useMemo(() => {
     const p: any = profileUser || {};
-    return (clientObj as any)?.client_name || p.client_name || "";
-  }, [clientObj, profileUser]);
+    return (clientObj as any)?.client_name || selectedClientName || p.client_name || "";
+  }, [clientObj, selectedClientName, profileUser]);
   const organizationName = useMemo(() => {
     const p: any = profileUser || {};
     return (clientObj as any)?.organization_name || p.organization_name || "";
@@ -134,14 +264,19 @@ export default function Profile() {
     }
   }, [clients, actions.clients]);
 
+  // Fetch passkeys on mount (5m cached in slice)
+  useEffect(() => {
+    dispatch(fetchPasskeys() as any);
+  }, [dispatch]);
+
   // Ensure client details are loaded when we have a slug
   useEffect(() => {
-    const slug = clientSlug;
+    const slug = effectiveClientSlug;
     if (!slug) return;
     if (!clientObj) {
       dispatch(fetchClient({ clientSlug: slug } as any));
     }
-  }, [dispatch, clientSlug, clientObj]);
+  }, [dispatch, effectiveClientSlug, clientObj]);
 
   // Build initial form state from remote user (fallback to store user)
   const initialForm: UserProfile = useMemo(() => {
@@ -281,27 +416,7 @@ export default function Profile() {
   }, []);
 
 
-  // Immediate update on preferred_region selection (minimal PATCH with only changed field)
-  const patchPreferredRegion = async (regionCode: string) => {
-    if (!AWS_REGION_NAME_BY_CODE.has(regionCode)) {
-      toast({ title: 'Invalid region', description: 'Please select a valid AWS region.', variant: 'destructive' });
-      return;
-    }
-    try {
-  const minimal = { profile_name: editData.profile_name || 'default', preferred_region: regionCode } as any;
-  const action = await dispatch(patchAuthProfile({ profileName: minimal.profile_name, profileData: minimal }));
-  if (patchAuthProfile.rejected.match(action)) {
-        const err = action.payload as string | undefined;
-        toast({ title: 'Update failed', description: err || 'Failed to update preferred region', variant: 'destructive' });
-        return;
-      }
-      // Optimistically update local state from form as well
-      setEditData((s) => ({ ...s, preferred_region: regionCode }));
-      toast({ title: 'Preferred region updated', description: `${AWS_REGION_NAME_BY_CODE.get(regionCode)} (${regionCode})` });
-    } catch (e) {
-      toast({ title: 'Network error', description: 'Could not update preferred region.', variant: 'destructive' });
-    }
-  };
+  // Preferred region changes are staged and applied on Save (no immediate PATCH)
 
   // Compute diff helper
   function diffFields<T extends Record<string, any>>(current: T, original: T, fields: (keyof T)[]) {
@@ -328,6 +443,8 @@ export default function Profile() {
         "avatar_url",
         "profile_description",
         "aws_account_id",
+        // include preferences so theme presets can be saved with Save button
+        "preferences" as any,
       ];
       const diff = diffFields(editData as any, initialForm as any, allowed as any);
 
@@ -449,10 +566,9 @@ export default function Profile() {
               </div>
             )}
 
-            {/* Current client display */}
-            <div className="hidden sm:flex items-center px-2 py-1 rounded-md bg-muted/60 text-muted-foreground max-w-[200px]">
-              <span className="truncate" title={selectedClientName}>{selectedClientName}</span>
-            </div>
+            {/* Removed redundant current client label; dropdown above is sufficient */}
+
+            {/* Passkeys indicator moved into Passkeys card below */}
 
             {/* Shared avatar menu */}
             <UserMenu />
@@ -469,15 +585,15 @@ export default function Profile() {
         <div className="lg:col-span-2 space-y-6">
           {/* Profile info */}
           <Card>
-            <CardHeader className="flex flex-row items-start gap-2">
+            <CardHeader data-testid="personal-info-header" className="flex flex-row items-start gap-2">
               <CardTitle className="flex items-center gap-2">
                 <UserIcon className="h-5 w-5 text-primary" />
                 Personal Information
               </CardTitle>
               <div className="ml-auto flex items-center gap-2">
-                {!editing ? (
+        {!editing ? (
                   <>
-                    <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground" onClick={() => setEditing(true)}>
+                    <Button data-testid="personal-info-edit" aria-label="Edit personal information" variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground" onClick={() => setEditing(true)}>
                       <Edit className="h-4 w-4" />
                       Edit
                     </Button>
@@ -511,7 +627,7 @@ export default function Profile() {
                     <Button variant="ghost" size="sm" onClick={() => { setEditData(initialForm); setEditing(false); }}>
                       Cancel
                     </Button>
-                    <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1">
+                    <Button data-testid="personal-info-save" aria-label="Save personal information" size="sm" onClick={handleSave} disabled={saving} className="gap-1">
                       <Save className="h-4 w-4" />
                       {saving ? "Saving..." : "Save"}
                     </Button>
@@ -521,28 +637,31 @@ export default function Profile() {
               {/* Removed redundant helper description per request */}
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Avatar */}
-              <div className="flex items-center gap-4">
-                <Avatar className="h-20 w-20">
-                  <AvatarImage src={String(editData.avatar_url || "")} alt={fullName} />
-                  <AvatarFallback className="text-lg">{initials}</AvatarFallback>
-                </Avatar>
-                {editing && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="gap-2 text-muted-foreground hover:text-foreground"
-                    onClick={() => {
-                      setPhotoUrlDraft(String(editData.avatar_url || ""));
-                      setPhotoError(undefined);
-                      setPhotoDialogOpen(true);
-                    }}
-                  >
-                    <Camera className="h-4 w-4" />
-                    Change Photo URL
-                  </Button>
-                )}
+              {/* Avatar row with passkeys status on the right */}
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-4">
+                  <Avatar className="h-20 w-20">
+                    <AvatarImage src={String(editData.avatar_url || "")} alt={fullName} />
+                    <AvatarFallback className="text-lg">{initials}</AvatarFallback>
+                  </Avatar>
+                  {editing && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="gap-2 text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        setPhotoUrlDraft(String(editData.avatar_url || ""));
+                        setPhotoError(undefined);
+                        setPhotoDialogOpen(true);
+                      }}
+                    >
+                      <Camera className="h-4 w-4" />
+                      Change Photo URL
+                    </Button>
+                  )}
+                </div>
+                {/* Passkeys status badge removed as redundant; detailed section exists below */}
               </div>
 
               {!editing ? (
@@ -552,8 +671,8 @@ export default function Profile() {
                     <FieldView
                       label="Client"
                       value={String(
-                        (clientName || clientSlug)
-                          ? `${clientName || clientSlug}${clientSlug ? ` (${clientSlug})` : ''}`
+                        (clientName || effectiveClientSlug)
+                          ? `${clientName || effectiveClientSlug}${effectiveClientSlug ? ` (${effectiveClientSlug})` : ''}`
                           : '—'
                       )}
                     />
@@ -599,11 +718,24 @@ export default function Profile() {
                       </div>
                       <p className="mt-1 text-sm">{mfaEnabled ? 'Active' : 'Inactive'}</p>
                     </div>
+                    {/* Passkeys Enabled/Disabled */}
+                    <div>
+                      <Label className="text-sm font-medium text-muted-foreground">Passkeys</Label>
+                      <div className="mt-1">
+                        <Badge variant={passkeysEnabled ? 'default' : 'secondary'}>{passkeysEnabled ? 'Enabled' : 'Disabled'}</Badge>
+                      </div>
+                    </div>
                     <FieldView label="My Home AWS Account" value={String((profileUser as any)?.aws_account_id || '—')} />
                     <FieldView label="Preferred Region" value={String(editData.preferred_region || "us-east-1")} />
                   </div>
                   <Separator />
                   <FieldView label="Profile Description" value={String(editData.profile_description || "No description")} />
+
+                  {/* Theme Preferences (view mode, shows current presets) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FieldView label="Light Theme Preset" value={String(currentLightPresetId || 'Default')} />
+                    <FieldView label="Dark Theme Preset" value={String(currentDarkPresetId || 'Default')} />
+                  </div>
                 </div>
               ) : (
                  <div className="space-y-4">
@@ -612,8 +744,8 @@ export default function Profile() {
                       <FieldView
                         label="Client"
                         value={String(
-                          (clientName || clientSlug)
-                            ? `${clientName || clientSlug}${clientSlug ? ` (${clientSlug})` : ''}`
+                          (clientName || effectiveClientSlug)
+                            ? `${clientName || effectiveClientSlug}${effectiveClientSlug ? ` (${effectiveClientSlug})` : ''}`
                             : '—'
                         )}
                       />
@@ -730,10 +862,60 @@ export default function Profile() {
                     </div>
                     <PreferredRegionCombobox
                       value={String(editData.preferred_region || "us-east-1")}
-                      onChange={(v) => patchPreferredRegion(v)}
+                      onChange={(v) => setEditData((s) => ({ ...s, preferred_region: v }))}
                     />
                   </div>
                   <div className="space-y-2">
+
+                    {/* Theme Preferences (edit mode) */}
+                    <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Light Theme Preset</Label>
+                        <Select
+                          value={String((editData as any)?.preferences?.ui?.lightThemeId || currentLightPresetId || 'default')}
+                          onValueChange={(value) => {
+                            const nextPrefs = { ...((editData as any)?.preferences || {}) } as any;
+                            const ui = { ...(nextPrefs.ui || {}) };
+                            if (value === 'default') delete ui.lightThemeId; else ui.lightThemeId = value;
+                            nextPrefs.ui = ui;
+                            setEditData((s) => ({ ...s, preferences: nextPrefs } as any));
+                          }}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Default (base light)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="default">Default (base light)</SelectItem>
+                            {lightThemes.map((t:any) => (
+                              <SelectItem key={t.name} value={t.name}>{t.displayName || t.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Dark Theme Preset</Label>
+                        <Select
+                          value={String((editData as any)?.preferences?.ui?.darkThemeId || currentDarkPresetId || 'default')}
+                          onValueChange={(value) => {
+                            const nextPrefs = { ...((editData as any)?.preferences || {}) } as any;
+                            const ui = { ...(nextPrefs.ui || {}) };
+                            if (value === 'default') delete ui.darkThemeId; else ui.darkThemeId = value;
+                            nextPrefs.ui = ui;
+                            setEditData((s) => ({ ...s, preferences: nextPrefs } as any));
+                          }}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Default (base dark)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="default">Default (base dark)</SelectItem>
+                            {darkThemes.map((t:any) => (
+                              <SelectItem key={t.name} value={t.name}>{t.displayName || t.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
                     <Label htmlFor="profile_description">Profile Description</Label>
                     <Textarea
                       id="profile_description"
@@ -944,10 +1126,197 @@ export default function Profile() {
 
   {/* Sidebar */}
   <div className="space-y-6">
-      <Card>
+          {/* Delete All Passkeys Confirmation Dialog */}
+          <Dialog open={passkeyDeleteAllOpen} onOpenChange={(o) => { if(!passkeyBulkDeleting) setPasskeyDeleteAllOpen(o); }}>
+            <DialogContent className="w-[92vw] max-w-sm p-4 sm:p-6">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="h-5 w-5" />
+                  Delete All Passkeys
+                </DialogTitle>
+                <DialogDescription>
+                  This will remove all registered passkeys from your account. You can add new passkeys later. Continue?
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="pt-4 gap-2">
+                <Button variant="ghost" disabled={passkeyBulkDeleting} onClick={() => setPasskeyDeleteAllOpen(false)}>Cancel</Button>
+                <Button
+                  variant="destructive"
+                  disabled={passkeyBulkDeleting}
+                  onClick={async () => {
+                    try {
+                      setPasskeyBulkDeleting(true);
+                      const list = Array.isArray(passkeys) ? (passkeys as any[]) : [];
+                      for (const pk of list) {
+                        try {
+                          await (dispatch as any)(deletePasskeyAction({ key_id: pk.key_id } as any));
+                        } catch {/* ignore per-item */}
+                      }
+                      await (dispatch as any)(fetchPasskeys());
+                      setPasskeyDeleteAllOpen(false);
+                      toast({ title: 'Passkeys deleted', description: 'All passkeys were removed.' });
+                    } catch (e:any) {
+                      toast({ title: 'Delete failed', description: e?.message || 'Error deleting passkeys', variant: 'destructive' });
+                    } finally {
+                      setPasskeyBulkDeleting(false);
+                    }
+                  }}
+                >
+                  {passkeyBulkDeleting ? 'Deleting…' : 'Yes, Delete All'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Passkeys section (moved before Account info) */}
+          <Card>
             <CardHeader>
-        <CardTitle className="text-base font-medium text-muted-foreground">Account info</CardTitle>
-        <CardDescription className="text-xs">Metadata and usage</CardDescription>
+              <CardTitle className="text-base font-medium">Passkeys</CardTitle>
+              <CardDescription className="text-xs">Passwordless devices registered to your account</CardDescription>
+              <div className="ml-auto flex items-center gap-2 justify-end">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground"
+                          onClick={handleAddPasskey}
+                          disabled={!webAuthnSupported}
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          Add passkey
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {!webAuthnSupported && (
+                      <TooltipContent side="left">
+                        Your browser must support WebAuthn in a secure context (HTTPS) to add a passkey.
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
+                {Array.isArray(passkeys) && (passkeys as any[]).length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground"
+                    onClick={() => setPasskeyDeleteAllOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Delete all
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+        {passkeysStatus === 'loading' ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : !passkeys || (passkeys as any[]).length === 0 ? (
+                <p className="text-sm text-muted-foreground">No passkeys registered.</p>
+              ) : (
+                <div className="space-y-2">
+          {(passkeys as any[]).map((pk: any) => (
+                    <div key={pk.key_id} data-testid={`passkey-row-${pk.key_id}`} className="flex items-center gap-2 justify-between border rounded-md px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+              {renamingId === pk.key_id ? (
+                            <Input
+                data-testid={`passkey-rename-input-${pk.key_id}`}
+                              value={renameDraft}
+                              onChange={(e) => setRenameDraft(e.target.value)}
+                              className="h-8"
+                            />
+                          ) : (
+                            <span className="text-sm font-medium truncate">
+                              {pk.name || 'Unnamed device'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {pk.device_type || 'device'} • {pk.key_id}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Last used {formatDateTime(pk.last_used_at, userTimezone)}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {renamingId === pk.key_id ? (
+                          <>
+                            <Button
+                              data-testid={`passkey-save-${pk.key_id}`}
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              onClick={async () => {
+                                const name = renameDraft.trim();
+                                try {
+                                  const act: any = await dispatch(renamePasskey({ key_id: pk.key_id, name }) as any);
+                                  if (renamePasskey.rejected.match(act)) throw new Error(act.payload as any);
+                                  setRenamingId(null);
+                                  setRenameDraft('');
+                                  toast({ title: 'Renamed', description: 'Passkey name updated.' });
+                                } catch (e: any) {
+                                  toast({ title: 'Rename failed', description: e?.message || 'Error', variant: 'destructive' });
+                                }
+                              }}
+                              aria-label="Save name"
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              onClick={() => { setRenamingId(null); setRenameDraft(''); }}
+                              aria-label="Cancel rename"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            data-testid={`passkey-rename-${pk.key_id}`}
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            onClick={() => { setRenamingId(pk.key_id); setRenameDraft(String(pk.name || '')); }}
+                            aria-label="Rename"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-destructive"
+                          onClick={async () => {
+                            try {
+                              const act: any = await dispatch(deletePasskeyAction({ key_id: pk.key_id }) as any);
+                              if (deletePasskeyAction.rejected.match(act)) throw new Error(act.payload as any);
+                              toast({ title: 'Deleted', description: 'Passkey removed.' });
+                            } catch (e: any) {
+                              toast({ title: 'Delete failed', description: e?.message || 'Error', variant: 'destructive' });
+                            }
+                          }}
+                          aria-label="Delete passkey"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Account info (moved after Passkeys) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-medium text-muted-foreground">Account info</CardTitle>
+              <CardDescription className="text-xs">Metadata and usage</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Row label="Created" icon={<Calendar className="h-4 w-4 text-muted-foreground" />} muted>
@@ -972,7 +1341,7 @@ function FieldView({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <Label className="text-sm font-medium text-muted-foreground">{label}</Label>
-      <p className="mt-1 text-sm">{value || "—"}</p>
+  <p className="mt-1 text-sm contrast-value">{value || "—"}</p>
     </div>
   );
 }
@@ -1025,7 +1394,7 @@ function Row({
         {icon}
         <span className="text-sm">{label}</span>
       </div>
-      <span className={`text-sm font-medium ${muted ? 'text-muted-foreground' : ''}`}>{children}</span>
+  <span className={`text-sm font-medium ${muted ? 'text-muted-foreground' : 'contrast-value'}`}>{children}</span>
     </div>
   );
 }
@@ -1074,7 +1443,7 @@ function PreferredRegionCombobox({
             <CommandList>
               <CommandGroup heading="AWS Commercial">
                 {AWS_REGIONS.filter(r => r.partition === 'aws').map((r) => (
-                  <CommandItem key={r.code} value={r.code} onSelect={handleSelect}>
+                  <CommandItem key={r.code} value={r.code} onSelect={handleSelect} data-testid={`region-option-${r.code}`}>
                     <div className="flex flex-col">
                       <span className="font-medium">{r.name}</span>
                       <span className="text-xs text-muted-foreground">{r.code}</span>
@@ -1084,7 +1453,7 @@ function PreferredRegionCombobox({
               </CommandGroup>
               <CommandGroup heading="AWS GovCloud">
                 {AWS_REGIONS.filter(r => r.partition === 'aws-us-gov').map((r) => (
-                  <CommandItem key={r.code} value={r.code} onSelect={handleSelect}>
+                  <CommandItem key={r.code} value={r.code} onSelect={handleSelect} data-testid={`region-option-${r.code}`}>
                     <div className="flex flex-col">
                       <span className="font-medium">{r.name}</span>
                       <span className="text-xs text-muted-foreground">{r.code}</span>
@@ -1094,7 +1463,7 @@ function PreferredRegionCombobox({
               </CommandGroup>
               <CommandGroup heading="AWS China">
                 {AWS_REGIONS.filter(r => r.partition === 'aws-cn').map((r) => (
-                  <CommandItem key={r.code} value={r.code} onSelect={handleSelect}>
+                  <CommandItem key={r.code} value={r.code} onSelect={handleSelect} data-testid={`region-option-${r.code}`}>
                     <div className="flex flex-col">
                       <span className="font-medium">{r.name}</span>
                       <span className="text-xs text-muted-foreground">{r.code}</span>

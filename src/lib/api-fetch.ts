@@ -1,7 +1,7 @@
 import { buildApiUrl, getAuthHeaders } from '@/lib/api-config';
 
 export type ApiFetchOptions = RequestInit & {
-  cookieFirst?: boolean; // try without Authorization first then fallback on 401
+  cookieFirst?: boolean; // try without Authorization first then fallback on 401 (auth endpoints only)
   dedupeKey?: string;    // key for toast dedupe
   noToast401?: boolean;  // suppress global toast handling
   notify401?: boolean;   // emit a global 401 event for aggregation (default true)
@@ -23,6 +23,16 @@ export async function apiFetch(input: string, options: ApiFetchOptions = {}): Pr
       return needs(u.pathname);
     } catch {
       return needs(input);
+    }
+  })();
+
+  // Cookie policy: never send cookies to /api; include cookies for /auth
+  const credentials: RequestCredentials = (() => {
+    try {
+      const u = new URL(url);
+      return u.pathname.startsWith('/api/') ? 'omit' : 'include';
+    } catch {
+      return String(input).startsWith('/api/') ? 'omit' : 'include';
     }
   })();
 
@@ -57,7 +67,7 @@ export async function apiFetch(input: string, options: ApiFetchOptions = {}): Pr
     throw new Error('Missing access token: this request requires Authorization: Bearer <token>.');
   }
 
-  const doFetch = async (init: RequestInit) => fetch(url, { credentials: 'include', ...init });
+  const doFetch = async (init: RequestInit) => fetch(url, { credentials, ...init });
 
   if (cookieFirst) {
     // First attempt: cookie-first (session cookie). Keep JSON headers but drop Authorization.
@@ -84,20 +94,15 @@ function handle401(res: Response, options: ApiFetchOptions) {
   if (res.status !== 401) return;
   try {
     const path = extractPathFromUrl(String(res.url || ''));
-    if (path.startsWith('/auth/v1/me')) {
-      // Force immediate navigation to login; do not rely on passive refresh here.
-      if (typeof window !== 'undefined') {
-        const params = new URLSearchParams({ reason: 'me_unauthorized' });
-        // Preserve current path for potential return
-        try { params.set('returnTo', window.location.pathname + window.location.search); } catch { /* ignore */ }
-        window.location.replace(`/login?${params.toString()}`);
-      }
+    // Never redirect here; surface an event for SessionManager to decide.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path, status: res.status } }));
     }
-  } catch { /* ignore redirect errors */ }
+  } catch { /* ignore */ }
   // Caller hook first
   try {
     options.onUnauthorized?.();
-  } catch (e) {
+  } catch {
     // ignore user callback errors
   }
   // Emit global aggregation event unless suppressed
@@ -106,7 +111,7 @@ function handle401(res: Response, options: ApiFetchOptions) {
     try {
       const detail = { label: options.contextLabel || 'API', path: extractPathFromUrl(String(res.url || '')) };
       window.dispatchEvent(new CustomEvent('sck:api401', { detail }));
-    } catch (e) {
+    } catch {
       // ignore event dispatch errors
     }
   }

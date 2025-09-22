@@ -85,6 +85,65 @@ export default defineConfig(({ command, mode }) => ({
         });
       },
     },
+    // Dev-only: mock GitHub OAuth authorize endpoint
+    {
+      name: 'mock-github-oauth',
+      apply: 'serve',
+      configureServer(server) {
+    server.middlewares.use((req, res, next) => {
+          const url = new URL((req.url || ''), 'http://127.0.0.1');
+          if (url.pathname === '/mock_github_oauth') {
+            const state = url.searchParams.get('state') || '';
+            const hasOauthCookie = (req.headers['cookie'] || '').includes('github_oauth_params=');
+            if (!hasOauthCookie) {
+              // Missing flow cookie: bounce to login with an isf (invalid state/flow) marker
+              res.statusCode = 302;
+              res.setHeader('Location', '/error?error=isf&redirect=/login');
+              res.end();
+              return;
+            }
+            // Build callback on same host:port to keep cookies same-origin via proxy
+            const host = req.headers['host'] || '127.0.0.1:8080';
+            const redirectUri = `http://${host}/auth/github/callback`;
+            const mockEmail = process.env.MOCK_GITHUB_EMAIL || 'mockuser@example.com';
+            const cb = new URL(redirectUri);
+            cb.searchParams.set('code', `mock-${state || 'code'}`);
+            cb.searchParams.set('state', state);
+            cb.searchParams.set('mock_email', mockEmail);
+            res.statusCode = 302;
+            res.setHeader('Location', cb.toString());
+            res.end();
+            return;
+          }
+          next();
+        });
+      },
+    },
+    // Preview: also provide mock endpoint for local preview server
+    {
+      name: 'mock-github-oauth-preview',
+      apply: 'build',
+      configurePreviewServer(server) {
+    server.middlewares.use((req, res, next) => {
+          const url = new URL((req.url || ''), 'http://127.0.0.1');
+          if (url.pathname === '/mock_github_oauth') {
+            const state = url.searchParams.get('state') || '';
+            const host = req.headers['host'] || '127.0.0.1:8081';
+            const redirectUri = `http://${host}/auth/github/callback`;
+            const mockEmail = process.env.MOCK_GITHUB_EMAIL || 'mockuser@example.com';
+            const cb = new URL(redirectUri);
+            cb.searchParams.set('code', `mock-${state || 'code'}`);
+            cb.searchParams.set('state', state);
+            cb.searchParams.set('mock_email', mockEmail);
+            res.statusCode = 302;
+            res.setHeader('Location', cb.toString());
+            res.end();
+            return;
+          }
+          next();
+        });
+      },
+    },
     // componentTagger(), // disabled
   ],
   resolve: {

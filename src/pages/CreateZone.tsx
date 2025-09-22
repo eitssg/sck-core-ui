@@ -219,7 +219,7 @@ export default function CreateZone() {
     };
 
     try {
-      const res = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.API.ZONES), {
+  const res = await fetch(buildApiUrl(`/api/v1/registry/clients/${encodeURIComponent(data.client)}/zones`), {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify(zonePayload),
@@ -246,7 +246,7 @@ export default function CreateZone() {
       // dispatch({ type: "zones/addZone", payload: zonePayload })
 
       // Navigate to details
-      navigate(`/zones/${encodeURIComponent(data.zone)}?client=${encodeURIComponent(data.client)}`);
+  navigate(`/zones/${encodeURIComponent(data.client)}/${encodeURIComponent(data.zone)}`);
     } catch (err) {
       toast({
         title: "Network error",

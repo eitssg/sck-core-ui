@@ -1,150 +1,377 @@
-import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, type PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
+import type { RootState } from '@/store';
+import type { Application } from '@/store/types';
+import { buildApiUrl, API_CONFIG, getAuthHeaders } from '@/lib/api-config';
+import { apiFetch } from '@/lib/api-fetch';
+import { parseApiEnvelope } from '@/store/api/envelope';
+import { patchPortfolio, updatePortfolioAppCount } from './portfoliosSlice';
 
-export interface Application {
-  id: string;
-  clientPortfolio: string; // Key string
-  appRegex: string; // UnicodeAttribute - App Selector regex
-  name: string; // UnicodeAttribute
-  environment: string; // UnicodeAttribute
-  account: string; // UnicodeAttribute
-  zone: string; // UnicodeAttribute - references Zone ID
-  imageAliases: Record<string, string>; // MapAttribute
-  repository: string; // UnicodeAttribute
-  region: string; // UnicodeAttribute
-  tags: Record<string, string>; // MapAttribute
-  enforceValidation: string; // UnicodeAttribute
-  metadata: Record<string, any>; // MapAttribute
-  
-  // Additional fields for UI
-  slug: string;
-  code: string;
-  description: string;
-  portfolioId: string;
-  status: 'running' | 'stopped' | 'error' | 'deploying';
-  version: string;
-  lastDeploy: string;
-}
+type Status = 'idle' | 'loading' | 'succeeded' | 'failed';
 
 interface ApplicationsState {
-  applications: Application[];
-  selectedApplicationId: string | null;
-  loading: boolean;
+  items: Application[];
+  status: Status;
   error: string | null;
+  lastFetched: number | null;
+  currentClient: string | null;
+  // Per-application draft edits keyed by "{portfolio}::{app}"
+  drafts: Record<string, Partial<Application>>;
+  // Track which apps are in edit mode (UI can also derive from drafts)
+  editing: Record<string, boolean>;
 }
 
 const initialState: ApplicationsState = {
-  applications: [
-    {
-      id: 'app-1',
-      clientPortfolio: 'client-1#portfolio-1',
-      appRegex: '^ecom-.*',
-      name: 'Frontend Web App',
-      environment: 'production',
-      account: 'prod-account',
-      zone: 'zone-1',
-      imageAliases: { 'web': 'nginx:latest', 'api': 'node:18' },
-      repository: 'https://github.com/acme/ecommerce-frontend',
-      region: 'us-east-1',
-      tags: { 'team': 'frontend', 'env': 'prod' },
-      enforceValidation: 'true',
-      metadata: { 'created': '2024-01-15', 'version': '1.2.3' },
-      slug: 'frontend-web-app',
-      code: 'FWA',
-      description: 'React-based e-commerce frontend application',
-      portfolioId: 'portfolio-1',
-      status: 'running',
-      version: '1.2.3',
-      lastDeploy: '2024-07-25T08:30:00Z',
-    },
-    {
-      id: 'app-2',
-      clientPortfolio: 'client-1#portfolio-1',
-      appRegex: '^api-.*',
-      name: 'Backend API Service',
-      environment: 'production',
-      account: 'prod-account',
-      zone: 'zone-1',
-      imageAliases: { 'api': 'node:18', 'db': 'postgres:14' },
-      repository: 'https://github.com/acme/ecommerce-api',
-      region: 'us-east-1',
-      tags: { 'team': 'backend', 'env': 'prod' },
-      enforceValidation: 'true',
-      metadata: { 'created': '2024-01-20', 'version': '2.1.0' },
-      slug: 'backend-api-service',
-      code: 'BAS',
-      description: 'Node.js API service handling e-commerce operations',
-      portfolioId: 'portfolio-1',
-      status: 'running',
-      version: '2.1.0',
-      lastDeploy: '2024-07-24T14:20:00Z',
-    },
-    {
-      id: 'app-3',
-      clientPortfolio: 'client-1#portfolio-2',
-      appRegex: '^analytics-.*',
-      name: 'Analytics Dashboard',
-      environment: 'production',
-      account: 'analytics-account',
-      zone: 'zone-2',
-      imageAliases: { 'dashboard': 'react:latest', 'worker': 'python:3.11' },
-      repository: 'https://github.com/acme/analytics-dashboard',
-      region: 'us-east-1',
-      tags: { 'team': 'analytics', 'env': 'prod' },
-      enforceValidation: 'true',
-      metadata: { 'created': '2024-02-01', 'version': '1.0.5' },
-      slug: 'analytics-dashboard',
-      code: 'AND',
-      description: 'Real-time analytics and reporting dashboard',
-      portfolioId: 'portfolio-2',
-      status: 'running',
-      version: '1.0.5',
-      lastDeploy: '2024-07-23T11:45:00Z',
-    },
-  ],
-  selectedApplicationId: null,
-  loading: false,
+  items: [],
+  status: 'idle',
   error: null,
+  lastFetched: null,
+  currentClient: null,
+  drafts: {},
+  editing: {},
 };
+
+// Fetch applications list, optionally filtered by portfolio
+export const fetchApplications = createAsyncThunk<
+  { items: Application[]; client: string; portfolio: string },
+  { client: string; portfolio: string; limit?: number; cursor?: string | null },
+  { state: RootState }
+>(
+  'applications/fetchList',
+  async ({ client, portfolio, limit = 100, cursor }, { rejectWithValue, getState, dispatch }) => {
+    try {
+      const base = `/api/v1/registry/clients/${encodeURIComponent(client)}/portfolios/${encodeURIComponent(portfolio)}/apps`;
+      const url = new URL(buildApiUrl(base));
+      if (limit) url.searchParams.set('limit', String(limit));
+      if (cursor) url.searchParams.set('cursor', cursor);
+
+      const res = await apiFetch(url.toString(), { cookieFirst: true, contextLabel: 'Apps' });
+      if (!res.ok) {
+        const msg = `Failed to fetch applications (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+      const { data } = await parseApiEnvelope<Application[] | any>(res);
+      const rows: Application[] = Array.isArray(data) ? data as Application[] : [];
+
+      // After fetching, sync portfolio app_count if mismatched
+      try {
+        const state = getState() as any;
+        const portfolios = state?.portfolios?.items || [];
+        const p = portfolios.find((pp: any) => pp?.portfolio === portfolio);
+        const currentCount = typeof (p as any)?.app_count === 'number' ? (p as any).app_count : undefined;
+        const nextCount = rows.length;
+        if (currentCount === undefined || currentCount !== nextCount) {
+          dispatch(updatePortfolioAppCount({ portfolioId: portfolio, count: nextCount }));
+          await dispatch(patchPortfolio({ client, portfolio, portfolioData: { app_count: nextCount } as any }) as any);
+        }
+      } catch {
+        // ignore
+      }
+      return { items: rows, client, portfolio };
+    } catch (e: any) {
+      return rejectWithValue(e?.message || 'Unknown error');
+    }
+  }
+);
+
+// Fetch a single application by slug
+// Fetch a single application by slug
+export const fetchApplicationDetail = createAsyncThunk<
+  { item: Application; client: string; portfolio: string },
+  { client: string; portfolio: string; app: string },
+  { state: RootState }
+>(
+  'applications/fetchSingle',
+  async ({ client, portfolio, app }, { rejectWithValue }) => {
+    try {
+      const base = `/api/v1/registry/clients/${encodeURIComponent(client)}/portfolios/${encodeURIComponent(portfolio)}/apps/${encodeURIComponent(app)}`;
+      const res = await apiFetch(buildApiUrl(base), { cookieFirst: true, contextLabel: 'App:detail' });
+      if (!res.ok) {
+        const msg = `Failed to fetch application (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+      const { data } = await parseApiEnvelope<Application | any>(res);
+      const row: Application = data as Application;
+      return { item: row, client, portfolio };
+    } catch (e: any) {
+      return rejectWithValue(e?.message || 'Unknown error');
+    }
+  }
+);
+
+// Create a new application via POST (backend generates the slug and returns it)
+export const createApplication = createAsyncThunk<
+  { item: Application; client: string; portfolio: string },
+  { client: string; portfolio: string; payload: any },
+  { state: RootState }
+>(
+  'applications/create',
+  async ({ client, portfolio, payload }, { rejectWithValue }) => {
+    try {
+      const base = `/api/v1/registry/clients/${encodeURIComponent(client)}/portfolios/${encodeURIComponent(portfolio)}/apps`;
+      const res = await apiFetch(buildApiUrl(base), { method: 'POST', body: JSON.stringify(payload), cookieFirst: true, contextLabel: 'App:create' });
+      if (!res.ok) {
+        const msg = `Failed to create application (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+      const { data } = await parseApiEnvelope<Application | any>(res);
+      const row: Application = data as Application;
+      return { item: row, client, portfolio };
+    } catch (e: any) {
+      return rejectWithValue(e?.message || 'Unknown error');
+    }
+  }
+);
+
+// Update a single application via PUT
+export const updateApplication = createAsyncThunk<
+  { item: Application; client: string; portfolio: string },
+  { client: string; portfolio: string; app: string; payload: any },
+  { state: RootState }
+>(
+  'applications/update',
+  async ({ client, portfolio, app, payload }, { rejectWithValue }) => {
+    try {
+      const base = `/api/v1/registry/clients/${encodeURIComponent(client)}/portfolios/${encodeURIComponent(portfolio)}/apps/${encodeURIComponent(app)}`;
+      const res = await apiFetch(buildApiUrl(base), { method: 'PUT', body: JSON.stringify(payload), cookieFirst: true, contextLabel: 'App:update' });
+      if (!res.ok) {
+        const msg = `Failed to update application (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+      const { data } = await parseApiEnvelope<Application | any>(res);
+      const row: Application = data as Application;
+      return { item: row, client, portfolio };
+    } catch (e: any) {
+      return rejectWithValue(e?.message || 'Unknown error');
+    }
+  }
+);
+
+// Delete a single application via DELETE
+export const deleteApplication = createAsyncThunk<
+  { app: string; portfolio: string },
+  { client: string; portfolio: string; app: string },
+  { state: RootState }
+>(
+  'applications/delete',
+  async ({ client, portfolio, app }, { rejectWithValue }) => {
+    try {
+      const base = `/api/v1/registry/clients/${encodeURIComponent(client)}/portfolios/${encodeURIComponent(portfolio)}/apps/${encodeURIComponent(app)}`;
+      const res = await apiFetch(buildApiUrl(base), { method: 'DELETE', cookieFirst: true, contextLabel: 'App:delete' });
+      if (!res.ok) {
+        const msg = `Failed to delete application (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+      // Some APIs return data or nothing on delete; we don't require parsing
+      try {
+        await parseApiEnvelope<any>(res);
+      } catch (_) {
+        // ignore parse errors for empty bodies
+      }
+      return { app, portfolio };
+    } catch (e: any) {
+      return rejectWithValue(e?.message || 'Unknown error');
+    }
+  }
+);
+
+// Helper thunk: recompute and patch portfolio.app_count in backend from current applications list
+export const patchPortfolioAppCount = createAsyncThunk<
+  void,
+  { client: string; portfolio: string },
+  { state: RootState }
+>(
+  'applications/patchPortfolioAppCount',
+  async ({ client, portfolio }, { getState, dispatch }) => {
+    const state = getState() as RootState;
+    const list = ((state as any).applications?.items || []) as Application[];
+    const count = list.filter((a) => a.portfolio === portfolio).length;
+    try {
+      await dispatch(
+        patchPortfolio({ client, portfolio, portfolioData: { app_count: count } as any }) as any
+      );
+    } catch {
+      // Non-fatal; ignore patch failure
+    }
+  }
+);
+
+function mergeItem(items: Application[], next: Application): Application[] {
+  const idx = items.findIndex((a) => a.portfolio === next.portfolio && (a as any).app === (next as any).app);
+  if (idx >= 0) {
+    const copy = items.slice();
+    copy[idx] = { ...items[idx], ...next } as Application;
+    return copy;
+  }
+  return [...items, next];
+}
 
 const applicationsSlice = createSlice({
   name: 'applications',
   initialState,
   reducers: {
-    setApplications: (state, action: PayloadAction<Application[]>) => {
-      state.applications = action.payload;
+    clear(state) {
+      state.items = [];
+      state.status = 'idle';
+      state.error = null;
+      state.lastFetched = null;
+      state.drafts = {};
+      state.editing = {};
     },
-    addApplication: (state, action: PayloadAction<Application>) => {
-      state.applications.push(action.payload);
+    setItems(state, action: PayloadAction<Application[]>) {
+      state.items = action.payload || [];
+      state.status = 'succeeded';
+      state.error = null;
+      state.lastFetched = Date.now();
     },
-    updateApplication: (state, action: PayloadAction<Application>) => {
-      const index = state.applications.findIndex(app => app.id === action.payload.id);
-      if (index !== -1) {
-        state.applications[index] = action.payload;
-      }
+    beginEdit(state, action: PayloadAction<{ portfolio: string; app: string }>) {
+      const key = `${action.payload.portfolio}::${action.payload.app}`;
+      if (!state.drafts[key]) state.drafts[key] = {};
+      state.editing[key] = true;
     },
-    removeApplication: (state, action: PayloadAction<string>) => {
-      state.applications = state.applications.filter(app => app.id !== action.payload);
+    updateDraft(
+      state,
+      action: PayloadAction<{ portfolio: string; app: string; changes: Partial<Application> }>
+    ) {
+      const key = `${action.payload.portfolio}::${action.payload.app}`;
+      const next = { ...(state.drafts[key] || {}), ...(action.payload.changes || {}) } as Partial<Application>;
+      state.drafts[key] = next;
+      state.editing[key] = true;
     },
-    setSelectedApplication: (state, action: PayloadAction<string | null>) => {
-      state.selectedApplicationId = action.payload;
-    },
-    setLoading: (state, action: PayloadAction<boolean>) => {
-      state.loading = action.payload;
-    },
-    setError: (state, action: PayloadAction<string | null>) => {
-      state.error = action.payload;
+    cancelEdit(state, action: PayloadAction<{ portfolio: string; app: string }>) {
+      const key = `${action.payload.portfolio}::${action.payload.app}`;
+      delete state.drafts[key];
+      delete state.editing[key];
     },
   },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchApplications.pending, (state, action) => {
+        state.status = 'loading';
+        state.error = null;
+        state.currentClient = action.meta.arg.client;
+      })
+      .addCase(fetchApplications.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        const { items: rows, client, portfolio } = action.payload;
+        const existing = state.items || [];
+        // Keep items from other portfolios as-is
+        const keep = existing.filter((it) => it.portfolio !== portfolio);
+        // For this portfolio, merge each list row into any existing detailed record to preserve fields not returned by the list
+        const merged = rows.map((row) => {
+          const idx = existing.findIndex((a) => a.portfolio === row.portfolio && (a as any).app === (row as any).app);
+          if (idx >= 0) {
+            return { ...existing[idx], ...row } as Application;
+          }
+          return row;
+        });
+        state.items = [...keep, ...merged];
+        state.error = null;
+        state.lastFetched = Date.now();
+        state.currentClient = client;
+      })
+      .addCase(fetchApplications.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = (action.payload as string) || action.error.message || 'Failed to fetch applications';
+      })
+      .addCase(fetchApplicationDetail.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(fetchApplicationDetail.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        const srv = action.payload.item as any;
+        const portfolio = (action as any).meta?.arg?.portfolio || srv?.portfolio;
+        const appSlug = srv?.app || srv?.slug || srv?.id;
+        const normalized = { portfolio, app: appSlug, ...(srv || {}) } as Application;
+        state.items = mergeItem(state.items, normalized);
+        state.error = null;
+        state.lastFetched = Date.now();
+      })
+      .addCase(fetchApplicationDetail.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = (action.payload as string) || action.error.message || 'Failed to fetch application';
+      })
+      .addCase(updateApplication.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(updateApplication.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        // Ensure we always have the identifying keys even if server omits them in the response
+        const arg = (action as any).meta?.arg as { portfolio: string; app: string };
+        const srv = action.payload.item as any;
+        const normalized = { portfolio: arg?.portfolio, app: arg?.app, ...(srv || {}) } as Application;
+        state.items = mergeItem(state.items, normalized);
+        state.error = null;
+        state.lastFetched = Date.now();
+        // Clear draft/editing for this app
+        const key = `${normalized.portfolio}::${(normalized as any).app}`;
+        delete state.drafts[key];
+        delete state.editing[key];
+      })
+      .addCase(updateApplication.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = (action.payload as string) || action.error.message || 'Failed to update application';
+      })
+      .addCase(deleteApplication.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(deleteApplication.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        const { app, portfolio } = action.payload;
+        state.items = (state.items || []).filter(
+          (a) => !(a.portfolio === portfolio && (a as any).app === app)
+        );
+        state.error = null;
+        state.lastFetched = Date.now();
+  const key = `${portfolio}::${app}`;
+  delete state.drafts[key];
+  delete state.editing[key];
+      })
+      .addCase(deleteApplication.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = (action.payload as string) || action.error.message || 'Failed to delete application';
+      })
+      .addCase(createApplication.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
+      .addCase(createApplication.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        const arg = (action as any).meta?.arg as { portfolio: string };
+        const srv = action.payload.item as any;
+        // Some backends may use 'slug' or 'id' for app
+        const appSlug = srv?.app || srv?.slug || srv?.id;
+        const normalized = { portfolio: arg?.portfolio, app: appSlug, ...(srv || {}) } as Application;
+        state.items = mergeItem(state.items, normalized);
+        state.error = null;
+        state.lastFetched = Date.now();
+      })
+      .addCase(createApplication.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = (action.payload as string) || action.error.message || 'Failed to create application';
+      });
+  }
 });
 
-export const {
-  setApplications,
-  addApplication,
-  updateApplication,
-  removeApplication,
-  setSelectedApplication,
-  setLoading,
-  setError,
-} = applicationsSlice.actions;
+export const { clear, setItems, beginEdit, updateDraft, cancelEdit } = applicationsSlice.actions;
+
+// Selectors
+export const selectApplications = (state: RootState) => (state as any).applications?.items as Application[];
+export const selectApplicationsStatus = (state: RootState) => (state as any).applications?.status as Status;
+export const selectApplicationByKey = (state: RootState, portfolio: string, app: string) => {
+  const list = (state as any).applications?.items as Application[];
+  return (list || []).find((a) => a.portfolio === portfolio && (a as any).app === app);
+};
+export const selectDraftByKey = (state: RootState, portfolio: string, app: string) => {
+  const drafts = (state as any).applications?.drafts as Record<string, Partial<Application>>;
+  return (drafts || {})[`${portfolio}::${app}`] || undefined;
+};
+export const selectEffectiveApplication = (state: RootState, portfolio: string, app: string) => {
+  const base = selectApplicationByKey(state, portfolio, app);
+  const draft = selectDraftByKey(state, portfolio, app);
+  return base ? ({ ...base, ...(draft || {}) } as Application) : undefined;
+};
 
 export default applicationsSlice.reducer;

@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Save, ArrowLeft, Briefcase, Code, FileText, ExternalLink } from "lucide-react";
+import { Save, Briefcase, Code, FileText, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
 export default function CreatePortfolio() {
   const [formData, setFormData] = useState({
@@ -45,27 +45,16 @@ export default function CreatePortfolio() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Page Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/portfolios")}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Portfolios
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Create Portfolio</h1>
-          <p className="text-muted-foreground">Set up a new application portfolio</p>
-        </div>
-      </div>
-
-      {/* Form */}
-      <div className="max-w-2xl">
+    <div className="animate-fade-in px-4 sm:px-6 lg:px-8 py-8">
+      {/* Centered panel (dialog-like) */}
+      <div className="mx-auto w-full max-w-lg">
         <Card className="shadow-medium">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Briefcase className="h-5 w-5 text-primary" />
-              Portfolio Details
+              Create Portfolio
             </CardTitle>
+            <CardDescription>Define a new portfolio and basic metadata</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">

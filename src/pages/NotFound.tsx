@@ -185,7 +185,7 @@ export default function NotFound() {
                 </Link>
               </Button>
               <Button asChild variant="outline" className="w-full justify-start gap-2">
-                <Link to="/applications">
+                <Link to="/dashboard">
                   <FileQuestion className="h-4 w-4" />
                   Applications
                 </Link>

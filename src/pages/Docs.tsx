@@ -1,15 +1,12 @@
-import { useState } from "react";
-import { Search, FileText, ExternalLink, Calendar, Download, Filter } from "lucide-react";
+import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { Search, FileText, ExternalLink, Download, X } from "lucide-react";
+import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Separator } from "@/components/ui/separator";
 
 // Mock documentation data (would be loaded from sphinx output)
 const mockDocs = [
@@ -75,18 +72,22 @@ const mockDocs = [
   }
 ];
 
-const categories = ["All", "API", "User Guide", "Development", "Technical", "Security"];
+const categories = ["All", "API", "User Guide", "Development", "Technical", "Security"] as const;
+type Category = typeof categories[number];
 
 export default function Docs() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState<Category>("All");
 
-  const filteredDocs = mockDocs.filter(doc => {
-    const matchesSearch = doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         doc.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === "All" || doc.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const filteredDocs = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return mockDocs.filter(doc => {
+      const matchesSearch = !s || doc.title.toLowerCase().includes(s) || doc.description.toLowerCase().includes(s);
+      const matchesCategory = category === "All" || doc.category === category;
+      return matchesSearch && matchesCategory;
+    });
+  }, [search, category]);
 
   const getCategoryColor = (category: string) => {
     switch (category) {
@@ -106,117 +107,118 @@ export default function Docs() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Documentation</h1>
-          <p className="text-muted-foreground">Browse and access system documentation</p>
-        </div>
-        <Button variant="outline" className="gap-2">
-          <Download className="h-4 w-4" />
-          Download All
-        </Button>
-      </div>
-
-      {/* Search and Filters */}
-      <Card className="shadow-soft">
-        <CardContent className="p-4">
-          <div className="flex gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search documentation..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="gap-2">
-                  <Filter className="h-4 w-4" />
-                  {selectedCategory}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {categories.map((category) => (
-                  <DropdownMenuItem
-                    key={category}
-                    onClick={() => setSelectedCategory(category)}
-                  >
-                    {category}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+    <DashboardLayout
+      activeItem="docs"
+      pageTitle="Documentation"
+      pageSubtitle="Browse generated guides, references and standards"
+    >
+      <div className="space-y-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-2 order-2 sm:order-1">
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => {/* TODO: bulk download hook */}}>
+              <Download className="h-4 w-4" />
+              Download All
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+          <div className="order-1 sm:order-2 w-full sm:max-w-md relative">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search documentation..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10"
+              aria-label="Search documentation"
+            />
+            {search && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setSearch("")}
+                className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
 
-      {/* Documentation Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredDocs.map((doc) => (
-          <Card key={doc.id} className="shadow-medium hover:shadow-large transition-shadow">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                    <FileText className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="flex-1">
-                    <CardTitle className="text-lg leading-tight">{doc.title}</CardTitle>
-                  </div>
-                </div>
-                <Badge className={getCategoryColor(doc.category)} variant="secondary">
-                  {doc.category}
-                </Badge>
-              </div>
-            </CardHeader>
-            
-            <CardContent className="space-y-4">
-              <p className="text-sm text-foreground">{doc.description}</p>
-              
-              <div className="space-y-2 text-xs text-muted-foreground">
-                <div className="flex items-center justify-between">
-                  <span>Last Updated</span>
-                  <span>{doc.lastUpdated}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>File Size</span>
-                  <span>{doc.size}</span>
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <Button variant="outline" size="sm" className="flex-1" asChild>
-                  <a href={doc.url} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="h-3 w-3 mr-1" />
-                    View
-                  </a>
-                </Button>
-                <Button variant="ghost" size="sm" asChild>
-                  <a href={doc.downloadUrl} download>
-                    <Download className="h-3 w-3" />
-                  </a>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {filteredDocs.length === 0 && (
         <Card className="shadow-soft">
-          <CardContent className="p-8 text-center">
-            <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-foreground mb-2">No documentation found</h3>
-            <p className="text-muted-foreground">
-              Try adjusting your search terms or category filter.
-            </p>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Categories</CardTitle>
+            <CardDescription>Select a category to filter the list</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="flex flex-wrap gap-2">
+              {categories.map(cat => {
+                const active = cat === category;
+                return (
+                  <Button
+                    key={cat}
+                    size="sm"
+                    variant={active ? 'default' : 'secondary'}
+                    className="h-7 px-3"
+                    onClick={() => setCategory(cat)}
+                    aria-pressed={active}
+                  >
+                    {cat}
+                  </Button>
+                );
+              })}
+            </div>
           </CardContent>
         </Card>
-      )}
-    </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" role="list" aria-label="Documentation entries">
+          {filteredDocs.map(doc => (
+            <Card key={doc.id} className="shadow-medium hover:shadow-large transition-shadow" role="listitem">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                      <FileText className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-lg leading-tight line-clamp-2">{doc.title}</CardTitle>
+                      <p className="text-xs text-muted-foreground mt-1">Updated {doc.lastUpdated}</p>
+                    </div>
+                  </div>
+                  <Badge className="whitespace-nowrap" variant="secondary">{doc.category}</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground line-clamp-3">{doc.description}</p>
+                <Separator />
+                <div className="flex gap-2 pt-1">
+                  <Button variant="outline" size="sm" className="flex-1" asChild>
+                    <a href={doc.url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-3 w-3 mr-1" />
+                      View
+                    </a>
+                  </Button>
+                  <Button variant="ghost" size="sm" asChild aria-label={`Download ${doc.title}`}>
+                    <a href={doc.downloadUrl} download>
+                      <Download className="h-3 w-3" />
+                    </a>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {filteredDocs.length === 0 && (
+          <Card className="shadow-soft">
+            <CardContent className="p-12 text-center">
+              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No documentation found</h3>
+              <p className="text-muted-foreground mb-4">Adjust search terms or choose another category.</p>
+              {search && (
+                <Button size="sm" variant="secondary" onClick={() => setSearch("")}>Clear Search</Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </DashboardLayout>
   );
 }

@@ -79,6 +79,16 @@ function extractTokenPayload(json: any): { token: string | null; token_type: str
   return { token, token_type };
 }
 
+// UI-only helper: resolve tenant slug from localStorage; default to "core"
+export function getSelectedClientSlug(): string {
+  try {
+    const v = (typeof window !== 'undefined') ? window.localStorage?.getItem('sck.selectedClient') : null;
+    return v && v.trim() ? v.trim() : 'core';
+  } catch {
+    return 'core';
+  }
+}
+
 export const authAPI = {
   // Resolve client secret from multiple sources in a consistent order
   _resolveClientSecret(): string | undefined {
@@ -305,7 +315,7 @@ export const authAPI = {
         redirect_uri: API_CONFIG.OAUTH.REDIRECT_URI,
       });
 
-      const tokenHeaders: Record<string, string> = {
+  const tokenHeaders: Record<string, string> = {
         'Content-Type': 'application/x-www-form-urlencoded',  // STANDARD OAUTH
       };
       const basic = this._getBasicAuthHeader();
@@ -335,6 +345,7 @@ export const authAPI = {
         const errorData = await response.json().catch(() => ({}));
         const message = errorData.error || errorData.message || 'invalid_request';
         const mapped = mapOAuthErrorToUserMessage(errorData.error_description || message, response.status);
+        try { window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path: '/auth/v1/token', status: response.status } })); } catch { /* ignore */ }
         return { error: message, error_description: mapped } as OAuthErrorResponse;
       }
 
@@ -486,6 +497,7 @@ export const authAPI = {
         const errorData = await response.json().catch(() => ({}));
         const message = errorData.error || errorData.message || 'invalid_request';
         const mapped = mapOAuthErrorToUserMessage(errorData.error_description || message, response.status);
+        try { window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path: '/auth/v1/token', status: response.status } })); } catch { /* ignore */ }
         return { error: message, error_description: mapped } as OAuthErrorResponse;
       }
 
@@ -557,6 +569,7 @@ export const authAPI = {
 
       if (!response.ok) {
   try { if (DEBUG_AUTH) console.log('[authAPI] refreshToken: non-OK status', response.status); } catch (e) { /* no-op */ }
+        try { window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path: '/auth/v1/token', status: response.status } })); } catch { /* ignore */ }
         // Only clear tokens on 401/invalid refresh; keep tokens on transient errors
         if (response.status === 401) {
           // Don't auto-logout on 401; just signal invalid refresh
@@ -595,6 +608,13 @@ export const authAPI = {
       });
       if (!res.ok) {
   try { console.log('[authAPI] refreshSession: non-OK status', res.status); } catch (e) { /* no-op */ }
+        try { window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path: '/auth/v1/refresh', status: res.status } })); } catch { /* ignore */ }
+        // If the session cookie is invalid/expired, surface a specific error so callers can navigate to /login
+        if (res.status === 401) {
+          const err: any = new Error('session_cookie_invalid');
+          err.status = 401;
+          throw err;
+        }
         return false;
       }
   // No persistence of session issuance time
@@ -616,20 +636,22 @@ export const authAPI = {
         if (DEBUG_AUTH) console.log('[authAPI] refresh captured session headers', { expSec, refreshAtSec });
       } catch { /* ignore */ }
       return true;
-    } catch {
+    } catch (e) {
+      // Rethrow explicit invalid session errors; otherwise indicate transient failure
+      if (e instanceof Error && e.message === 'session_cookie_invalid') throw e;
       return false;
     }
   },
 
-  // Update signup to include client_id
+  // Update signup to include client_id and correct endpoint
   async signup(userData: SignupRequest): Promise<OAuthTokenResponse | OAuthErrorResponse> {
     try {
-      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGIN), {
+      const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.SIGNUP), {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...userData,
-          client_id: API_CONFIG.OAUTH.CLIENT_ID  // Add client_id for signup
+          client_id: API_CONFIG.OAUTH.CLIENT_ID
         }),
       });
 
@@ -653,14 +675,26 @@ export const authAPI = {
 
   async logout(): Promise<void> {
     try {
-  const accessToken = undefined; // access token is not persisted in storage under Option B
+      // Best-effort revoke (no-op if server ignores)
+      const accessToken = undefined; // access token is not persisted in storage under Option B
       if (accessToken) {
-        // Revoke token on server
         await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.REVOKE), {
           method: 'POST',
           headers: getAuthHeaders(),
           body: JSON.stringify({ token: accessToken }),
+        }).catch(() => undefined);
+      }
+
+      // Always call server logout to delete the secure session cookie
+      // Use credentials: 'include' so the cookie is sent and cleared server-side
+      try {
+        await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGOUT), {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' },
         });
+      } catch {
+        // Ignore network errors; client will still clear local storage
       }
     } catch (error) {
       console.error('Logout error:', error);
@@ -695,8 +729,76 @@ export const authAPI = {
   },
 
   async githubLogin(): Promise<void> {
-    // Redirect to GitHub OAuth endpoint
-    window.location.href = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.GITHUB_LOGIN);
+    // Navigate via POST to /auth/github/login to avoid URL param logging.
+    // Before posting, prepare PKCE (S256) and a printable state; persist verifier/state in sessionStorage.
+    const action = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.GITHUB_LOGIN);
+    const clientId = API_CONFIG.OAUTH.CLIENT_ID;
+    const redirectUri = getRedirectUri();
+    const slug = getSelectedClientSlug();
+
+    // Generate a compact printable state (<=512 chars). Use hex prefix to aid debugging.
+    let state: string | undefined;
+    try {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+      state = `st:${hex}`;
+      sessionStorage.setItem('oauth_expected_state', state);
+    } catch {
+      // If crypto/state fails, proceed without state (server will not forward it).
+    }
+
+    // PKCE S256: generate verifier + challenge; persist verifier (generic and state-keyed)
+    let codeChallenge: string | undefined;
+    try {
+      const rand = crypto.getRandomValues(new Uint8Array(32));
+      let bin = '';
+      for (let i = 0; i < rand.length; i++) bin += String.fromCharCode(rand[i]);
+      const verifier = btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+
+      // Compute S256
+      const data = new TextEncoder().encode(verifier);
+      const digest = await crypto.subtle.digest('SHA-256', data);
+      const hashBytes = new Uint8Array(digest);
+      let hashBin = '';
+      for (let i = 0; i < hashBytes.length; i++) hashBin += String.fromCharCode(hashBytes[i]);
+      codeChallenge = btoa(hashBin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+
+      // Persist verifier for later /token call
+      try {
+        sessionStorage.setItem('pkce_code_verifier', verifier);
+        if (state) sessionStorage.setItem(`pkce_code_verifier_${state}`, verifier);
+        if (DEBUG_AUTH) console.log('[authAPI] PKCE prepared for GitHub login', { hasCodeChallenge: Boolean(codeChallenge), method: 'S256', hasState: Boolean(state) });
+      } catch { /* ignore storage errors */ }
+    } catch {
+      // If PKCE fails, proceed; backend may require it for public clients and reject later
+    }
+
+    // Build and submit a hidden POST form
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = action;
+    form.style.display = 'none';
+
+    const add = (name: string, value: string) => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    };
+
+    add('client_id', clientId);
+    add('response_type', 'code');
+    add('redirect_uri', redirectUri);
+    add('client', slug);
+    if (state) add('state', state);
+    if (codeChallenge) {
+      add('code_challenge', codeChallenge);
+      add('code_challenge_method', 'S256');
+    }
+
+    document.body.appendChild(form);
+    form.submit();
   },
 
   // Update forgot password to include client_id and normalize response shape

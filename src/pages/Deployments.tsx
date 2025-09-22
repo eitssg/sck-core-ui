@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast"
 import { buildApiUrl, getAuthHeaders, API_CONFIG } from "@/lib/api-config"
 
 import { Button } from "@/components/ui/button"
+import DashboardLayout from "@/components/DashboardLayout"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -240,39 +241,17 @@ export default function Deployments() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Context banner */}
-      <Card className="border-l-4 border-l-primary bg-primary/5">
-        <CardContent className="p-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                <GitBranch className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground uppercase">Client</div>
-                <div className="text-base font-semibold text-foreground">{clientName}</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <Clock className="h-4 w-4" />
-              <span>Last refresh: {lastRefresh ? lastRefresh.toLocaleTimeString() : "—"}</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Header + actions */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Deployments</h1>
-          <p className="text-muted-foreground">Application releases and environments for {clientName}</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <DashboardLayout
+      pageTitle="Deployments"
+      pageSubtitle={`Application releases and environments for ${clientName}`}
+    >
+      <div className="space-y-6 animate-fade-in">
+        {/* Actions (right-aligned under global header) */}
+        <div className="flex items-center justify-end gap-2">
           <div className="flex items-center gap-2 text-sm">
             <span className="text-muted-foreground">Auto-refresh:</span>
             <Button
-              variant={autoRefresh ? "default" : "outline"}
+              variant={autoRefresh ? "outline" : "ghost"}
               size="sm"
               onClick={() => setAutoRefresh((v) => !v)}
               className="text-xs"
@@ -281,14 +260,34 @@ export default function Deployments() {
             </Button>
             {autoRefresh && <span className="text-xs text-muted-foreground">(30s)</span>}
           </div>
-          <Button onClick={manualRefresh} disabled={loading} variant="outline" className="gap-2">
+          <Button onClick={manualRefresh} disabled={loading} variant="outline" size="sm" className="gap-2">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             {loading ? "Refreshing..." : "Refresh"}
           </Button>
         </div>
-      </div>
 
-      {/* Filters */}
+        {/* Context banner */}
+        <Card className="border-l-4 border-l-primary bg-primary/5">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                  <GitBranch className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground uppercase">Client</div>
+                  <div className="text-base font-semibold text-foreground">{clientName}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                <span>Last refresh: {lastRefresh ? lastRefresh.toLocaleTimeString() : "—"}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+  {/* Filters */}
       <Card className="shadow-soft">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -370,7 +369,7 @@ export default function Deployments() {
         </CardContent>
       </Card>
 
-      {/* Table */}
+  {/* Table */}
       <Card className="shadow-medium">
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
@@ -460,7 +459,8 @@ export default function Deployments() {
             </Table>
           )}
         </CardContent>
-      </Card>
-    </div>
+        </Card>
+      </div>
+    </DashboardLayout>
   )
 }

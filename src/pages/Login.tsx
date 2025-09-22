@@ -7,11 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { useTheme } from "@/hooks/useTheme";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { sendAuthEvent } from "@/lib/cross-tab";
 import { buildApiUrl, buildOAuthAuthorizeUrl, API_CONFIG } from "@/lib/api-config";
 import { apiFetch } from "@/lib/api-fetch";
 import { authAPI } from "@/lib/auth-api";
-import { clearError, setError, logoutUser } from "@/store/slices/authSlice";
+import { clearError, setError, logoutUser, selectLogoutReason, clearLogoutReason } from "@/store/slices/authSlice";
+import { consumePendingAuthError } from "@/lib/error-bridge";
 import { useReduxData } from "@/hooks/useReduxData";
 import type { RootState } from "@/store";
 
@@ -32,6 +34,15 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   cid: "Invalid OAuth Client ID.",
   cnm: "Client configuration mismatch.",
   rnr: "Redirect URI not registered for this application.",
+  // GitHub OAuth specific (from /auth/github/callback)
+  ghe_invalid_code: "GitHub sign-in expired or invalid. Please try again.",
+  ghe_token: "GitHub sign-in failed. Please try again.",
+  ghe_reauth: "GitHub session invalid. Please sign in again.",
+  ghe_scope: "GitHub app permission issue. Please contact support.",
+  ghe_user: "GitHub user info unavailable. Please try again.",
+  ghe_unknown: "GitHub login failed. Please try again.",
+  // Profile creation
+  upro: "Cannot create user profile.",
 };
 
 function mapOAuthErrorToUserMessage(error: string, statusCode?: number): string {
@@ -52,14 +63,21 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const { auth, dispatch } = useReduxData();
-  const { isDark } = useTheme();
+  // Theme is applied globally via ThemeProvider; no per-page overrides needed
 
   const isAuthenticated = useSelector((s: RootState) => s.auth?.isAuthenticated) ?? false;
 
+  // Controls password input visibility (text vs password)
   const [showPassword, setShowPassword] = useState(false);
+  // Controls whether the password panel is shown (slides in on passkey unavailability)
+  const [showPasswordPanel, setShowPasswordPanel] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const canSubmit = useMemo(() => email.trim().length > 3 && password.length >= 1, [email, password]);
+  const passwordRef = useRef<HTMLInputElement | null>(null);
+  const canSubmit = useMemo(
+    () => email.trim().length > 3 && (showPasswordPanel ? password.length >= 1 : true),
+    [email, password, showPasswordPanel]
+  );
 
   const [isLoading, setIsLoading] = useState(false);
   const [needMfa, setNeedMfa] = useState(false);
@@ -69,63 +87,75 @@ export default function Login() {
   const errorMsg = auth?.error || "";
   const errorRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    // If user navigates to /login while authenticated, force a logout then remain on /login
-    if (isAuthenticated) {
-      (async () => {
-        try { await dispatch(logoutUser()).unwrap(); } catch { /* ignore */ }
-      })();
-    }
-    dispatch(clearError());
-  }, [isAuthenticated, dispatch]);
+  // Base64url helpers for WebAuthn
+  const base64urlToBytes = (b64url: string): Uint8Array => {
+    const pad = (s: string) => s + "===".slice((s.length + 3) % 4);
+    const b64 = pad(b64url.replace(/-/g, "+").replace(/_/g, "/"));
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  };
+  const bytesToBase64url = (buf: ArrayBuffer | Uint8Array): string => {
+    const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+    let bin = "";
+    for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  };
 
-  // HARD LOGOUT on entering /login: clear cookie + local/session storage to avoid dangling state
-  // Skip when we're in the middle of OAuth callback processing to prevent races
-  // Also allow disabling via env flag in development to avoid disruptive loops
+  // Detect WebAuthn support
+  const webAuthnSupported = useMemo(() => {
+    try {
+      const hasCreds = typeof window !== "undefined" && !!(navigator as any)?.credentials;
+      const hasPKC = typeof window !== "undefined" && "PublicKeyCredential" in window;
+      const isSecure = typeof window !== "undefined" && (((window as any).isSecureContext) ?? (window.location?.protocol === "https:"));
+      return Boolean(hasCreds && hasPKC && isSecure);
+    } catch (e) {
+      // ignore support detection errors
+      return false;
+    }
+  }, []);
+
   useEffect(() => {
+    // Capture and remove any pending error from /error handoff up front
+    let pendingCode: string | undefined;
+    let pendingMsg: string | undefined;
+    try {
+      const pending = consumePendingAuthError();
+      pendingCode = pending?.code || undefined;
+      pendingMsg = pending?.message || undefined;
+    } catch { /* ignore */ }
+
+    // Then perform logout only if we likely have a session, and apply the error AFTER logout completes
     let cancelled = false;
     (async () => {
-      if (sessionStorage.getItem('oauth_processing') === '1') {
-        return;
-      }
-      // In dev, respect an opt-in flag to enable hard logout, default to off
-      const allowHardLogout = !import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_HARD_LOGOUT === 'true';
-      if (!allowHardLogout) {
-        return;
-      }
       try {
-        // Try server-side logout to clear HttpOnly session cookie
-        // Attempt POST first; if not supported, fall back to GET
-        const logoutUrl = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGOUT);
-        try {
-          await apiFetch(logoutUrl, { method: "POST", cookieFirst: true, notify401: false, noToast401: true });
-        } catch {
-          try { await apiFetch(logoutUrl, { method: "GET", cookieFirst: true, notify401: false, noToast401: true }); } catch { /* ignore */ }
+        const hasRefresh = (() => {
+          try { return !!sessionStorage.getItem('refresh_token'); } catch { return false; }
+        })();
+        const shouldServerLogout = isAuthenticated || hasRefresh;
+
+        if (shouldServerLogout) {
+          // Broadcast to other tabs to sync logout (debounced)
+          sendAuthEvent({ type: 'auth:logout' });
+          await dispatch(logoutUser()).unwrap();
         }
-      } finally {
-        // Revoke token + clear local storage via thunk (also calls authAPI.logout)
-        if (!cancelled) {
-          try { await dispatch(logoutUser()).unwrap(); } catch { /* ignore */ }
-        }
-        // Ensure local cleanup regardless
-        try {
-          localStorage.removeItem("access_token");
-          localStorage.removeItem("refresh_token");
-          localStorage.removeItem("token");
-        } catch { /* ignore */ }
-        try {
-          sessionStorage.removeItem('refresh_token');
-          sessionStorage.removeItem("oauth_session_token");
-          sessionStorage.removeItem("oauth_token_type");
-          sessionStorage.removeItem('session_issued_at');
-          sessionStorage.removeItem('auth_session_active');
-        } catch { /* ignore */ }
+      } catch { /* ignore */ }
+      if (cancelled) return;
+      // Only clear if no pending error; otherwise set the pending error now
+      if (pendingCode || pendingMsg) {
+        const msg = pendingMsg || AUTH_ERROR_MESSAGES[(pendingCode || '').toLowerCase()] || 'Login failed. Please try again.';
+        dispatch(setError(msg));
+      } else {
+        dispatch(clearError());
       }
     })();
     return () => { cancelled = true; };
-  }, [dispatch]);
+  }, [dispatch, isAuthenticated]);
 
-  // Read ?err=code or ?error=code placed by the authorization server
+  // Remove previous custom hard-logout block; centralized in the effect above
+
+  // Read ?err=code or ?error=code for legacy paths; prefer /error bridge
   useEffect(() => {
     const params = new URLSearchParams(location.search || "");
     const code = params.get("err") || params.get("error");
@@ -143,25 +173,150 @@ export default function Login() {
     }
   }, [errorMsg]);
 
+  // Focus password when we slide it in
+  useEffect(() => {
+    if (showPasswordPanel) {
+      setTimeout(() => passwordRef.current?.focus(), 50);
+    }
+  }, [showPasswordPanel]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
   dispatch(clearError());
   setMfaError("");
   setNeedMfa(false);
-
     try {
-      // Step 1: Login to obtain a session credential (cookie)
-      const url = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGIN);
+      const emailVal = email.trim();
+      if (!showPasswordPanel && webAuthnSupported) {
+        // Passkey-first attempt
+        try {
+          const beginRes = await apiFetch(buildApiUrl('/auth/v1/webauthn/authenticate/begin'), {
+            method: 'POST',
+            body: JSON.stringify({
+              user_id: emailVal,
+              rp_id: window.location.hostname,
+              client: (typeof window !== 'undefined' && window.localStorage?.getItem('sck.selectedClient')) || 'core',
+              client_id: API_CONFIG.OAUTH.CLIENT_ID,
+            }),
+            contextLabel: 'PasskeyLoginBegin',
+            noAuthRetryOn401: true,
+          });
+          if (!beginRes.ok) {
+            // If server indicates no passkeys or unauthorized, fall back with targeted message
+            let server: any = {}; const status = beginRes.status; try { server = await beginRes.json(); } catch (e) { /* ignore parse error */ }
+            const msg = status === 401 || status === 403
+              ? 'Passkeys Unauthorized'
+              : (server?.message || 'Passkey sign-in unavailable. Use your password.');
+            dispatch(setError(msg));
+            setShowPasswordPanel(true);
+            setIsLoading(false);
+            return;
+          }
+          const beginJson = await beginRes.json();
+          const options = beginJson?.data || beginJson;
+
+          const allow = Array.isArray(options.allowCredentials) ? options.allowCredentials : [];
+          if (!allow.length) {
+            // No passkeys for this email
+            dispatch(setError('No passkeys found for this email. Enter your password.'));
+            setShowPasswordPanel(true);
+            setIsLoading(false);
+            return;
+          }
+
+          // Build request options
+          const publicKey: PublicKeyCredentialRequestOptions = {
+            challenge: base64urlToBytes(String(options.challenge)),
+            timeout: options.timeout || 60000,
+            userVerification: options.userVerification || 'preferred',
+            rpId: options.rpId || window.location.hostname,
+            allowCredentials: allow.map((c: any) => ({
+              type: 'public-key',
+              id: base64urlToBytes(String(c.id)),
+              transports: c.transports,
+            })),
+            hints: options.hints,
+          } as any;
+
+          // Prompt user
+          let cred: PublicKeyCredential | null = null;
+          try {
+            cred = await navigator.credentials.get({ publicKey }) as PublicKeyCredential;
+          } catch (err: any) {
+            // User canceled or platform not available
+            dispatch(setError('Passkey prompt canceled or unavailable. Enter your password.'));
+            setShowPasswordPanel(true);
+            setIsLoading(false);
+            return;
+          }
+          if (!cred) {
+            dispatch(setError('Passkey not provided. Enter your password.'));
+            setShowPasswordPanel(true);
+            setIsLoading(false);
+            return;
+          }
+
+          const a = cred.response as AuthenticatorAssertionResponse;
+          const completePayload: any = {
+            user_id: emailVal,
+            key_id: cred.id,
+            clientDataJSON: bytesToBase64url(a.clientDataJSON),
+            authenticatorData: bytesToBase64url(a.authenticatorData),
+            signature: bytesToBase64url(a.signature),
+            userHandle: a.userHandle ? bytesToBase64url(a.userHandle) : undefined,
+            clientDataChallenge: String(options.challenge),
+          };
+
+          const completeRes = await apiFetch(buildApiUrl('/auth/v1/webauthn/authenticate/complete'), {
+            method: 'POST',
+            body: JSON.stringify({
+              ...completePayload,
+              client: (typeof window !== 'undefined' && window.localStorage?.getItem('sck.selectedClient')) || 'core',
+              client_id: API_CONFIG.OAUTH.CLIENT_ID,
+            }),
+            contextLabel: 'PasskeyLoginComplete',
+            noAuthRetryOn401: true,
+          });
+          if (!completeRes.ok) {
+            let server: any = {}; const status = completeRes.status; try { server = await completeRes.json(); } catch (e) { /* ignore parse error */ }
+            const rawMsg = (server?.message || '').toLowerCase();
+            const msg = (status === 401 || status === 403)
+              ? 'Passkeys Unauthorized'
+              : rawMsg.includes('challenge_mismatch')
+                ? 'Security check failed. Please try again or use your password.'
+                : (server?.message || 'Passkey sign-in failed. Use your password.');
+            dispatch(setError(msg));
+            setShowPasswordPanel(true);
+            setIsLoading(false);
+            return;
+          }
+
+          // Success: Backend set session cookie; proceed to authorize
+          const authorizeUrl = await buildOAuthAuthorizeUrl();
+          window.location.href = authorizeUrl;
+          return;
+        } catch (err) {
+          // Any unexpected error: fall back to password
+          dispatch(setError('Passkey sign-in unavailable. Use your password.'));
+          setShowPasswordPanel(true);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // Password flow
+    const url = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGIN);
       const res = await apiFetch(url, {
         method: "POST",
         cookieFirst: true,
         noAuthRetryOn401: true,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email,
+          email: emailVal,
           password,
-          client_id: API_CONFIG.OAUTH.CLIENT_ID,
+      client_id: API_CONFIG.OAUTH.CLIENT_ID,
+      client: (typeof window !== 'undefined' && window.localStorage?.getItem('sck.selectedClient')) || 'core',
         }),
       });
       // MFA required
@@ -172,21 +327,14 @@ export default function Login() {
       }
       if (!res.ok) {
         let server = { message: "" as string };
-        try {
-          server = await res.json();
-        } catch {
-          // ignore parse errors
-        }
-  const msg = mapOAuthErrorToUserMessage(server.message || "Login failed", res.status);
-  dispatch(setError(msg));
+        try { server = await res.json(); } catch (e) { /* ignore parse error */ }
+        const msg = mapOAuthErrorToUserMessage(server.message || "Login failed", res.status);
+        dispatch(setError(msg));
         setIsLoading(false);
         return;
       }
-
-  // Success: Redirect to OAuth authorize (session cookie will be sent automatically)
       const authorizeUrl = await buildOAuthAuthorizeUrl();
       window.location.href = authorizeUrl;
-      // No further code executes after navigation
     } catch (err) {
       dispatch(setError(mapOAuthErrorToUserMessage(err instanceof Error ? err.message : "Login failed")));
       setIsLoading(false);
@@ -227,49 +375,58 @@ export default function Login() {
   const handleGitHubLogin = async () => {
     try {
       setIsLoading(true);
-      // Backend handles redirect to GitHub
-      window.location.href = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.GITHUB_LOGIN);
+      // Backend handles redirect to GitHub; submit POST with client info
+      await authAPI.githubLogin();
     } catch {
       setIsLoading(false);
       dispatch(setError("GitHub login failed. Please try again."));
     }
   };
 
-  const params = new URLSearchParams(location.search || '');
-  const reason = params.get('reason');
+  // Read and immediately clear a one-shot logout reason from Redux
+  const reasonFromRedux = useSelector(selectLogoutReason);
+  const [reason, setReason] = useState<string | null>(null);
+  useEffect(() => {
+    if (reasonFromRedux) {
+      setReason(reasonFromRedux);
+      dispatch(clearLogoutReason());
+    } else {
+      setReason(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reasonFromRedux]);
 
   const banner = (() => {
     if (!reason) return null;
-    const base = 'flex items-start gap-2 rounded-md px-3 py-2 text-sm shadow-sm border';
-    switch (reason) {
-      case 'idle_timeout':
-        return (
-          <div className={`${base} border-amber-300 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-100`}> 
-            <Clock className="h-4 w-4 mt-0.5" />
-            <span><strong>NOTICE:</strong> You have been auto-logged out due to inactivity.</span>
-          </div>
-        );
-      case 'session_expired':
-        return (
-          <div className={`${base} border-red-300 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-100`}> 
-            <ShieldAlert className="h-4 w-4 mt-0.5" />
-            <span><strong>NOTICE:</strong> Your session expired. Please sign in again.</span>
-          </div>
-        );
-      case 'manual':
-        return (
-          <div className={`${base} border-blue-300 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-100`}> 
-            <LogOut className="h-4 w-4 mt-0.5" />
-            <span><strong>NOTICE:</strong> You have been signed out.</span>
-          </div>
-        );
-      default:
-        return null;
+    if (reason === 'session_expired') {
+      return (
+        <Alert variant="destructive">
+          <ShieldAlert className="h-4 w-4" />
+          <AlertDescription>Your session expired. Please sign in again.</AlertDescription>
+        </Alert>
+      );
     }
+    if (reason === 'idle_timeout') {
+      return (
+        <Alert>
+          <Clock className="h-4 w-4" />
+          <AlertDescription>You have been auto-logged out due to inactivity.</AlertDescription>
+        </Alert>
+      );
+    }
+    if (reason === 'manual') {
+      return (
+        <Alert>
+          <LogOut className="h-4 w-4" />
+          <AlertDescription>You have been signed out.</AlertDescription>
+        </Alert>
+      );
+    }
+    return null;
   })();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dashboard-bg to-primary/5 flex items-center justify-center p-4">
+  <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-lg space-y-4">
         {banner}
         {/* Login Card */}
@@ -279,23 +436,27 @@ export default function Login() {
               <Briefcase className="h-8 w-8 text-primary-foreground" />
             </div>
             <div>
-              <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
+              {/* Heading depends on localStorage.sck.profileName */}
+              <CardTitle className="text-2xl font-bold">
+                {(() => {
+                  try {
+                    const hasName = typeof window !== 'undefined' && !!window.localStorage?.getItem('sck.profileName');
+                    return hasName ? 'Welcome Back' : 'Welcome to Core Automation';
+                  } catch {
+                    return 'Welcome to Core Automation';
+                  }
+                })()}
+              </CardTitle>
               <p className="text-muted-foreground">Sign in to your admin dashboard</p>
             </div>
           </CardHeader>
 
           <CardContent className="space-y-6">
             {errorMsg && (
-              <div
-                ref={errorRef}
-                role="alert"
-                aria-live="assertive"
-                tabIndex={-1}
-                className="flex items-start gap-3 p-3.5 text-sm rounded-md border bg-destructive/20 border-destructive/40 text-destructive-foreground ring-1 ring-destructive/30 shadow-sm"
-              >
-                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                <span className="leading-5">{errorMsg}</span>
-              </div>
+              <Alert ref={errorRef as any} variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{errorMsg}</AlertDescription>
+              </Alert>
             )}
 
             {!needMfa && (
@@ -342,33 +503,50 @@ export default function Login() {
                     required
                   />
                 </div>
+                  {!showPasswordPanel && (
+                    <div className="text-right">
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:text-foreground underline"
+                        onClick={() => setShowPasswordPanel(true)}
+                      >
+                        Use password instead
+                      </button>
+                    </div>
+                  )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="password"
-                    name="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="current-password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 pr-10"
-                    required
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-1 top-1 h-8 w-8"
-                    onClick={() => setShowPassword((s) => !s)}
-                    tabIndex={-1}
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
+              {/* Sliding password panel; hidden until passkey flow is unavailable */}
+              <div className={`overflow-hidden transition-all duration-300 ${showPasswordPanel ? 'max-h-32 opacity-100 mx-[-8px]' : 'max-h-0 opacity-0 mx-[-8px]'}`}>
+                <div className="space-y-2 px-2 py-2">
+                  <Label htmlFor="password">Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="password"
+                      name="password"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="current-password"
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-10 pr-10"
+                      ref={passwordRef}
+                      required={showPasswordPanel}
+                      disabled={!showPasswordPanel}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1 h-8 w-8"
+                      onClick={() => setShowPassword((s) => !s)}
+                      tabIndex={-1}
+                      disabled={!showPasswordPanel}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -379,7 +557,7 @@ export default function Login() {
                 variant="gradient"
                 disabled={isLoading || !canSubmit}
               >
-                {isLoading ? "Signing in..." : "Sign In"}
+                {isLoading ? "Signing in..." : (showPasswordPanel ? "Sign In" : "Continue")}
               </Button>
             </form>
             )}

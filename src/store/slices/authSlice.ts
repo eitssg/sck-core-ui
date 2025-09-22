@@ -16,6 +16,7 @@ export interface AuthState {
   isLoading: boolean;
   error: string | null;
   lastActivity: number;
+  logoutReason?: 'manual' | 'idle_timeout' | 'session_expired' | 'session_refresh_failed' | null;
 }
 
 const initialState: AuthState = {
@@ -25,6 +26,7 @@ const initialState: AuthState = {
   isLoading: false,
   error: null,
   lastActivity: Date.now(),
+  logoutReason: null,
 };
 
 // Async thunk for refreshing tokens
@@ -54,9 +56,22 @@ export const refreshAccessToken = createAsyncThunk(
         scope: newTokens.scope,
         expires_at: expiresAt,
       };
+      // Mark last refresh result for guards and diagnostics
+      try {
+        sessionStorage.setItem('sck_last_refresh_result', 'ok');
+        sessionStorage.setItem('sck_last_refresh_at', new Date().toISOString());
+      } catch { /* ignore */ }
+      // Emit event so other parts of the app can react uniformly
+      try { window.dispatchEvent(new CustomEvent('sck:tokenRefreshed')); } catch { /* no-op */ }
       return finalTokens;
     } catch (error) {
       console.error('Token refresh error:', error);
+      try {
+        sessionStorage.setItem('sck_last_refresh_result', 'error');
+        sessionStorage.setItem('sck_last_refresh_at', new Date().toISOString());
+      } catch { /* ignore */ }
+      // Emit a failure event for route guards or observers
+      try { window.dispatchEvent(new CustomEvent('sck:tokenRefreshFailed')); } catch { /* no-op */ }
       return rejectWithValue(error instanceof Error ? error.message : 'Token refresh failed');
     }
   }
@@ -92,8 +107,7 @@ export const logoutUser = createAsyncThunk(
       // Continue with local logout even if API fails
     }
     
-    // Clear all local and session storage (no multi-session caching in app)
-  try { localStorage.clear(); } catch { /* ignore */ }
+  // Clear session storage only (preserve localStorage per policy)
   try { sessionStorage.clear(); } catch { /* ignore */ }
     
     return null;
@@ -109,6 +123,12 @@ const authSlice = createSlice({
     },
     setError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload ?? null;
+    },
+    setLogoutReason: (state, action: PayloadAction<AuthState['logoutReason']>) => {
+      state.logoutReason = action.payload ?? null;
+    },
+    clearLogoutReason: (state) => {
+      state.logoutReason = null;
     },
     
     updateActivity: (state) => {
@@ -209,7 +229,7 @@ const authSlice = createSlice({
   },
 });
 
-export const { clearError, setError, updateActivity, setTokens, initializeAuth } = authSlice.actions;
+export const { clearError, setError, updateActivity, setTokens, initializeAuth, setLogoutReason, clearLogoutReason } = authSlice.actions;
 
 // Selectors
 export const selectAuth = (state: { auth: AuthState }) => state.auth;
@@ -218,5 +238,6 @@ export const selectTokens = (state: { auth: AuthState }) => state.auth.tokens;
 export const selectIsAuthenticated = (state: { auth: AuthState }) => state.auth.isAuthenticated;
 export const selectIsLoading = (state: { auth: AuthState }) => state.auth.isLoading;
 export const selectAuthError = (state: { auth: AuthState }) => state.auth.error;
+export const selectLogoutReason = (state: { auth: AuthState }) => state.auth.logoutReason || null;
 
 export default authSlice.reducer;

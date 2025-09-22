@@ -1,4 +1,4 @@
-import { string } from "zod";
+// zod not used in this file
 
 // ==========================
 // OAuth 2.0 / OIDC Types
@@ -127,6 +127,12 @@ export interface ClientList {
   pageSize: number;
 }
 
+interface TagPolicy {
+  tag_name: string;
+  required: boolean;
+  description: string;
+}
+
 // Client interface matching Python ClientFact model
 export interface Client {
   // Primary identifier (matches Python 'client' field)
@@ -174,6 +180,10 @@ export interface Client {
 
   // Resource naming
   scope?: string;
+
+  // Tagging Poicy
+  tags?: Record<string, string>;
+  tags_policy?: [TagPolicy];
 
   // Audit fields (inherited from DatabaseRecord)
   created_at?: string;
@@ -293,16 +303,43 @@ export interface Portfolio {
   domain?: string;
   bizapp?: PortfolioProject;
   owner?: PortfolioOwner;
+  // Catalog ownership extensions
+  business_owner?: PortfolioOwner;
+  technical_owner?: PortfolioOwner;
 
   // Metadata
   tags?: Record<string, string>;
   metadata?: Record<string, string>;
   attributes?: Record<string, string>;
+  compliance?: Record<string, string>;
+  identifiers?: Record<string, string>;
   user_instantiated?: string;
+
+  // Catalog identity/presentation
+  icon_url?: string;
+  category?: string;
+  labels?: string[];
+  portfolio_version?: string;
+  lifecycle_status?: string;
+
+  // Optional integration fields
+  links?: Record<string, any> | any[];
+  dependencies?: string[] | any[];
 
   // Audit (from DatabaseRecord)
   created_at?: string;
   updated_at?: string;
+
+  // UI-derived helpers (not persisted)
+  id?: string;
+  name?: string;
+  description?: string;
+  code?: string;
+  status?: string;
+  clientId?: string;
+  app_count?: number;
+  lastUpdated?: string;
+  homePageUrl?: string;
 }
 
 export interface ApplicationList {
@@ -315,8 +352,9 @@ export interface ApplicationList {
 // Replace the old Application interface with the model-accurate one
 export interface Application {
   // Keys
-  portfolio: string;       // Hash key / portfoluio slug this app linked to
-  app_regex: string;       // Range key regular expression matching one or more deployment unit (app)
+  portfolio: string;       // Hash key / portfolio slug this app is linked to
+  app: string;             // Range key slug (unique within portfolio)
+  app_regex: string;       // Regex used to match one or more deployment unit names
 
   // App configuration
   name?: string;           // Descriptive name for the App or Apps matching the app_regex
@@ -325,7 +363,7 @@ export interface Application {
   zone: string;            // Zone where the app deployment unit will be deployed (aws account, region(s) (more than one), network, etc)
   region: string;          // Specify which region in the zone to deploy this to.  MUST match a region name defined in the zone
   repository?: string;     // The artefact repository where to find the "install.exe" for this deployment
-  enforce_validation?: string;  // if any template fails compilation, fail the deployment
+  enforce_validation?: string;  // if any template fails compilation, fail the deployment ("true"/"false")
 
   // Complex attributes
   image_aliases?: Record<string, string>;  // If you know what type of EC2 you want, specify the image name here (in the zone)
@@ -389,24 +427,27 @@ export interface RegionFacts {
 }
 
 export interface ZoneList {
-  items: Zone[];
+  items: ZoneFact[];
   totalCount: number;
   currentPage: number;
   pageSize: number;
 }
 
-// Replace Zone with model-accurate interface
-export interface Zone {
+// Canonical Zone fact interface (backend-aligned)
+export interface ZoneFact {
   client: string;  // required client slug to group by client
   zone: string;    // Zone identifier.  keep it short, lowercase, and slug-like...but this is not a slug
 
-  account_facts: AccountFacts; // Defines which aws accounts to deploy to, and kms keys
-  region_facts: Record<string, RegionFacts>; // defines the regions, networks, and vpcs, etc.
-  tags?: Record<string, any>;  // Defines tags to add to all components in the deployment
+  account_facts: AccountFacts; // AWS account & kms configuration
+  region_facts: Record<string, RegionFacts>; // Regions, network & security per region
+  tags?: Record<string, any>;  // Global tags for zone resources
 
   created_at?: string;
   updated_at?: string;
 }
+
+// Backward compatibility alias (old name). Remove once all imports use ZoneFact directly.
+export type Zone = ZoneFact;
 
 /* Above is the registry of clients (AWS Organization), zones, applications deployment units and application definitions
 
@@ -535,4 +576,7 @@ export interface AppDeploymentComponent {
   created_at: string;
   updated_at: string;
 }
+
+// ============================================================================
+// (Removed duplicate strict variants; this single ZoneFact interface is canonical.)
 

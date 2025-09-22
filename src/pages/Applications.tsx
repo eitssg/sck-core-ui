@@ -3,14 +3,17 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "@/store";
 
-import { Briefcase, Building2, Plus, Search, X, GitBranch } from "lucide-react";
+import { Briefcase, Building2, Plus, Search, X, GitBranch, Filter as FilterIcon } from "lucide-react";
+import EnvBadge from "@/components/ui/env-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 import { useReduxData } from "@/hooks/useReduxData";
+import DashboardLayout from "@/components/DashboardLayout";
 import { useTheme } from "@/hooks/useTheme";
 
 import type { Portfolio, Application, Zone, AppDeploymentBuild } from "@/store/types";
@@ -18,7 +21,7 @@ import { fetchBuilds } from "@/store/slices/deploymentsSlice";
 
 export default function Applications() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const dispatch = useDispatch<AppDispatch>();
   const { isDark } = useTheme();
 
@@ -29,13 +32,8 @@ export default function Applications() {
   const builds = useSelector((s: RootState) => (s as any)?.deployments?.builds ?? []) as AppDeploymentBuild[];
   const buildsLoading = useSelector((s: RootState) => (s as any)?.deployments?.loading) as boolean;
 
-  // Selected client (allow URL override)
-  useEffect(() => {
-    const clientParam = searchParams.get("client");
-    if (clientParam && clientParam !== selectedClient) {
-      selectClient(clientParam);
-    }
-  }, [searchParams, selectClient, selectedClient]);
+  // Selected client derives from store; do not override via URL
+  // (Client context is set globally; data is tenant-scoped server-side.)
 
   const currentClient = typeof selectedClient === "string" ? selectedClient : null;
 
@@ -75,24 +73,35 @@ export default function Applications() {
     if (currentClient) dispatch(fetchBuilds({ limit: 25 }));
   }, [dispatch, currentClient]);
 
-  // Filter per selected client
-  const clientPortfolios = useMemo<Portfolio[]>(() => {
-    if (!currentClient) return [];
-    return portfoliosList.filter((p) => p.client === currentClient);
-  }, [portfoliosList, currentClient]);
+  // Do not filter by client field; server already scopes data per selected client
+  const clientPortfolios = useMemo<Portfolio[]>(() => portfoliosList, [portfoliosList]);
 
   // Local search terms
-  const [searchTerms, setSearchTerms] = useState<string[]>([]);
+  const [searchTerms, setSearchTerms] = useState<string[]>(() => {
+    const q = searchParams.get('q');
+    return q ? q.split(',').map(s => s.trim()).filter(Boolean) : [];
+  });
   const [newTerm, setNewTerm] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const addSearchTerm = () => {
     const v = newTerm.trim();
     if (!v) return;
-    if (!searchTerms.includes(v)) setSearchTerms((s) => [...s, v]);
+    if (!searchTerms.includes(v)) {
+      const next = [...searchTerms, v];
+      setSearchTerms(next);
+      const sp = new URLSearchParams(searchParams);
+      sp.set('q', next.join(','));
+      setSearchParams(sp, { replace: true });
+    }
     setNewTerm("");
   };
   const removeSearchTerm = (term: string) => {
-    setSearchTerms((s) => s.filter((t) => t !== term));
+    const next = searchTerms.filter((t) => t !== term);
+    setSearchTerms(next);
+    const sp = new URLSearchParams(searchParams);
+    if (next.length > 0) sp.set('q', next.join(',')); else sp.delete('q');
+    setSearchParams(sp, { replace: true });
   };
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -100,6 +109,32 @@ export default function Applications() {
       addSearchTerm();
     }
   };
+
+  const chipsRow = (
+    searchTerms.length > 0 && (
+      <div className="flex flex-wrap gap-2">
+        {searchTerms.map((term) => (
+          <Badge key={term} variant="secondary" className="flex items-center gap-1 px-3 py-1">
+            {term}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-4 w-4 p-0 hover:bg-transparent"
+              onClick={() => removeSearchTerm(term)}
+              aria-label={`Remove ${term}`}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </Badge>
+        ))}
+  <Button variant="ghost" size="sm" onClick={() => { setSearchTerms([]); const sp = new URLSearchParams(searchParams); sp.delete('q'); setSearchParams(sp, { replace: true }); }} className="text-muted-foreground">
+          Clear all
+        </Button>
+      </div>
+    )
+  );
+
+  const activeFiltersCount = searchTerms.length;
 
   // Derived helpers
   const appsByPortfolio = useMemo(() => {
@@ -115,11 +150,9 @@ export default function Applications() {
 
   const zonesByName = useMemo(() => {
     const map = new Map<string, Zone>();
-    zonesList
-      .filter((z) => !currentClient || z.client === currentClient)
-      .forEach((z) => map.set(z.zone, z));
+    zonesList.forEach((z) => map.set(z.zone, z));
     return map;
-  }, [zonesList, currentClient]);
+  }, [zonesList]);
 
   // FUTURE: Build info per portfolio (placeholder; needs PRN mapping)
   const latestBuildByPortfolio = useMemo(() => {
@@ -163,23 +196,31 @@ export default function Applications() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Applications</h1>
-          <p className="text-muted-foreground">Deployment units (AppFacts) organized by portfolio</p>
+    <DashboardLayout
+      activeItem="applications"
+      pageTitle="Applications"
+      pageSubtitle="Deployment units organized by portfolio"
+    >
+      <div className="space-y-6">
+        {/* Header actions */}
+        <div className="flex items-center justify-end">
+          <Button asChild variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground">
+            <Link to="/applications/create">
+              <Plus className="h-4 w-4" /> New
+            </Link>
+          </Button>
         </div>
-        <Button asChild variant="gradient" className="gap-2">
-          <Link to={`/applications/create?client=${currentClient}`}>
-            <Plus className="h-4 w-4" />
-            Create Application
-          </Link>
+
+  {/* Mobile Filters trigger */}
+      <div className="sm:hidden">
+        <Button variant="outline" className="gap-2" onClick={() => setFiltersOpen(true)}>
+          <FilterIcon className="h-4 w-4" />
+          Filters{activeFiltersCount ? ` (${activeFiltersCount})` : ''}
         </Button>
       </div>
 
-      {/* Search */}
-      <Card className="shadow-soft">
+      {/* Desktop Search */}
+      <Card className="shadow-soft hidden sm:block">
         <CardContent className="p-4">
           <div className="space-y-3">
             <div className="flex gap-2">
@@ -197,32 +238,46 @@ export default function Applications() {
                 Add
               </Button>
             </div>
-            {searchTerms.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {searchTerms.map((term) => (
-                  <Badge key={term} variant="secondary" className="flex items-center gap-1 px-3 py-1">
-                    {term}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-4 w-4 p-0 hover:bg-transparent"
-                      onClick={() => removeSearchTerm(term)}
-                      aria-label={`Remove ${term}`}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </Badge>
-                ))}
-                <Button variant="ghost" size="sm" onClick={() => setSearchTerms([])} className="text-muted-foreground">
-                  Clear all
-                </Button>
-              </div>
-            )}
+            {chipsRow}
           </div>
         </CardContent>
       </Card>
 
-      {/* Portfolios table */}
+      {/* Mobile Filters Sheet */}
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Filters</SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 space-y-4">
+            <div className="flex flex-col gap-3">
+              <div className="relative w-full">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Add search term..."
+                  value={newTerm}
+                  onChange={(e) => setNewTerm(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  className="pl-10 w-full"
+                />
+              </div>
+              <div>
+                <Button onClick={addSearchTerm} disabled={!newTerm.trim()} className="w-full" variant="outline">
+                  Add
+                </Button>
+              </div>
+            </div>
+            {chipsRow}
+            <div className="pt-2">
+              <Button variant="default" className="w-full" onClick={() => setFiltersOpen(false)}>
+                Apply
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+  {/* Portfolios table */}
       <Card className="shadow-medium">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -245,15 +300,22 @@ export default function Applications() {
             </TableHeader>
             <TableBody>
               {filteredPortfolios.map((p) => {
-                const key = `${p.client}/${p.portfolio}`;
+                const key = `${p.portfolio}`;
                 const name = p.project?.name || p.portfolio;
                 const desc = p.project?.description || "—";
                 const appUnits = appsByPortfolio.get(p.portfolio) || [];
                 const zoneNames = Array.from(new Set(appUnits.map((a) => a.zone).filter(Boolean)));
                 const zoneBadges = zoneNames.map((zn) => {
                   const z = zonesByName.get(zn);
-                  const label = z ? `${z.zone}${z.account_facts?.environment ? ` (${z.account_facts.environment})` : ""}` : zn;
-                  return label;
+                  if (!z) return (
+                    <Badge key={`${key}:${zn}`} variant="outline">{zn}</Badge>
+                  );
+                  return (
+                    <Badge key={`${key}:${zn}`} variant="outline" className="gap-1">
+                      <span>{z.zone}</span>
+                      <EnvBadge zone={z} />
+                    </Badge>
+                  );
                 });
 
                 // FUTURE: resolve latest build per portfolio via PRN mapping
@@ -265,7 +327,7 @@ export default function Applications() {
                   <TableRow
                     key={key}
                     className="cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => navigate(`/portfolios/${p.portfolio}?client=${p.client}`)}
+                    onClick={() => navigate(`/portfolios/${p.portfolio}`)}
                   >
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
@@ -283,11 +345,7 @@ export default function Applications() {
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {zoneBadges.length > 0
-                          ? zoneBadges.slice(0, 4).map((z) => (
-                              <Badge key={`${key}:${z}`} variant="outline">
-                                {z}
-                              </Badge>
-                            ))
+                          ? zoneBadges.slice(0, 4)
                           : <span className="text-muted-foreground">—</span>}
                         {zoneBadges.length > 4 && (
                           <Badge variant="secondary">+{zoneBadges.length - 4}</Badge>
@@ -298,7 +356,7 @@ export default function Applications() {
                     <TableCell className="text-sm">{lastDeployed}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm" asChild>
-                        <Link to={`/portfolios/${p.portfolio}?client=${p.client}`}>View</Link>
+                        <Link to={`/portfolios/${p.portfolio}`}>View</Link>
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -315,6 +373,7 @@ export default function Applications() {
           </Table>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }

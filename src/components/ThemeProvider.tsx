@@ -1,5 +1,5 @@
-import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
-import { themes } from "@/lib/themes";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getThemeById, getThemesList } from "@/lib/themes";
 import { ThemeName, ThemeContext, ThemeContextValue } from './ThemeContext'
 
 
@@ -8,6 +8,9 @@ type ThemeProviderProps = {
   children: React.ReactNode;
   theme?: ThemeName;                   // comes from Redux/profile
   onThemeChange?: (t: ThemeName) => void; // called when user selects a theme
+  // Optional per-mode presets (ids from lib/themes.ts)
+  lightPresetId?: string | null;
+  darkPresetId?: string | null;
 };
 
 function getSystemTheme(): "light" | "dark" {
@@ -15,13 +18,34 @@ function getSystemTheme(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-export default function ThemeProvider({ children, theme = "system", onThemeChange }: ThemeProviderProps) {
+export default function ThemeProvider({ children, theme = "system", onThemeChange, lightPresetId, darkPresetId }: ThemeProviderProps) {
   const sys = getSystemTheme();
   const [current, setCurrent] = useState<ThemeName>(theme);
   const sysRef = useRef(sys);
 
   // Keep internal state in sync with prop changes
   useEffect(() => setCurrent(theme), [theme]);
+
+  // Apply theme to <html> element (class + data attribute + CSS vars from preset)
+  const applyDomTheme = useCallback((sel: ThemeName, res: "light" | "dark") => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", res === "dark");
+
+    // Determine preset by resolved mode
+    const presetId = res === 'dark' ? (darkPresetId || null) : (lightPresetId || null);
+    const preset = presetId ? getThemeById(presetId) : null;
+
+    // Set data-theme primarily for debugging/inspection
+    const dataTheme = preset?.name || (typeof sel === "string" ? sel : res);
+    root.setAttribute("data-theme", dataTheme);
+
+    // Apply preset HSL variables when available
+    if (preset && preset.colors) {
+      Object.entries(preset.colors).forEach(([k, v]) => {
+        try { root.style.setProperty(k, v); } catch { /* ignore */ }
+      });
+    }
+  }, [lightPresetId, darkPresetId]);
 
   // Watch system changes if using "system"
   useEffect(() => {
@@ -34,26 +58,20 @@ export default function ThemeProvider({ children, theme = "system", onThemeChang
     };
     mq.addEventListener?.("change", handler);
     return () => mq.removeEventListener?.("change", handler);
-  }, [current]);
+  }, [current, applyDomTheme]);
 
   const resolved: "light" | "dark" = current === "system" ? sysRef.current : (current as any) === "dark" ? "dark" : "light";
-
-  // Apply theme to <html> element (class + data attribute)
-  function applyDomTheme(sel: ThemeName, res: "light" | "dark") {
-    const root = document.documentElement;
-    root.classList.toggle("dark", res === "dark");
-    root.setAttribute("data-theme", typeof sel === "string" ? sel : res);
-  }
   useEffect(() => {
     applyDomTheme(current, resolved);
-  }, [current, resolved]);
+    // applyDomTheme is stable (useCallback) and included intentionally
+  }, [current, resolved, applyDomTheme]);
 
   const setTheme = (t: ThemeName) => {
     setCurrent(t);
     onThemeChange?.(t);
   };
 
-  const allThemes = useMemo(() => (Array.isArray(themes) ? themes : []), []);
+  const allThemes = useMemo(() => getThemesList(), []);
   const themeConfig = useMemo(() => allThemes.find((t: any) => t.name === current), [allThemes, current]);
 
   const value: ThemeContextValue = {

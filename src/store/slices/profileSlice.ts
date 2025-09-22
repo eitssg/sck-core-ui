@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
 import { logoutUser } from '@/store/slices/authSlice'
 import { API_CONFIG, buildApiUrl } from '@/lib/api-config'
 import { apiFetch } from '@/lib/api-fetch'
+import { parseApiEnvelope } from '@/store/api/envelope'
 import type { RootState } from '@/store'
 import type { UserProfile } from '@/store/types'
 
@@ -139,8 +140,8 @@ export const createUserProfile = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to create profile');
       }
       
-      const result = await response.json();
-      const profile = normalizeUserProfile(result);
+  const { data } = await parseApiEnvelope<any>(response);
+  const profile = normalizeUserProfile(data);
       
       return {
         profile,
@@ -179,16 +180,30 @@ export const fetchUserProfile = createAsyncThunk<
         
   const response = await apiFetch(url, { contextLabel: 'Profile' });
       if (response.status === 401) {
-        try { console.log('[profile] 401 on /auth/v1/me (legacy) -> forcing logout'); } catch { /* ignore */ }
-        queueMicrotask(() => { try { (window as any).store?.dispatch?.(logoutUser() as any); } catch { /* ignore */ } });
+        // If we have a refresh token, do not force logout here; allow SessionManager to refresh tokens.
+        let hasRefresh = false;
+        try { hasRefresh = Boolean(sessionStorage.getItem('refresh_token')); } catch { /* ignore */ }
+        if (!hasRefresh) {
+          try { console.log('[profile] 401 on /auth/v1/me -> logging out (no refresh token)'); } catch { /* ignore */ }
+          queueMicrotask(() => { try { (window as any).store?.dispatch?.(logoutUser() as any); } catch { /* ignore */ } });
+        } else {
+          try { console.log('[profile] 401 on /auth/v1/me -> defer to SessionManager (refresh present)'); } catch { /* ignore */ }
+        }
         throw new Error('unauthorized');
       }
       if (!response.ok) {
         throw new Error('Failed to fetch profile');
       }
       
-      const result = await response.json();
-      const profile = normalizeUserProfile(result);
+      // Use envelope only for /api context; /auth/me stays tolerant
+      let profileJson: any;
+      if (client && portfolio) {
+        const { data } = await parseApiEnvelope<any>(response);
+        profileJson = data;
+      } else {
+        profileJson = await response.json();
+      }
+      const profile = normalizeUserProfile(profileJson);
       
       return {
         profile,
@@ -206,7 +221,7 @@ export const fetchUserProfile = createAsyncThunk<
       if (!state.profile) return true;
       
       const context = generateContextKey(client, portfolio);
-      // Prevent multiple rapid /auth/v1/me calls during bootstrap: if using auth context and fetched within 5s, skip
+  // Prevent multiple rapid /auth/v1/me calls during bootstrap: if using auth context and fetched within 5s, skip
       if (!client && !portfolio && !profileName) {
         const last = (state.profile as any).lastAuthMeFetched;
         if (last && Date.now() - last < 5000) {
@@ -266,8 +281,8 @@ export const fetchUserProfiles = createAsyncThunk<
         throw new Error('Failed to fetch profiles');
       }
       
-  const result = await response.json();
-  const rawList = result.data || result || [];
+  const { data } = await parseApiEnvelope<any>(response);
+  const rawList = Array.isArray(data) ? data : (data || []);
   const profiles: UserProfile[] = rawList.map((p: any) => normalizeUserProfile(p));
       
       return { profiles, context };
@@ -318,8 +333,8 @@ export const updateUserProfile = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to update profile');
       }
       
-      const result = await response.json();
-      const profile = normalizeUserProfile(result);
+  const { data } = await parseApiEnvelope<any>(response);
+  const profile = normalizeUserProfile(data);
       
       return {
         profile,
@@ -350,8 +365,8 @@ export const patchUserProfile = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to patch profile');
       }
       
-      const result = await response.json();
-      const profile = normalizeUserProfile(result);
+  const { data } = await parseApiEnvelope<any>(response);
+  const profile = normalizeUserProfile(data);
       
       return {
         profile,
@@ -510,14 +525,11 @@ export const fetchAuthProfiles = createAsyncThunk<
   'profile/fetchAuthProfiles',
   async () => {
     const resp = await apiFetch(buildApiUrl('/auth/v1/profiles'), { contextLabel: 'ProfileList' });
-    if (resp.status === 401) {
-      try { console.log('[profile] 401 on /auth/v1/profiles -> forcing logout'); } catch { /* ignore */ }
-      // Dispatch logout side-effect in a fire-and-forget manner (no state passed here)
-      // Using a microtask to avoid interfering with current reducer queue
-      queueMicrotask(() => { try { (window as any).store?.dispatch?.(logoutUser() as any); } catch { /* ignore */ } });
-      throw new Error('unauthorized');
+    if (!resp.ok) {
+      try { window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path: '/auth/v1/profiles', status: resp.status } })); } catch { /* ignore */ }
+      throw new Error(`profiles_list_failed_${resp.status || 'unknown'}`);
     }
-    if (!resp.ok) throw new Error('Failed to list profiles');
+    
     const json = await resp.json();
   // Accept multiple shapes:
   // 1. { profiles: [...] }
@@ -557,12 +569,10 @@ export const fetchAuthProfile = createAsyncThunk<
   'profile/fetchAuthProfile',
   async ({ profileName }) => {
     const resp = await apiFetch(buildApiUrl(`/auth/v1/profiles/${encodeURIComponent(profileName)}`), { contextLabel: 'Profile' });
-    if (resp.status === 401) {
-      try { console.log('[profile] 401 on /auth/v1/profiles/:name -> forcing logout'); } catch { /* ignore */ }
-      queueMicrotask(() => { try { (window as any).store?.dispatch?.(logoutUser() as any); } catch { /* ignore */ } });
-      throw new Error('unauthorized');
+    if (!resp.ok) {
+      try { window.dispatchEvent(new CustomEvent('sck:auth-endpoint-failed', { detail: { path: `/auth/v1/profiles/${encodeURIComponent(profileName)}`, status: resp.status } })); } catch { /* ignore */ }
+      throw new Error(`profile_fetch_failed_${resp.status || 'unknown'}`);
     }
-    if (!resp.ok) throw new Error('Failed to fetch profile');
     const json = await resp.json();
     const profile = normalizeUserProfile(json);
     return { profile, context: 'auth' };
@@ -665,13 +675,14 @@ const profileSlice = createSlice({
       if (profile) {
         state.user = profile;
       }
+  try { localStorage.setItem('sck.profileName', action.payload); } catch { /* ignore */ }
     },
     syncFromAuth: (state, action: PayloadAction<UserProfile>) => {
       const profile = action.payload;
       state.user = profile;
       state.currentProfile = profile.profile_name;
       upsertProfile(state, profile);
-  try { sessionStorage.setItem('sck_profile_name', profile.profile_name); } catch { /* ignore */ }
+  try { localStorage.setItem('sck.profileName', profile.profile_name); } catch { /* ignore */ }
       // Update caches and membership
       state.individualProfileCache[profile.profile_name] = Date.now();
       state.contextCache['auth'] = Date.now();
@@ -711,7 +722,7 @@ const profileSlice = createSlice({
       if (profile) {
         state.user = profile;
         state.currentProfile = profileName;
-  try { sessionStorage.setItem('sck_profile_name', profileName); } catch { /* ignore */ }
+  try { localStorage.setItem('sck.profileName', profileName); } catch { /* ignore */ }
         if (context) {
           state.currentContext = context;
         }

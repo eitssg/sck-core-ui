@@ -6,6 +6,7 @@ import {
 } from '@reduxjs/toolkit';
 import type { RootState } from '@/store';
 import { apiFetch } from '@/lib/api-fetch';
+import { parseApiEnvelope } from '@/store/api/envelope';
 import type { Zone, AccountFacts, RegionFacts } from '@/store/types';
 
 interface ZonesState {
@@ -14,26 +15,53 @@ interface ZonesState {
   searchKeywords: string;
   loading: boolean;
   error: string | null;
+  // Cursor-based pagination metadata
+  nextCursor: string | null;
+  prevCursors: string[]; // stack to support simple backward navigation if needed
 }
 
-// Prefer env var, fallback to /api
-const API_BASE = (import.meta as any)?.env?.VITE_API_BASE_URL || '/api';
+// Prefer env var, fallback to versioned base /api/v1 (all endpoints assume versioned root now)
+const API_BASE = (import.meta as any)?.env?.VITE_API_BASE_URL || '/api/v1';
+
+// Helper: normalized zone key for dedup (case/whitespace tolerant)
+const zoneKey = (z: Partial<Zone>): string =>
+  `${String(z.client ?? '').trim().toLowerCase()}||${String(z.zone ?? '').trim().toLowerCase()}`;
+
+const upsertZone = (list: Zone[], z: Zone): Zone[] => {
+  const key = zoneKey(z);
+  const idx = list.findIndex((it) => zoneKey(it) === key);
+  if (idx !== -1) {
+    const next = list.slice();
+    next[idx] = z;
+    return next;
+  }
+  return [...list, z];
+};
+
+const dedupZones = (items: Zone[]): Zone[] => {
+  const map = new Map<string, Zone>();
+  for (const z of items) map.set(zoneKey(z), z);
+  return Array.from(map.values());
+};
 
 // ---------- CRUD Thunks (adjust endpoints to match your backend) ----------
 export const fetchZones = createAsyncThunk<
   Zone[],
-  { client?: string } | void,
+  { client: string },
   { rejectValue: string }
 >('zones/fetchZones', async (args, { rejectWithValue }) => {
   try {
-    const q = args && args.client ? `?client=${encodeURIComponent(args.client)}` : '';
-    const res = await apiFetch(`${API_BASE}/zones${q}`, {
+    const client = args.client;
+    const res = await apiFetch(`${API_BASE}/registry/clients/${encodeURIComponent(client)}/zones`, {
       cookieFirst: true,
       headers: { 'Content-Type': 'application/json' },
       contextLabel: 'Zones',
     });
     if (!res.ok) throw new Error(await res.text());
-    return (await res.json()) as Zone[];
+    const { data } = await parseApiEnvelope<Zone[]>(res);
+    const items: Zone[] = Array.isArray(data) ? (data as Zone[]) : [];
+    // Ensure client field is present on each item for UI filtering
+    return items.map((z) => ({ ...(z as any), client: (z as any)?.client ?? client } as Zone));
   } catch (err: any) {
     return rejectWithValue(err.message ?? 'Failed to fetch zones');
   }
@@ -43,7 +71,7 @@ export const createZone = createAsyncThunk<Zone, Zone, { rejectValue: string }>(
   'zones/createZone',
   async (zone, { rejectWithValue }) => {
     try {
-      const res = await apiFetch(`${API_BASE}/zones`, {
+  const res = await apiFetch(`${API_BASE}/registry/clients/${encodeURIComponent(zone.client)}/zones`, {
         method: 'POST',
         cookieFirst: true,
         headers: { 'Content-Type': 'application/json' },
@@ -51,19 +79,54 @@ export const createZone = createAsyncThunk<Zone, Zone, { rejectValue: string }>(
         contextLabel: 'Zones',
       });
       if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as Zone;
+  const { data } = await parseApiEnvelope<Zone>(res);
+  return data as Zone;
     } catch (err: any) {
       return rejectWithValue(err.message ?? 'Failed to create zone');
     }
   }
 );
 
+// Cursor-based page fetch. Expected backend response shape: { items: Zone[], cursor?: string | null }
+export const fetchZonesPage = createAsyncThunk<
+  { items: Zone[]; nextCursor: string | null; append: boolean },
+  { client: string; limit?: number; cursor?: string | null; append?: boolean },
+  { rejectValue: string }
+>('zones/fetchZonesPage', async ({ client, limit = 50, cursor, append = false }, { rejectWithValue }) => {
+  try {
+    const params = new URLSearchParams();
+    if (limit) params.set('limit', String(limit));
+    if (cursor) params.set('cursor', cursor);
+    const qs = params.toString();
+    const res = await apiFetch(
+    `${API_BASE}/registry/clients/${encodeURIComponent(client)}/zones${qs ? `?${qs}` : ''}`,
+      {
+        method: 'GET',
+        cookieFirst: true,
+        headers: { 'Content-Type': 'application/json' },
+        contextLabel: 'ZonesPage',
+      }
+    );
+  if (!res.ok) throw new Error(await res.text());
+  const { data, cursor: nextCursor } = await parseApiEnvelope<Zone[]>(res);
+  const rawItems: Zone[] = Array.isArray(data) ? (data as Zone[]) : [];
+  // Some backends omit the client field in items scoped by path; inject client for UI filtering/dedup.
+  const items: Zone[] = rawItems.map((z) => ({
+    ...(z as any),
+    client: (z as any)?.client ?? client,
+  } as Zone));
+  return { items, nextCursor: nextCursor ?? null, append };
+  } catch (err: any) {
+    return rejectWithValue(err.message ?? 'Failed to fetch zones page');
+  }
+});
+
 export const updateZoneRemote = createAsyncThunk<Zone, Zone, { rejectValue: string }>(
   'zones/updateZoneRemote',
   async (zone, { rejectWithValue }) => {
     try {
       const res = await apiFetch(
-        `${API_BASE}/zones/${encodeURIComponent(zone.client)}/${encodeURIComponent(zone.zone)}`,
+  `${API_BASE}/registry/clients/${encodeURIComponent(zone.client)}/zones/${encodeURIComponent(zone.zone)}`,
         {
           method: 'PUT',
           cookieFirst: true,
@@ -73,9 +136,38 @@ export const updateZoneRemote = createAsyncThunk<Zone, Zone, { rejectValue: stri
         }
       );
       if (!res.ok) throw new Error(await res.text());
-      return (await res.json()) as Zone;
+  const { data } = await parseApiEnvelope<Zone>(res);
+  return data as Zone;
     } catch (err: any) {
       return rejectWithValue(err.message ?? 'Failed to update zone');
+    }
+  }
+);
+
+// Fetch a single zone by client and zone key
+export const fetchZoneByKey = createAsyncThunk<
+  Zone,
+  { client: string; zone: string },
+  { rejectValue: string }
+>(
+  'zones/fetchZoneByKey',
+  async ({ client, zone }, { rejectWithValue }) => {
+    try {
+      const res = await apiFetch(
+        `${API_BASE}/registry/clients/${encodeURIComponent(client)}/zones/${encodeURIComponent(zone)}`,
+        {
+          method: 'GET',
+          cookieFirst: true,
+          headers: { 'Content-Type': 'application/json' },
+          contextLabel: 'ZoneByKey',
+        }
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const { data } = await parseApiEnvelope<Zone>(res);
+      const z: Zone = { ...(data as Zone), client } as Zone;
+      return z;
+    } catch (err: any) {
+      return rejectWithValue(err.message ?? 'Failed to fetch zone');
     }
   }
 );
@@ -87,7 +179,7 @@ export const deleteZoneRemote = createAsyncThunk<
 >('zones/deleteZoneRemote', async ({ client, zone }, { rejectWithValue }) => {
   try {
     const res = await apiFetch(
-      `${API_BASE}/zones/${encodeURIComponent(client)}/${encodeURIComponent(zone)}`,
+  `${API_BASE}/registry/clients/${encodeURIComponent(client)}/zones/${encodeURIComponent(zone)}`,
       { method: 'DELETE', cookieFirst: true, contextLabel: 'Zones' }
     );
     if (!res.ok) throw new Error(await res.text());
@@ -104,6 +196,8 @@ const initialState: ZonesState = {
   searchKeywords: '',
   loading: false,
   error: null,
+  nextCursor: null,
+  prevCursors: [],
 };
 
 // ---------- Slice ----------
@@ -112,18 +206,18 @@ const zonesSlice = createSlice({
   initialState,
   reducers: {
     setZones: (state, action: PayloadAction<Zone[]>) => {
-      state.zones = action.payload;
+  state.zones = dedupZones(action.payload);
+    },
+    resetZonesPaging: (state) => {
+      state.zones = [];
+      state.nextCursor = null;
+      state.prevCursors = [];
     },
     addZone: (state, action: PayloadAction<Zone>) => {
-      state.zones.push(action.payload);
+      state.zones = upsertZone(state.zones, action.payload);
     },
     updateZone: (state, action: PayloadAction<Zone>) => {
-      const z = action.payload;
-      const idx = state.zones.findIndex(
-        (zone) => zone.client === z.client && zone.zone === z.zone
-      );
-      if (idx !== -1) state.zones[idx] = z;
-      else state.zones.push(z);
+      state.zones = upsertZone(state.zones, action.payload);
     },
     removeZone: (state, action: PayloadAction<{ client: string; zone: string }>) => {
       const { client, zone } = action.payload;
@@ -141,6 +235,34 @@ const zonesSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      // fetchZonesPage (cursor based)
+      .addCase(fetchZonesPage.pending, (state, action) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchZonesPage.fulfilled, (state, action) => {
+        state.loading = false;
+        const { items, nextCursor, append } = action.payload;
+        if (append) {
+          // Deduplicate by normalized composite key
+          const existing = new Map(state.zones.map((z) => [zoneKey(z), z] as const));
+          for (const z of items) {
+            existing.set(zoneKey(z), z);
+          }
+          state.zones = Array.from(existing.values());
+        } else {
+          state.zones = dedupZones(items);
+        }
+        // Push previous cursor onto stack if moving forward
+        if (append && state.nextCursor && state.nextCursor !== nextCursor) {
+          state.prevCursors.push(state.nextCursor);
+        }
+        state.nextCursor = nextCursor ?? null;
+      })
+      .addCase(fetchZonesPage.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload ?? 'Failed to fetch zones page';
+      })
       // fetchZones
       .addCase(fetchZones.pending, (state) => {
         state.loading = true;
@@ -148,7 +270,7 @@ const zonesSlice = createSlice({
       })
       .addCase(fetchZones.fulfilled, (state, action) => {
         state.loading = false;
-        state.zones = action.payload;
+  state.zones = dedupZones(action.payload);
       })
       .addCase(fetchZones.rejected, (state, action) => {
         state.loading = false;
@@ -161,7 +283,7 @@ const zonesSlice = createSlice({
       })
       .addCase(createZone.fulfilled, (state, action) => {
         state.loading = false;
-        state.zones.push(action.payload);
+  state.zones = upsertZone(state.zones, action.payload);
       })
       .addCase(createZone.rejected, (state, action) => {
         state.loading = false;
@@ -174,16 +296,24 @@ const zonesSlice = createSlice({
       })
       .addCase(updateZoneRemote.fulfilled, (state, action) => {
         state.loading = false;
-        const z = action.payload;
-        const idx = state.zones.findIndex(
-          (zone) => zone.client === z.client && zone.zone === z.zone
-        );
-        if (idx !== -1) state.zones[idx] = z;
-        else state.zones.push(z);
+  state.zones = upsertZone(state.zones, action.payload);
       })
       .addCase(updateZoneRemote.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload ?? 'Failed to update zone';
+      })
+      // fetchZoneByKey
+      .addCase(fetchZoneByKey.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchZoneByKey.fulfilled, (state, action) => {
+        state.loading = false;
+  state.zones = upsertZone(state.zones, action.payload);
+      })
+      .addCase(fetchZoneByKey.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload ?? 'Failed to fetch zone';
       })
       // deleteZoneRemote
       .addCase(deleteZoneRemote.pending, (state) => {
@@ -204,6 +334,7 @@ const zonesSlice = createSlice({
 
 export const {
   setZones,
+  resetZonesPaging,
   addZone,
   updateZone,
   removeZone,
@@ -219,6 +350,8 @@ export const selectZonesLoading = (state: RootState) => selectZonesState(state).
 export const selectZonesError = (state: RootState) => selectZonesState(state).error;
 export const selectSelectedZoneKey = (state: RootState) => selectZonesState(state).selectedKey;
 export const selectSearchKeywords = (state: RootState) => selectZonesState(state).searchKeywords;
+export const selectZonesNextCursor = (state: RootState) => selectZonesState(state).nextCursor;
+export const selectZonesPrevCursors = (state: RootState) => selectZonesState(state).prevCursors;
 
 const valueToStrings = (v: unknown): string[] => {
   if (v == null) return [];
@@ -302,5 +435,10 @@ export const makeSelectZonesByClient = (client: string) =>
 
 export const makeSelectZoneByKey = (client: string, zone: string) =>
   createSelector([selectZones], (zones) => zones.find((z) => z.client === client && z.zone === zone) || null);
+
+// Since the UI only holds data for the current client (server-scoped by JWT),
+// a simple zone-by-slug lookup is sufficient.
+export const makeSelectZoneBySlug = (zone: string) =>
+  createSelector([selectZones], (zones) => zones.find((z) => z.zone === zone) || null);
 
 export default zonesSlice.reducer;

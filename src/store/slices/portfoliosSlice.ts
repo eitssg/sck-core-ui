@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { API_CONFIG, buildApiUrl, getAuthHeaders } from '@/lib/api-config';
 import { apiFetch } from '@/lib/api-fetch';
+import { parseApiEnvelope } from '@/store/api/envelope';
 import type { RootState, AppDispatch } from '@/store';
 import type { ApiResponse } from '../shared';
 import { toArray } from '../shared';
@@ -78,38 +79,65 @@ export interface Portfolio {
   domain?: string; // Domain name for this business application
   bizapp?: ProjectFacts; // Alternative business app details
   owner?: OwnerFacts; // Portfolio owner information
+  // Extended ownership (catalog)
+  business_owner?: OwnerFacts;
+  technical_owner?: OwnerFacts;
   
   // Resource management
   tags?: Record<string, string>; // AWS resource tags for cost/organization
   metadata?: Record<string, string>; // Additional metadata
   attributes?: Record<string, string>; // Custom attributes
+  compliance?: Record<string, string>;
+  identifiers?: Record<string, string>;
   user_instantiated?: string; // User who created this portfolio
   
+  // Identity/presentation (catalog)
+  icon_url?: string;
+  category?: string;
+  labels?: string[];
+  portfolio_version?: string;
+  lifecycle_status?: string;
+
   // Audit fields (inherited from DatabaseRecord)
   created_at?: string;
   updated_at?: string;
   
   // UI compatibility fields (derived from core data)
   id?: string; // Will be set to portfolio value for UI compatibility
-  name?: string; // Will be set to project.name or portfolio for display
-  description?: string; // Will be set to project.description
+  name?: string; // Prefer summary.name, then project.name, then portfolio
+  description?: string; // Prefer summary.description, else project.description
   clientId?: string; // Client this portfolio belongs to (for UI filtering)
   code?: string; // Will be set to project.code for display
   status?: string; // Derived status (active/inactive based on enabled state)
   
   // Calculated/derived fields for UI
-  applicationCount?: number; // Number of deployments under this portfolio
+  app_count?: number; // Number of deployments under this portfolio (from backend)
   lastUpdated?: string; // Will be set to updated_at for display
   homePageUrl?: string; // Will be derived from domain
 }
 
 // Summary interface for list operations (matches your API response)
 export interface PortfolioSummary {
-  Portfolio: string; // Portfolio slug
-  // Add other summary fields as they become available from your API
+  // Support either PascalCase or snake_case from API
+  Portfolio?: string;
   Name?: string;
   Description?: string;
   Domain?: string;
+  portfolio?: string;
+  name?: string;
+  description?: string;
+  domain?: string;
+  project?: ProjectFacts; // Some list APIs may include nested project fields (e.g., description)
+  icon_url?: string;
+  category?: string;
+  labels?: string[];
+  portfolio_version?: string;
+  lifecycle_status?: string;
+  business_owner?: OwnerFacts;
+  technical_owner?: OwnerFacts;
+  // Audit fields from list payloads
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface PortfoliosState {
@@ -133,23 +161,31 @@ const initialState: PortfoliosState = {
 };
 
 // Helper function to transform portfolio data for UI compatibility
-const transformPortfolioForUI = (portfolio: Portfolio, clientId?: string): Portfolio => ({
-  ...portfolio,
-  id: portfolio.portfolio, // Set id to portfolio slug for UI compatibility
-  name: portfolio.project?.name || portfolio.portfolio, // Use project name or portfolio slug
-  description: portfolio.project?.description || portfolio.bizapp?.description,
-  code: portfolio.project?.code || portfolio.bizapp?.code,
-  clientId: clientId || portfolio.clientId,
-  status: portfolio.contacts?.some(c => c.enabled !== false) ? 'active' : 'inactive', // Derive status
-  lastUpdated: portfolio.updated_at,
+const transformPortfolioForUI = (portfolio: Portfolio & { app_count?: number }, clientId?: string): Portfolio => {
+  const displayName = portfolio.name || portfolio.project?.name || portfolio.portfolio;
+  const description = portfolio.description || portfolio.project?.description || portfolio.bizapp?.description;
+  const code = portfolio.code || portfolio.project?.code || portfolio.bizapp?.code;
+  return {
+    ...portfolio,
+    id: portfolio.portfolio,
+    name: displayName,
+    description,
+    code,
+    clientId: clientId || portfolio.clientId,
+    status: portfolio.lifecycle_status || (portfolio.contacts?.some(c => c.enabled !== false) ? 'active' : 'inactive'),
+    lastUpdated: portfolio.updated_at,
   homePageUrl: portfolio.domain ? `https://${portfolio.domain}` : undefined,
-  applicationCount: 0, // Will be populated when we have deployment data
-});
+  // app_count is the canonical field; accept legacy counters if present
+  app_count: typeof (portfolio as any).app_count === 'number'
+      ? (portfolio as any).app_count
+      : (typeof (portfolio as any).counter === 'number' ? (portfolio as any).counter : undefined),
+  };
+};
 
 // CRUD Operations for Portfolio Management
 // Note: All operations require client slug in the path
 
-// CREATE - Create new portfolio (POST /api/v1/registry/{client}/portfolios)
+// CREATE - Create new portfolio (POST /api/v1/registry/clients/{client}/portfolios)
 export const createPortfolio = createAsyncThunk(
   'portfolios/create',
   async ({ client, portfolioData }: { 
@@ -157,7 +193,7 @@ export const createPortfolio = createAsyncThunk(
     portfolioData: Partial<Portfolio> 
   }, thunkAPI) => {
     try {
-      const response = await fetch(buildApiUrl(`/api/v1/registry/${client}/portfolios`), {
+  const response = await fetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios`), {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(portfolioData),
@@ -168,15 +204,15 @@ export const createPortfolio = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to create portfolio');
       }
 
-      const result = await response.json();
-      return { portfolio: transformPortfolioForUI(result.data, client), client };
+  const { data } = await parseApiEnvelope<Portfolio>(response);
+  return { portfolio: transformPortfolioForUI(data as Portfolio, client), client };
     } catch (error) {
       return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
   }
 );
 
-// READ - List all portfolios for a client (GET /api/v1/registry/{client}/portfolios)
+// READ - List all portfolios for a client (GET /api/v1/registry/clients/{client}/portfolios)
 // OPTIMIZED FOR MINIMAL SERVER CALLS - uses strict caching
 export const fetchPortfolios = createAsyncThunk<
   { data: ApiResponse<PortfolioSummary>; client: string; append: boolean },
@@ -184,19 +220,21 @@ export const fetchPortfolios = createAsyncThunk<
   { state: RootState }
 >(
   'portfolios/fetchList',
-  async ({ client, limit = 50, cursor = null, append = false }) => { // Reduced default limit for pagination
-    const url = new URL(buildApiUrl(`/api/v1/registry/${client}/portfolios`));
+  async ({ client, limit = 50, cursor: reqCursor = null, append = false }) => { // Reduced default limit for pagination
+  const url = new URL(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios`));
     url.searchParams.set('limit', String(limit));
-    if (cursor) url.searchParams.set('cursor', cursor);
+    if (reqCursor) url.searchParams.set('cursor', reqCursor);
 
-  const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: `portfolios-${client}-401`, contextLabel: 'Portfolios' });
+  const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: `portfolios-${client}-authz`, contextLabel: 'Portfolios' });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const json = await response.json() as ApiResponse<PortfolioSummary>;
-    return { data: json, client, append };
+  const { data, cursor: apiCursor } = await parseApiEnvelope<PortfolioSummary[] | any>(response);
+  // Construct ApiResponse-like shape expected by reducers
+  const shaped: ApiResponse<PortfolioSummary> = { data: Array.isArray(data) ? (data as any) : [], metadata: { cursor: apiCursor } } as any;
+  return { data: shaped, client, append };
   },
   {
     condition: ({ client, force, cursor }, { getState }) => {
@@ -223,7 +261,7 @@ export const fetchPortfolios = createAsyncThunk<
   }
 );
 
-// READ - Get single portfolio (GET /api/v1/registry/{client}/portfolio/{portfolio})
+// READ - Get single portfolio (GET /api/v1/registry/clients/{client}/portfolios/{portfolio})
 // CACHED - only fetches if not in store or explicitly forced
 export const fetchPortfolio = createAsyncThunk<
   { portfolio: Portfolio; client: string },
@@ -233,7 +271,7 @@ export const fetchPortfolio = createAsyncThunk<
   'portfolios/fetchSingle',
   async ({ client, portfolio }) => {
     try {
-      const response = await apiFetch(buildApiUrl(`/api/v1/registry/${client}/portfolio/${portfolio}`), {
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios/${portfolio}`), {
         contextLabel: 'Portfolios',
       });
 
@@ -241,8 +279,8 @@ export const fetchPortfolio = createAsyncThunk<
         throw new Error('Failed to fetch portfolio');
       }
 
-      const result = await response.json();
-      return { portfolio: transformPortfolioForUI(result.data, client), client };
+  const { data } = await parseApiEnvelope<Portfolio>(response);
+  return { portfolio: transformPortfolioForUI(data as Portfolio, client), client };
     } catch (error) {
       throw new Error(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -265,7 +303,7 @@ export const fetchPortfolio = createAsyncThunk<
   }
 );
 
-// UPDATE - Full update portfolio (PUT /api/v1/registry/{client}/portfolio/{portfolio})
+// UPDATE - Full update portfolio (PUT /api/v1/registry/clients/{client}/portfolios/{portfolio})
 // Note: PUT replaces entire record, unsupplied attributes will be set to null
 export const updatePortfolio = createAsyncThunk(
   'portfolios/update',
@@ -275,7 +313,7 @@ export const updatePortfolio = createAsyncThunk(
     portfolioData: Portfolio 
   }, thunkAPI) => {
     try {
-      const response = await apiFetch(buildApiUrl(`/api/v1/registry/${client}/portfolio/${portfolio}`), {
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios/${portfolio}`), {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify(portfolioData),
@@ -287,15 +325,15 @@ export const updatePortfolio = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to update portfolio');
       }
 
-      const result = await response.json();
-      return { portfolio: transformPortfolioForUI(result.data, client), client };
+  const { data } = await parseApiEnvelope<Portfolio>(response);
+  return { portfolio: transformPortfolioForUI(data as Portfolio, client), client };
     } catch (error) {
       return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
   }
 );
 
-// PATCH - Partial update portfolio (PATCH /api/v1/registry/{client}/portfolio/{portfolio})
+// PATCH - Partial update portfolio (PATCH /api/v1/registry/clients/{client}/portfolios/{portfolio})
 // Note: PATCH only updates provided fields, leaving others unchanged
 export const patchPortfolio = createAsyncThunk(
   'portfolios/patch',
@@ -305,7 +343,7 @@ export const patchPortfolio = createAsyncThunk(
     portfolioData: Partial<Portfolio> 
   }, thunkAPI) => {
     try {
-      const response = await apiFetch(buildApiUrl(`/api/v1/registry/${client}/portfolio/${portfolio}`), {
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios/${portfolio}`), {
         method: 'PATCH',
         headers: getAuthHeaders(),
         body: JSON.stringify(portfolioData),
@@ -325,12 +363,12 @@ export const patchPortfolio = createAsyncThunk(
   }
 );
 
-// DELETE - Delete portfolio (DELETE /api/v1/registry/{client}/portfolio/{portfolio})
+// DELETE - Delete portfolio (DELETE /api/v1/registry/clients/{client}/portfolios/{portfolio})
 export const deletePortfolio = createAsyncThunk(
   'portfolios/delete',
   async ({ client, portfolio }: { client: string; portfolio: string }, thunkAPI) => {
     try {
-      const response = await apiFetch(buildApiUrl(`/api/v1/registry/${client}/portfolio/${portfolio}`), {
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios/${portfolio}`), {
         method: 'DELETE',
         contextLabel: 'Portfolios',
       });
@@ -396,11 +434,11 @@ const portfoliosSlice = createSlice({
         state.items.push(portfolio);
       }
     },
-    updatePortfolioApplicationCount(state, action: PayloadAction<{ portfolioId: string; count: number }>) {
+    updatePortfolioAppCount(state, action: PayloadAction<{ portfolioId: string; count: number }>) {
       // Helper to update application count when deployment data is loaded
       const portfolio = state.items.find(p => p.portfolio === action.payload.portfolioId);
       if (portfolio) {
-        portfolio.applicationCount = action.payload.count;
+        (portfolio as any).app_count = action.payload.count;
       }
     },
   },
@@ -434,22 +472,83 @@ const portfoliosSlice = createSlice({
         const client = action.payload.client;
         const append = action.payload.append;
         
-        // Transform PortfolioSummary to Portfolio interface
-        const portfolios = summaryData.map(summary => transformPortfolioForUI({
-          portfolio: summary.Portfolio,
-          project: summary.Name ? { 
-            name: summary.Name, 
-            code: summary.Portfolio,
-            description: summary.Description 
-          } : undefined,
-          domain: summary.Domain,
-        }, client));
+        // Transform PortfolioSummary (supports PascalCase or snake_case) to Portfolio interface
+        const portfolios = summaryData.map(summary => {
+          const slug = (summary as any).portfolio ?? summary.Portfolio!;
+          const name = (summary as any).name ?? summary.Name;
+          const domain = (summary as any).domain ?? summary.Domain;
+          const project = (summary as any).project;
+          const description = (summary as any).description ?? summary.Description ?? project?.description;
+          const icon_url = (summary as any).icon_url;
+          const category = (summary as any).category;
+          const labels = (summary as any).labels;
+          const portfolio_version = (summary as any).portfolio_version;
+          const lifecycle_status = (summary as any).lifecycle_status;
+          const business_owner = (summary as any).business_owner;
+          const technical_owner = (summary as any).technical_owner;
+          const created_at = (summary as any).created_at;
+          const updated_at = (summary as any).updated_at;
+          // Merge new and legacy fields for application counts present in summaries
+          const app_count = (summary as any).app_count
+            ?? (summary as any).application_count
+            ?? (summary as any).applications_count
+            ?? (summary as any).apps_count
+            ?? (summary as any).counter;
+
+          const base: Portfolio & { app_count?: number } = {
+            portfolio: slug,
+            domain,
+            icon_url,
+            category,
+            labels,
+            portfolio_version,
+            lifecycle_status,
+            business_owner,
+            technical_owner,
+            created_at,
+            updated_at,
+            app_count,
+          } as Portfolio;
+
+          // Map fields from summary into UI model
+          if (name) (base as any).name = name;
+          if (description) (base as any).description = description;
+          // Provide project fallback (favor project fields if available)
+          const projName = project?.name || name || slug;
+          const projCode = project?.code || slug;
+          const projDesc = project?.description || description;
+          if (projName || projDesc) {
+            base.project = { name: projName, code: projCode, description: projDesc };
+          }
+
+          return transformPortfolioForUI(base, client);
+        });
+        // Preserve existing app_count when API doesn't provide it in summaries
+        const prevMap = new Map(state.items.map(p => [p.portfolio, p] as const));
+        for (let i = 0; i < portfolios.length; i++) {
+          const p = portfolios[i];
+          const prev = prevMap.get(p.portfolio);
+          if ((p as any).app_count == null && typeof (prev as any)?.app_count === 'number') {
+            (portfolios[i] as any).app_count = (prev as any).app_count;
+          }
+        }
         
-        // Either replace or append based on append flag
+        // Merge summaries into existing items to preserve detailed fields
         if (append) {
-          state.items = [...state.items, ...portfolios];
+          const existing = state.items || [];
+          const map = new Map(existing.map(p => [p.portfolio, p] as const));
+          const merged = portfolios.map(p => {
+            const prev = map.get(p.portfolio);
+            return prev ? ({ ...prev, ...p }) : p;
+          });
+          state.items = [...existing.filter(p => !merged.find(m => m.portfolio === p.portfolio)), ...merged];
         } else {
-          state.items = portfolios;
+          const existing = state.items || [];
+          const map = new Map(existing.map(p => [p.portfolio, p] as const));
+          state.items = portfolios.map(p => {
+            const prev = map.get(p.portfolio);
+            return prev ? ({ ...prev, ...p }) : p;
+          });
         }
         
         state.cursor = action.payload.data.metadata?.cursor ?? null;
@@ -474,7 +573,13 @@ const portfoliosSlice = createSlice({
         // Update or add the portfolio in the list
         const existingIndex = state.items.findIndex(p => p.portfolio === action.payload.portfolio.portfolio);
         if (existingIndex >= 0) {
-          state.items[existingIndex] = action.payload.portfolio;
+          // Preserve app_count if incoming payload doesn't include it
+          const incoming = action.payload.portfolio as any;
+          const prev = state.items[existingIndex] as any;
+          if (incoming.app_count == null && typeof prev?.app_count === 'number') {
+            incoming.app_count = prev.app_count;
+          }
+          state.items[existingIndex] = incoming;
         } else {
           state.items.push(action.payload.portfolio);
         }
@@ -498,7 +603,12 @@ const portfoliosSlice = createSlice({
         // Update the portfolio in the list
         const index = state.items.findIndex(p => p.portfolio === action.payload.portfolio.portfolio);
         if (index >= 0) {
-          state.items[index] = action.payload.portfolio;
+          const incoming = action.payload.portfolio as any;
+          const prev = state.items[index] as any;
+          if (incoming.app_count == null && typeof prev?.app_count === 'number') {
+            incoming.app_count = prev.app_count;
+          }
+          state.items[index] = incoming;
         }
         
         state.currentClient = action.payload.client;
@@ -520,7 +630,12 @@ const portfoliosSlice = createSlice({
         // Update the portfolio in the list
         const index = state.items.findIndex(p => p.portfolio === action.payload.portfolio.portfolio);
         if (index >= 0) {
-          state.items[index] = action.payload.portfolio;
+          const incoming = action.payload.portfolio as any;
+          const prev = state.items[index] as any;
+          if (incoming.app_count == null && typeof prev?.app_count === 'number') {
+            incoming.app_count = prev.app_count;
+          }
+          state.items[index] = incoming;
         }
         
         state.currentClient = action.payload.client;
@@ -562,7 +677,7 @@ export const {
   setSelectedPortfolio, 
   setCurrentClient, 
   syncFromAPI,
-  updatePortfolioApplicationCount 
+  updatePortfolioAppCount 
 } = portfoliosSlice.actions;
 
 // Selectors for accessing portfolio state

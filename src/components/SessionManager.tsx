@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { authAPI } from '@/lib/auth-api';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { logoutUser, refreshAccessToken, selectTokens } from '@/store/slices/authSlice';
+import { logoutUser, refreshAccessToken, selectTokens, setLogoutReason } from '@/store/slices/authSlice';
 import type { OAuthTokenResponse } from '@/store/types';
 
 type AuthTokens = OAuthTokenResponse & { expires_at?: number };
@@ -316,7 +316,21 @@ export const SessionManager = () => {
               refresh_at_minutes: sessionRefreshAtMinutes,
               window_minutes: sessionWindowMinutes,
             });
-            const ok = await authAPI.refreshSession();
+            let ok = false;
+            try {
+              ok = await authAPI.refreshSession();
+            } catch (e) {
+              // If /auth/v1/refresh returns 401, navigate to /login immediately
+              const status = (e as any)?.status;
+              if (status === 401 || (e instanceof Error && e.message === 'session_cookie_invalid')) {
+                try { await dispatch(setLogoutReason('session_expired')); } catch { /* ignore */ }
+                navigate('/login?reason=session_expired', { replace: true });
+                refreshingRef.current = false;
+                return; // abort further processing in timer
+              }
+              // For other errors, treat as non-OK and continue
+              ok = false;
+            }
       if (ok) {
               try { sessionStorage.setItem('session_issued_at', Date.now().toString()); } catch { /* ignore */ }
               // give the backend a brief moment to persist/rotate cookies before hitting /token
@@ -421,7 +435,11 @@ export const SessionManager = () => {
         try { await dispatch(logoutUser()).unwrap(); } catch { /* ignore */ }
         const path = location.pathname;
         const isAuthFlow = path.startsWith('/authorized') || path.startsWith('/login') || path.startsWith('/signup');
-        if (!isAuthFlow) navigate('/login?reason=session_refresh_failed', { replace: true });
+        if (!isAuthFlow) {
+          // Treat as idle-like expiry: same UX as idle timeout per guidance
+          try { await dispatch(setLogoutReason('idle_timeout')); } catch { /* ignore */ }
+          navigate('/login?reason=idle_timeout', { replace: true });
+        }
       } finally {
         refreshingRef.current = false;
       }
@@ -437,6 +455,17 @@ export const SessionManager = () => {
     let hasRefresh = false;
     try { hasRefresh = Boolean(sessionStorage.getItem('refresh_token')); } catch { /* ignore */ }
     if (!hasRefresh) return;
+    // If we don't yet have an access token in memory, proactively kick a refresh-on-boot.
+    // This covers rare cases where TokenBootstrap didn't fire (race) but user has a valid refresh token.
+    if (!tokens?.access_token) {
+      try {
+        const inflight = sessionStorage.getItem('sck_bootstrap_refresh_inflight') === '1';
+        if (!inflight) {
+          console.log('[sck:auth:init]', { action: 'boot_refresh', reason: 'no_access_but_have_refresh' });
+          dispatch(refreshAccessToken('session_manager_boot') as any);
+        }
+      } catch { /* ignore */ }
+    }
     // Attempt restore of persisted schedule
     let restored = false;
     try {
@@ -529,22 +558,45 @@ export const SessionManager = () => {
         if (e.key === 'refresh_token') scheduleProactiveRefresh();
       };
     const onTokenRefreshed = () => scheduleProactiveRefresh();
+    const onTokenRefreshFailed = () => scheduleProactiveRefresh();
+    const onAuthEndpointFailed = (e: Event) => {
+      try {
+        const detail = (e as CustomEvent).detail || {};
+        const path: string = String(detail.path || '');
+        const status: number | null = typeof detail.status === 'number' ? detail.status : null;
+        if (!path.startsWith('/auth/')) return; // only act on /auth endpoints
+        // Only the app layer decides redirects: map non-2xx to reasons
+        if (path.startsWith('/auth/v1/token')) {
+          navigate('/login?reason=bootstrap_failed', { replace: true });
+        } else if (path.startsWith('/auth/v1/refresh')) {
+          navigate('/login?reason=session_expired', { replace: true });
+        } else if (path.startsWith('/auth/v1/me') || path.startsWith('/auth/v1/profiles')) {
+          const params = new URLSearchParams({ reason: 'me_unauthorized' });
+          try { params.set('returnTo', window.location.pathname + window.location.search); } catch { /* ignore */ }
+          navigate(`/login?${params.toString()}`, { replace: true });
+        }
+      } catch { /* ignore */ }
+    };
     const onActivity = () => { lastActivityRef.current = Date.now(); };
     window.addEventListener('storage', onStorage);
     window.addEventListener('sck:tokenRefreshed', onTokenRefreshed as EventListener);
-    window.addEventListener('mousemove', onActivity);
+    window.addEventListener('sck:tokenRefreshFailed', onTokenRefreshFailed as EventListener);
+  window.addEventListener('mousemove', onActivity);
+  window.addEventListener('sck:auth-endpoint-failed', onAuthEndpointFailed as EventListener);
     window.addEventListener('keydown', onActivity);
     window.addEventListener('touchstart', onActivity);
     window.addEventListener('click', onActivity);
     return () => {
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('sck:tokenRefreshed', onTokenRefreshed as EventListener);
+      window.removeEventListener('sck:tokenRefreshFailed', onTokenRefreshFailed as EventListener);
       window.removeEventListener('mousemove', onActivity);
       window.removeEventListener('keydown', onActivity);
-      window.removeEventListener('touchstart', onActivity);
+  window.removeEventListener('touchstart', onActivity);
+  window.removeEventListener('sck:auth-endpoint-failed', onAuthEndpointFailed as EventListener);
       window.removeEventListener('click', onActivity);
     };
-  }, [scheduleProactiveRefresh]);
+  }, [scheduleProactiveRefresh, navigate]);
 
   useEffect(() => {
     // Sleep/wake or tab focus: check if close to expiry and refresh immediately if needed

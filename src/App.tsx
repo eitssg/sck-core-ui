@@ -5,7 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Provider } from "react-redux";
-import { store } from "@/store";
+import { store, useAppSelector } from "@/store";
 import AppTheme from '@/AppTheme';
 import { AuthProvider } from "@/contexts/AuthContext";
 import SessionManager from '@/components/SessionManager';
@@ -16,7 +16,10 @@ import { PageLoader } from '@/components/PageLoader';
 import PermissionIssues from '@/components/PermissionIssues';
 import AuthBootstrap from '@/components/AuthBootstrap';
 import ProfileBootstrap from '@/components/ProfileBootstrap';
+import ClientsBootstrap from '@/components/ClientsBootstrap';
 import TokenBootstrap from '@/components/TokenBootstrap';
+import { selectUser as selectProfileUser } from '@/store/slices/profileSlice';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 // Lazy load all pages
 const Login = lazy(() => import("./pages/Login"));
@@ -26,8 +29,10 @@ const EnterCode = lazy(() => import("./pages/EnterCode"));
 const NewPassword = lazy(() => import("./pages/NewPassword"));
 const NoAccount = lazy(() => import("./pages/NoAccount"));
 const NewPasswordSuccess = lazy(() => import("./pages/NewPasswordSuccess"));
+const ErrorBridge = lazy(() => import("./pages/ErrorBridge"));
 const Authorized = lazy(() => import("./pages/Authorized"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Onboarding = lazy(() => import("./pages/Onboarding"));
 const Profile = lazy(() => import("./pages/Profile"));
 const AWSCredentials = lazy(() => import("./pages/AWSCredentials"));
 const MFAToken = lazy(() => import("./pages/MFAToken"));
@@ -36,7 +41,8 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const Portfolios = lazy(() => import("./pages/Portfolios"));
 const CreatePortfolio = lazy(() => import("./pages/CreatePortfolio"));
 const PortfolioDetails = lazy(() => import("./pages/PortfolioDetails"));
-const Applications = lazy(() => import("./pages/Applications"));
+// Applications routes removed (now listed under PortfolioDetails)
+// const Applications = lazy(() => import("./pages/Applications"));
 const CreateApplication = lazy(() => import("./pages/CreateApplication"));
 const ApplicationDetails = lazy(() => import("./pages/ApplicationDetails"));
 const Clients = lazy(() => import("./pages/Clients"));
@@ -92,6 +98,17 @@ const ToastBridge = () => {
   return null;
 };
 
+// Dashboard entry point that chooses between Onboarding and Dashboard based on AWS credentials flag
+const DashboardEntry = () => {
+  const profileUser = useAppSelector(selectProfileUser as any) as any;
+  const hasAwsCreds = Boolean((profileUser?.credentials || {})?.AwsCredentials);
+  return (
+    <Suspense fallback={<PageLoader type="dashboard" />}> 
+      {hasAwsCreds ? <Dashboard /> : <Onboarding />}
+    </Suspense>
+  );
+};
+
 // Routes component
 const AppRoutes = () => (
   <Routes>
@@ -104,31 +121,43 @@ const AppRoutes = () => (
     {createPublicRoute('/new-password', NewPassword)}
     {createPublicRoute('/no-account', NoAccount)}
     {createPublicRoute('/new-password-success', NewPasswordSuccess)}
+  {createPublicRoute('/error', ErrorBridge)}
     {createPublicRoute('/verify-email', VerifyEmail)}
     {createPublicRoute('/welcome', Welcome)}
     {createPublicRoute('/authorized', Authorized)}
 
     {/* Protected routes */}
-    {createProtectedRoute('/dashboard', Dashboard, 'dashboard')}
+    <Route
+      key="/dashboard"
+      path="/dashboard"
+      element={
+        <ProtectedRoute>
+          <Suspense fallback={<PageLoader type="dashboard" />}> 
+            <DashboardEntry />
+          </Suspense>
+        </ProtectedRoute>
+      }
+    />
     {createProtectedRoute('/profile', Profile, 'form')}
-  {createProtectedRoute('/aws-credentials', AWSCredentials, 'form')}
+    {createProtectedRoute('/aws-credentials', AWSCredentials, 'form')}
     {createProtectedRoute('/mfa-token', MFAToken, 'form')}
     {createProtectedRoute('/settings', Settings, 'form')}
 
     {/* Portfolio routes */}
     {createProtectedRoute('/portfolios', Portfolios, 'list')}
     {createProtectedRoute('/portfolios/create', CreatePortfolio, 'form')}
-    {createProtectedRoute('/portfolios/:id', PortfolioDetails, 'dashboard')}
+  {createProtectedRoute('/portfolios/:portfolio', PortfolioDetails, 'dashboard')}
 
-    {/* Application routes */}
-    {createProtectedRoute('/applications', Applications, 'list')}
-    {createProtectedRoute('/applications/create', CreateApplication, 'form')}
-    {createProtectedRoute('/applications/:id', ApplicationDetails, 'dashboard')}
+  {/* Application detail: canonical path nested under portfolio */}
+  {createProtectedRoute('/portfolios/:portfolio/apps/new', CreateApplication, 'form')}
+  {createProtectedRoute('/portfolios/:portfolio/apps/:id', ApplicationDetails, 'dashboard')}
+  {/* Legacy fallback (optional) */}
+  {createProtectedRoute('/applications/:id', ApplicationDetails, 'dashboard')}
 
     {/* Client routes */}
     {createProtectedRoute('/clients', Clients, 'list')}
     {createProtectedRoute('/clients/create', CreateClient, 'form')}
-  {createProtectedRoute('/clients/:client', ClientDetails, 'dashboard')}
+    {createProtectedRoute('/clients/:client', ClientDetails, 'dashboard')}
 
     {/* Register OAUTH client_id SPA or Client App */}
     {createProtectedRoute('/register-client', RegisterClient, 'form')}
@@ -136,7 +165,7 @@ const AppRoutes = () => (
     {/* Zone routes */}
     {createProtectedRoute('/zones', Zones, 'list')}
     {createProtectedRoute('/zones/create', CreateZone, 'form')}
-    {createProtectedRoute('/zones/:id', ZoneDetails, 'dashboard')}
+    {createProtectedRoute('/zones/:client/:zone', ZoneDetails, 'dashboard')}
 
     {/* Deployment routes */}
     {createProtectedRoute('/deployments', Deployments, 'list')}
@@ -165,9 +194,12 @@ const App = () => (
               <TokenBootstrap />
               <AuthBootstrap />
               <ProfileBootstrap />
+              <ClientsBootstrap />
               <SessionManager />
               <ToastBridge />
               <PermissionIssues />
+              {/* Temporarily disabling the global AWS Credentials gate to restore normal login flow */}
+              {/* <AwsCredentialsGate /> */}
               <AppRoutes />
               <Toaster />
             </TooltipProvider>

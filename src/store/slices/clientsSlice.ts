@@ -4,9 +4,35 @@ import { apiFetch } from '@/lib/api-fetch';
 import type { OAuthTokenRequest, OAuthTokenResponse } from '@/store/types';
 import type { RootState, AppDispatch } from '@/store';
 import type { ApiResponse } from '../shared';
+import { parseApiEnvelope } from '@/store/api/envelope';
 import { toArray } from '../shared';
 import type { Client } from '@/store/types'; // use shared type
 import { authAPI } from '@/lib/auth-api';
+import type { ThunkAction } from 'redux-thunk';
+import type { AnyAction } from 'redux';
+
+// Cross-slice clear action creators (lazy import types to avoid cycles)
+const CLEAR_DEPENDENT_SLICES = {
+  zones: 'zones/resetZonesPaging',
+  deployments: 'deployments/clear',
+  applications: 'applications/setApplications', // will set empty array
+  portfolios: 'portfolios/clear' // clear portfolios slice cache/state
+};
+
+// Thunk to encapsulate client context switch from UI (without token refresh).
+// This performs cross-slice invalidation so no stale tenant data persists after a client switch.
+// NOTE: Any slice that caches tenant-specific data should add a lightweight clear/reset action
+// and be invoked here to guarantee isolation between clients.
+export const selectClientContext = (clientSlug: string | null): ThunkAction<void, RootState, unknown, AnyAction> => (dispatch) => {
+  // 1. Set selected client
+  dispatch(setSelectedClient(clientSlug));
+  // 2. Clear/Reset dependent slices (fire-and-forget; ignore unknown types)
+  try { dispatch({ type: CLEAR_DEPENDENT_SLICES.zones }); } catch { /* ignore */ }
+  try { dispatch({ type: CLEAR_DEPENDENT_SLICES.deployments }); } catch { /* ignore */ }
+  try { dispatch({ type: CLEAR_DEPENDENT_SLICES.applications, payload: [] }); } catch { /* ignore */ }
+  // portfolios may not yet have a clearAll reducer; safe-guard
+  try { dispatch({ type: CLEAR_DEPENDENT_SLICES.portfolios }); } catch { /* ignore */ }
+};
 
 // Summary interface for list operations (matches ClientSummary from your API)
 export interface ClientSummary {
@@ -35,6 +61,15 @@ interface ClientsState {
   switchError: string | null; // Error during client switching
 }
 
+// Hydrate selected client from localStorage.
+// The "selectedClient" must reflect the tenant encoded in the current access token's JWT (cnm).
+// We keep it in localStorage so authentication bootstrap (prior to full Redux init) can reference it.
+let persistedSelected: string | null = null;
+try {
+  const raw = localStorage.getItem('sck.selectedClient');
+  if (raw && typeof raw === 'string' && raw.trim() !== '') persistedSelected = raw;
+} catch (_) { /* ignore */ }
+
 const initialState: ClientsState = {
   items: [],
   byId: {},
@@ -43,7 +78,7 @@ const initialState: ClientsState = {
   error: null,
   cursor: null,
   lastFetched: null,
-  selectedClient: null,
+  selectedClient: persistedSelected,
   defaultClient: null,
   individualClientCache: {},
   fullClientDataCache: {},
@@ -70,8 +105,8 @@ export const createClient = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to create client');
       }
 
-      const result = await response.json();
-      return normalizeClient(result.data as Client);
+  const { data } = await parseApiEnvelope<Client>(response);
+  return normalizeClient(data as Client);
     } catch (error) {
       return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -86,23 +121,29 @@ export const fetchClients = createAsyncThunk<
 >(
   'clients/fetchList',
   async (args) => {
-    const limit = args?.limit ?? 100;
-    const cursor = args?.cursor ?? null;
+  const limit = args?.limit;
+  const reqCursor = args?.cursor ?? null;
 
     const url = new URL(buildApiUrl('/api/v1/registry/clients'));
-    url.searchParams.set('limit', String(limit));
-    if (cursor) url.searchParams.set('cursor', cursor);
+    if (typeof limit === 'number') url.searchParams.set('limit', String(limit));
+  if (reqCursor) url.searchParams.set('cursor', reqCursor);
 
-    // Prefer cookie-based auth (no Authorization header) to avoid CORS preflight;
-    // then gracefully fall back to Bearer if the server rejects (401).
-  const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: 'clients-401', contextLabel: 'Clients' });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+    // Prefer cookie-based auth (no Authorization header) to avoid CORS preflight.
+    // Any unauthorized / forbidden (401/403) should short‑circuit as empty to avoid storms.
+  const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: 'clients-authz', contextLabel: 'Clients' });
+    if (response.status === 401 || response.status === 403) {
+      return { data: [] as any, metadata: { cursor: null } } as ApiResponse<Client>;
     }
 
-  const json = await response.json() as ApiResponse<Client>;
-    return json;
+    if (!response.ok) {
+      // Preserve previous behavior for non-401 errors.
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const { data, cursor: apiCursor } = await parseApiEnvelope<Client[] | Client>(response);
+    // Server returns array in data for list
+    const normalized: ApiResponse<Client> = { data: (Array.isArray(data) ? data : (data ? [data] : [])) as any, metadata: { cursor: apiCursor } } as any;
+    // Keep backward shape for reducers that expect ApiResponse<Client>
+    return normalized;
   },
   {
     condition: (args, { getState }) => {
@@ -136,14 +177,14 @@ export const fetchClient = createAsyncThunk<
   'clients/fetchSingle',
   async ({ clientSlug }) => {
     // Same CORS-friendly approach for single-client fetch.
-  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${clientSlug}`), { cookieFirst: true, dedupeKey: `client-${clientSlug}-401`, contextLabel: 'Clients' });
+  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${clientSlug}`), { cookieFirst: true, dedupeKey: `client-${clientSlug}-authz`, contextLabel: 'Clients' });
 
     if (!response.ok) {
       throw new Error('Failed to fetch client');
     }
 
-    const result = await response.json();
-    return normalizeClient(result.data as Client);
+  const { data } = await parseApiEnvelope<Client>(response);
+  return normalizeClient(data as Client);
   },
   {
     condition: ({ clientSlug, force }, { getState }) => {
@@ -259,65 +300,70 @@ export const refreshClient = (clientSlug: string) => (dispatch: AppDispatch) => 
 
 // CLIENT SWITCHING - Switch active client context using refresh token
 export const switchToClient = createAsyncThunk<
-  { user: any; tokens: any; clientSlug: string },
+  { user: any; tokens: OAuthTokenResponse; clientSlug: string },
   string,
   { state: RootState }
 >(
   'clients/switchToClient',
   async (clientSlug: string, thunkAPI) => {
     try {
-      const refreshToken = localStorage.getItem('refresh_token');
+      // Refresh token is only stored in sessionStorage per policy
+      const refreshToken = (() => { try { return sessionStorage.getItem('refresh_token'); } catch { return null; } })();
       if (!refreshToken) {
         throw new Error('No refresh token available - please login again');
       }
 
-      const tokenRequest: OAuthTokenRequest = {
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-        client_id: API_CONFIG.OAUTH.CLIENT_ID,
-        state: `client=${clientSlug}`
-      };
+      // Customization: state=client=<slug> to scope tokens to target tenant
+      const form = new URLSearchParams();
+      form.set('grant_type', 'refresh_token');
+      form.set('refresh_token', refreshToken);
+      form.set('client_id', API_CONFIG.OAUTH.CLIENT_ID);
+      form.set('state', `client=${clientSlug}`);
 
       const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.OAUTH.TOKEN), {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
         },
-        body: JSON.stringify(tokenRequest),
+        body: form.toString(),
+        // cookie not needed; /token is OAuth endpoint and does not rely on session cookie here
       });
 
+  // 401/403 mean unauthorized/forbidden to switch; do not logout, do not mutate current client
+  if (response.status === 401 || response.status === 403) {
+        const msg = 'Unauthorized to switch to the selected client.';
+        return thunkAPI.rejectWithValue(msg);
+      }
+
       if (!response.ok) {
-        const errorData = await response.json();
-
-        // Only treat 401 as session expiry
-        if (response.status === 401) {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          throw new Error('Session expired. Please login again.');
-        }
-
+        let errorData: any = {};
+        try { errorData = await response.json(); } catch { /* ignore */ }
         throw new Error(errorData.error_description || `Failed to switch to client: ${clientSlug}`);
       }
 
-      const tokens: OAuthTokenResponse = await response.json();
+  const tokens: OAuthTokenResponse = await response.json();
 
-      // Store new tokens (now scoped to new client)
-      localStorage.setItem('access_token', tokens.access_token);
-      if (tokens.refresh_token) {
-        localStorage.setItem('refresh_token', tokens.refresh_token);
-      }
+      // Persist refresh_token rotation to sessionStorage only; never persist access_token
+      try { if (tokens.refresh_token) sessionStorage.setItem('refresh_token', tokens.refresh_token); } catch { /* ignore */ }
 
-      // Fetch user profile from new client context (cached)
+      // Fetch user profile from new client context using centralized API client
       const user = await authAPI.fetchUserProfile();
       if ((user as any)?.error) {
         throw new Error('Failed to fetch user profile for new client context');
       }
 
+      // Clear tenant-scoped data and set selection immediately
+      try {
+        thunkAPI.dispatch(selectClientContext(clientSlug) as any);
+      } catch { /* ignore */ }
+
       return { user, tokens, clientSlug };
     } catch (error) {
       return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Client switch failed');
     }
-  });
+  }
+);
 
 // Helper thunk to get current client from JWT token
 export const getCurrentClientFromJWT = createAsyncThunk(
@@ -376,7 +422,12 @@ const clientsSlice = createSlice({
       });
     },
     setSelectedClient(state, action: PayloadAction<string | null>) {
-      state.selectedClient = action.payload ?? null;
+      const value = action.payload ?? null;
+      state.selectedClient = value;
+      try {
+        if (value) localStorage.setItem('sck.selectedClient', value);
+        else localStorage.removeItem('sck.selectedClient');
+      } catch (_) { /* ignore */ }
     },
     setDefaultClient(state, action: PayloadAction<string | null>) {
       state.defaultClient = action.payload ?? null;
@@ -482,43 +533,43 @@ const clientsSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchClients.fulfilled, (state, action: PayloadAction<ApiResponse<Client>>) => {
-            const data = toArray<Client>(action.payload.data);
-            const now = Date.now();
+        const data = toArray<Client>(action.payload.data);
+        const now = Date.now();
+        const existing = state.items || [];
+        const bySlug = new Map(existing.map(c => [c.client, c] as const));
 
-            state.items = data.map((c) => {
-              const slug = (c as any).client || (c as any).Client || '';
-              // Keep full data for the current active client; otherwise store minimal fields
-              if (slug && slug === state.currentActiveClient) {
-                state.fullClientDataCache[slug] = true;
-                state.individualClientCache[slug] = now;
-                return normalizeClient({ ...(c as Client), client: slug });
-              }
-              const minimal: Client = {
-                client: slug,
-                client_status: (c as any).client_status,
-                client_name: (c as any).client_name || (c as any).Name,
-                client_description: (c as any).client_description,
-                organization_name: (c as any).organization_name,
-                organization_account: (c as any).organization_account,
-                created_at: (c as any).created_at,
-              };
-              state.fullClientDataCache[slug] = false;
-              state.individualClientCache[slug] = now;
-              return minimal;
-            });
-            // Rebuild maps
-            state.byId = {};
-            state.ids = [];
-            state.items.forEach(c => { state.byId[c.client] = c; state.ids.push(c.client); });
+        const nextList = data.map((c) => {
+          const slug = ((c as any).client || (c as any).Client || '') as string;
+          const minimal: Client = {
+            client: slug,
+            client_status: (c as any).client_status,
+            client_name: (c as any).client_name || (c as any).Name,
+            client_description: (c as any).client_description,
+            organization_name: (c as any).organization_name,
+            organization_account: (c as any).organization_account,
+            created_at: (c as any).created_at,
+          };
+          state.fullClientDataCache[slug] = state.fullClientDataCache[slug] || false;
+          state.individualClientCache[slug] = now;
+          const prev = bySlug.get(slug);
+          // Preserve any previously fetched full data
+          return prev ? ({ ...prev, ...minimal }) : minimal;
+        });
 
-            state.cursor = action.payload.metadata?.cursor ?? null;
-            state.status = 'succeeded';
-            state.lastFetched = now;
-            state.error = null;
-          })
+        state.items = nextList;
+        state.byId = {};
+        state.ids = [];
+        state.items.forEach(c => { state.byId[c.client] = c; state.ids.push(c.client); });
+
+        state.cursor = action.payload.metadata?.cursor ?? null;
+        state.status = 'succeeded';
+        state.lastFetched = now;
+        state.error = null;
+      })
       .addCase(fetchClients.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.error.message ?? 'Failed to load clients';
+  // Only mark failed if not the synthetic empty-list 401 handling (which now returns fulfilled)
+  state.status = 'failed';
+  state.error = action.error.message ?? 'Failed to load clients';
       })
 
       // READ Single Client

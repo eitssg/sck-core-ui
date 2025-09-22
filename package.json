@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "packageManager": "yarn@4.4.1",
   "description": "Core Automation SCK UI",
   "author": "EITS",
   "license": "GPL-3.0-only",
@@ -32,6 +33,8 @@
     "preview:development": "vite preview --mode development",
     "type-check": "tsc --noEmit",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "clean": "rm -rf dist node_modules/.vite"
   },
   "dependencies": {
@@ -91,6 +94,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.9.0",
+    "@playwright/test": "^1.55.0",
     "@tailwindcss/typography": "^0.5.15",
     "@types/js-cookie": "^3.0.6",
     "@types/node": "^22.5.5",
