@@ -23,7 +23,10 @@
   - Do NOT attach Authorization when calling presigned S3 URLs (PUT/GET) — S3 will reject those headers.
   - For asset GET helpers (icons, etc.), prefer a small auth-aware fetch wrapper that follows redirects and renders a Blob URL.
 - **Storage**:
-  - `localStorage`: UI prefs only (e.g., `sck.selectedClient`, `sck.profileName`).
+  - `localStorage`: **UI preferences that persist across browser refresh** (e.g., `sck.selectedClient`, `sck.profileName`). 
+    - Design rationale: Client selection must survive page refresh for user experience continuity. 
+    - Redux state is ephemeral and lost on refresh; localStorage provides cross-session persistence for UI settings.
+    - NEVER store authentication tokens or sensitive data in localStorage.
   - `sessionStorage`: Ephemeral keys (e.g., `refresh_token`, `sck_session_expires_at`).
   - No tokens in `localStorage`.
 - **Routes**:
@@ -35,7 +38,7 @@
   - OAuth: Follow RFC 6749 (e.g., `/auth/v1/token`).
 - **Client Selection**:
   - Always include `core` client; default to `core` if no saved selection.
-  - Switch clients via `/auth/v1/token` with `state=client=<slug>`.
+  - Switch clients via oauth `/auth/v1/token` with `state=client=<slug>` with refresh-token.
 
 ### UI Style Guide (`docs/ui-style-guide.md`)
 - **Headers**:
@@ -88,6 +91,10 @@
 - All data operations to `/api/v1/**` MUST be implemented in Redux slices as async thunks. Do not fetch in React components.
   - Actions covered: `GET` (list/detail), `POST` (create), `PUT` (update), `PATCH`, `DELETE`.
   - Components should only dispatch thunks and select state using exported selectors.
+- **State vs. Storage Separation**:
+  - Redux: Ephemeral application state (user data, API responses, loading states) — lost on page refresh.
+  - localStorage: Persistent UI preferences only (`sck.selectedClient`, `sck.profileName`) — survives browser refresh.
+  - Design principle: User should not lose their selected client/context when refreshing the page, but API data should be refetched for consistency.
 - Caching and invalidation:
   - Maintain `status`, `error`, and `lastFetched` in each slice. Prefer updating in-place (merge by key) on detail fetches.
   - Provide targeted selectors (e.g., `selectApplicationByKey(state, portfolio, app)`).
