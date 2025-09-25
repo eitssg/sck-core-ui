@@ -23,7 +23,10 @@
   - Do NOT attach Authorization when calling presigned S3 URLs (PUT/GET) — S3 will reject those headers.
   - For asset GET helpers (icons, etc.), prefer a small auth-aware fetch wrapper that follows redirects and renders a Blob URL.
 - **Storage**:
-  - `localStorage`: UI prefs only (e.g., `sck.selectedClient`, `sck.profileName`).
+  - `localStorage`: **UI preferences that persist across browser refresh** (e.g., `sck.selectedClient`, `sck.profileName`). 
+    - Design rationale: Client selection must survive page refresh for user experience continuity. 
+    - Redux state is ephemeral and lost on refresh; localStorage provides cross-session persistence for UI settings.
+    - NEVER store authentication tokens or sensitive data in localStorage.
   - `sessionStorage`: Ephemeral keys (e.g., `refresh_token`, `sck_session_expires_at`).
   - No tokens in `localStorage`.
 - **Routes**:
@@ -35,7 +38,7 @@
   - OAuth: Follow RFC 6749 (e.g., `/auth/v1/token`).
 - **Client Selection**:
   - Always include `core` client; default to `core` if no saved selection.
-  - Switch clients via `/auth/v1/token` with `state=client=<slug>`.
+  - Switch clients via oauth `/auth/v1/token` with `state=client=<slug>` with refresh-token.
 
 ### UI Style Guide (`docs/ui-style-guide.md`)
 - **Headers**:
@@ -68,7 +71,27 @@
   - Tenant switch clears and refetches portfolios for the selected client.
 
 ### Backend Code Style (`docs/backend-code-style.md`)
-- **Modules**: Use `core_framework`, `core_logging`, `core_db`, `core_api`.
+- **Modules**: 
+   - Use `core_framework`, `core_logging`, `core_db`, `core_api`.
+     - core_framework: tools for configuration values, environment variables, framework data models, constants, yaml/json helpers.
+     - core_logging: structured logging, log levels, correlation IDs. PRN identity and object formatter outputs
+     - core_helper.aws: AWS helpers (S3, Lambda, SNS, SQS, STS, IAM).
+       - Avoid `boto3`/`botocore` directly; use `core_helper.aws`.
+     - core_helper.magic: MagicS3Bucket.  Tools that allow AWS interface into local storage volumes or S3/Lambda based on core_framework.util.is_local_mode()
+     - core_renderer: Jinja2 filters and template rendering helpers.
+     - core_db: Database interface and models, DynamoDB/PynamoDB helpers. 
+     - core_execute: Lambda step-function. Defines Actions, ActionResources, and ActionSpec and the Action script library for running code within lambda step functions
+     - core_report: Pulls status from Action context and genereates a run status for hooks into CI/CD
+     - core_runner: Lambda function for kicking off core_execute step functions.
+     - core_deployspec: Lambda function generates, Compiles, Jinja2 transforms ActionsReources into a list of ActoinResources/ActionSpecs for core_execute
+     - core_component: Lambda function for managing components (packages, files, artefacts) in S3 and DynamoDB.  Compiles Core-Automation component resources into a CloudFormation template and provides ActionResources for core_execute
+     - core_invoker: Lambda function for invoking other lambda functions with retries and error handling.
+     - core_organization: Lambda function for managing AWS Organizations, SCPs, and Accounts.
+     - core_codecommit: Lambda function for listening to AWS CodeCommit events (to kick off Core Automation pipeline).
+     - core_api: AWS API Gateway (remote operation) and FastAPI (local dev). Full API and execution of business logic.
+- **API**:
+  - Use `core_api` decorators for request validation, auth, and responses.
+  - Follow envelope `{ status, code, data, metadata, message }` for non-OAuth APIs.
 - **S3**:
   - Prefixes: `packages`, `files`, `artefacts`.
   - Lifecycle: Objects transition after 30/60/90 days to lower-cost classes (Standard-IA → One Zone-IA → Glacier Instant Retrieval). Core automation deletes package/file/artefact objects when a deployment is removed.
@@ -88,6 +111,10 @@
 - All data operations to `/api/v1/**` MUST be implemented in Redux slices as async thunks. Do not fetch in React components.
   - Actions covered: `GET` (list/detail), `POST` (create), `PUT` (update), `PATCH`, `DELETE`.
   - Components should only dispatch thunks and select state using exported selectors.
+- **State vs. Storage Separation**:
+  - Redux: Ephemeral application state (user data, API responses, loading states) — lost on page refresh.
+  - localStorage: Persistent UI preferences only (`sck.selectedClient`, `sck.profileName`) — survives browser refresh.
+  - Design principle: User should not lose their selected client/context when refreshing the page, but API data should be refetched for consistency.
 - Caching and invalidation:
   - Maintain `status`, `error`, and `lastFetched` in each slice. Prefer updating in-place (merge by key) on detail fetches.
   - Provide targeted selectors (e.g., `selectApplicationByKey(state, portfolio, app)`).
