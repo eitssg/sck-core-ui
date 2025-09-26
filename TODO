@@ -1,0 +1,4 @@
+PortfolioDetails.tsx: Icon upload fetch calls should be Redux thunks
+Settings.tsx: Health check should be Redux thunk
+NotFound.tsx: Bug reporting should be Redux thunk
+portfoliosSlice.ts: Should use apiFetch() instead of fetch() for consistency
