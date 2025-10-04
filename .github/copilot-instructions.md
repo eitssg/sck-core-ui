@@ -1,5 +1,8 @@
 # Project-Wide Guidelines for Copilot Suggestions (SCK Core UI)
 
+## Plan → Approval → Execute (Mandatory UI Addendum)
+Any action that changes React components, Redux slices, API integration utilities, build config, or test suites must start with a numbered plan and await approval. Trivial style or conceptual Q&A answers can forgo planning. Explicit user override to skip is honored.
+
 ## Contradiction Detection
 - For every prompt, compare against rules in:
   - `docs/auth-session-and-storage.md` (auth, tokens, storage, routes, API responses)
