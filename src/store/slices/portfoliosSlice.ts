@@ -71,7 +71,7 @@ export interface ProjectFacts {
 export interface Portfolio {
   // Core portfolio identification
   portfolio: string; // Primary key - portfolio slug/ID (the business app identifier)
-  
+
   // Portfolio configuration
   contacts?: ContactFacts[]; // Stakeholder contact information
   approvers?: ApproverFacts[]; // Approval workflow for deployments
@@ -82,15 +82,14 @@ export interface Portfolio {
   // Extended ownership (catalog)
   business_owner?: OwnerFacts;
   technical_owner?: OwnerFacts;
-  
+
   // Resource management
   tags?: Record<string, string>; // AWS resource tags for cost/organization
   metadata?: Record<string, string>; // Additional metadata
   attributes?: Record<string, string>; // Custom attributes
   compliance?: Record<string, string>;
   identifiers?: Record<string, string>;
-  user_instantiated?: string; // User who created this portfolio
-  
+
   // Identity/presentation (catalog)
   icon_url?: string;
   category?: string;
@@ -101,7 +100,7 @@ export interface Portfolio {
   // Audit fields (inherited from DatabaseRecord)
   created_at?: string;
   updated_at?: string;
-  
+
   // UI compatibility fields (derived from core data)
   id?: string; // Will be set to portfolio value for UI compatibility
   name?: string; // Prefer summary.name, then project.name, then portfolio
@@ -109,7 +108,7 @@ export interface Portfolio {
   clientId?: string; // Client this portfolio belongs to (for UI filtering)
   code?: string; // Will be set to project.code for display
   status?: string; // Derived status (active/inactive based on enabled state)
-  
+
   // Calculated/derived fields for UI
   app_count?: number; // Number of deployments under this portfolio (from backend)
   lastUpdated?: string; // Will be set to updated_at for display
@@ -174,9 +173,9 @@ const transformPortfolioForUI = (portfolio: Portfolio & { app_count?: number }, 
     clientId: clientId || portfolio.clientId,
     status: portfolio.lifecycle_status || (portfolio.contacts?.some(c => c.enabled !== false) ? 'active' : 'inactive'),
     lastUpdated: portfolio.updated_at,
-  homePageUrl: portfolio.domain ? `https://${portfolio.domain}` : undefined,
-  // app_count is the canonical field; accept legacy counters if present
-  app_count: typeof (portfolio as any).app_count === 'number'
+    homePageUrl: portfolio.domain ? `https://${portfolio.domain}` : undefined,
+    // app_count is the canonical field; accept legacy counters if present
+    app_count: typeof (portfolio as any).app_count === 'number'
       ? (portfolio as any).app_count
       : (typeof (portfolio as any).counter === 'number' ? (portfolio as any).counter : undefined),
   };
@@ -188,12 +187,12 @@ const transformPortfolioForUI = (portfolio: Portfolio & { app_count?: number }, 
 // CREATE - Create new portfolio (POST /api/v1/registry/clients/{client}/portfolios)
 export const createPortfolio = createAsyncThunk(
   'portfolios/create',
-  async ({ client, portfolioData }: { 
-    client: string; 
-    portfolioData: Partial<Portfolio> 
+  async ({ client, portfolioData }: {
+    client: string;
+    portfolioData: Partial<Portfolio>
   }, thunkAPI) => {
     try {
-  const response = await fetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios`), {
+      const response = await fetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios`), {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(portfolioData),
@@ -204,8 +203,8 @@ export const createPortfolio = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to create portfolio');
       }
 
-  const { data } = await parseApiEnvelope<Portfolio>(response);
-  return { portfolio: transformPortfolioForUI(data as Portfolio, client), client };
+      const { data } = await parseApiEnvelope<Portfolio>(response);
+      return { portfolio: transformPortfolioForUI(data as Portfolio, client), client };
     } catch (error) {
       return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -221,20 +220,20 @@ export const fetchPortfolios = createAsyncThunk<
 >(
   'portfolios/fetchList',
   async ({ client, limit = 50, cursor: reqCursor = null, append = false }) => { // Reduced default limit for pagination
-  const url = new URL(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios`));
+    const url = new URL(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios`));
     url.searchParams.set('limit', String(limit));
     if (reqCursor) url.searchParams.set('cursor', reqCursor);
 
-  const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: `portfolios-${client}-authz`, contextLabel: 'Portfolios' });
+    const response = await apiFetch(url.toString(), { cookieFirst: true, dedupeKey: `portfolios-${client}-authz`, contextLabel: 'Portfolios' });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
 
-  const { data, cursor: apiCursor } = await parseApiEnvelope<PortfolioSummary[] | any>(response);
-  // Construct ApiResponse-like shape expected by reducers
-  const shaped: ApiResponse<PortfolioSummary> = { data: Array.isArray(data) ? (data as any) : [], metadata: { cursor: apiCursor } } as any;
-  return { data: shaped, client, append };
+    const { data, cursor: apiCursor } = await parseApiEnvelope<PortfolioSummary[] | any>(response);
+    // Construct ApiResponse-like shape expected by reducers
+    const shaped: ApiResponse<PortfolioSummary> = { data: Array.isArray(data) ? (data as any) : [], metadata: { cursor: apiCursor } } as any;
+    return { data: shaped, client, append };
   },
   {
     condition: ({ client, force, cursor }, { getState }) => {
@@ -246,7 +245,7 @@ export const fetchPortfolios = createAsyncThunk<
 
       // Check if portfolios slice exists in state
       if (!state.portfolios) return true;
-      
+
       const slice = state.portfolios;
       if (slice.status === 'loading') return false;
 
@@ -271,7 +270,7 @@ export const fetchPortfolio = createAsyncThunk<
   'portfolios/fetchSingle',
   async ({ client, portfolio }) => {
     try {
-  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios/${portfolio}`), {
+      const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios/${portfolio}`), {
         contextLabel: 'Portfolios',
       });
 
@@ -279,8 +278,8 @@ export const fetchPortfolio = createAsyncThunk<
         throw new Error('Failed to fetch portfolio');
       }
 
-  const { data } = await parseApiEnvelope<Portfolio>(response);
-  return { portfolio: transformPortfolioForUI(data as Portfolio, client), client };
+      const { data } = await parseApiEnvelope<Portfolio>(response);
+      return { portfolio: transformPortfolioForUI(data as Portfolio, client), client };
     } catch (error) {
       throw new Error(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -288,15 +287,15 @@ export const fetchPortfolio = createAsyncThunk<
   {
     condition: ({ client, portfolio, force }, { getState }) => {
       if (force) return true;
-      
+
       const state = getState();
       if (!state.portfolios) return true;
-      
+
       // Check if we already have this portfolio in cache
-      const existingPortfolio = state.portfolios.items.find(p => 
+      const existingPortfolio = state.portfolios.items.find(p =>
         p.portfolio === portfolio && p.clientId === client
       );
-      
+
       // Only fetch if not in cache
       return !existingPortfolio;
     },
@@ -307,13 +306,13 @@ export const fetchPortfolio = createAsyncThunk<
 // Note: PUT replaces entire record, unsupplied attributes will be set to null
 export const updatePortfolio = createAsyncThunk(
   'portfolios/update',
-  async ({ client, portfolio, portfolioData }: { 
-    client: string; 
-    portfolio: string; 
-    portfolioData: Portfolio 
+  async ({ client, portfolio, portfolioData }: {
+    client: string;
+    portfolio: string;
+    portfolioData: Portfolio
   }, thunkAPI) => {
     try {
-  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios/${portfolio}`), {
+      const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios/${portfolio}`), {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify(portfolioData),
@@ -325,8 +324,8 @@ export const updatePortfolio = createAsyncThunk(
         throw new Error(errorData.message || 'Failed to update portfolio');
       }
 
-  const { data } = await parseApiEnvelope<Portfolio>(response);
-  return { portfolio: transformPortfolioForUI(data as Portfolio, client), client };
+      const { data } = await parseApiEnvelope<Portfolio>(response);
+      return { portfolio: transformPortfolioForUI(data as Portfolio, client), client };
     } catch (error) {
       return thunkAPI.rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -337,13 +336,13 @@ export const updatePortfolio = createAsyncThunk(
 // Note: PATCH only updates provided fields, leaving others unchanged
 export const patchPortfolio = createAsyncThunk(
   'portfolios/patch',
-  async ({ client, portfolio, portfolioData }: { 
-    client: string; 
-    portfolio: string; 
-    portfolioData: Partial<Portfolio> 
+  async ({ client, portfolio, portfolioData }: {
+    client: string;
+    portfolio: string;
+    portfolioData: Partial<Portfolio>
   }, thunkAPI) => {
     try {
-  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios/${portfolio}`), {
+      const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios/${portfolio}`), {
         method: 'PATCH',
         headers: getAuthHeaders(),
         body: JSON.stringify(portfolioData),
@@ -368,7 +367,7 @@ export const deletePortfolio = createAsyncThunk(
   'portfolios/delete',
   async ({ client, portfolio }: { client: string; portfolio: string }, thunkAPI) => {
     try {
-  const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios/${portfolio}`), {
+      const response = await apiFetch(buildApiUrl(`/api/v1/registry/clients/${client}/portfolios/${portfolio}`), {
         method: 'DELETE',
         contextLabel: 'Portfolios',
       });
@@ -427,7 +426,7 @@ const portfoliosSlice = createSlice({
     syncFromAPI(state, action: PayloadAction<{ portfolio: Portfolio; client: string }>) {
       const portfolio = transformPortfolioForUI(action.payload.portfolio, action.payload.client);
       const existingIndex = state.items.findIndex(p => p.portfolio === portfolio.portfolio);
-      
+
       if (existingIndex >= 0) {
         state.items[existingIndex] = portfolio;
       } else {
@@ -471,7 +470,7 @@ const portfoliosSlice = createSlice({
         const summaryData = toArray<PortfolioSummary>(action.payload.data.data);
         const client = action.payload.client;
         const append = action.payload.append;
-        
+
         // Transform PortfolioSummary (supports PascalCase or snake_case) to Portfolio interface
         const portfolios = summaryData.map(summary => {
           const slug = (summary as any).portfolio ?? summary.Portfolio!;
@@ -532,7 +531,7 @@ const portfoliosSlice = createSlice({
             (portfolios[i] as any).app_count = (prev as any).app_count;
           }
         }
-        
+
         // Merge summaries into existing items to preserve detailed fields
         if (append) {
           const existing = state.items || [];
@@ -550,7 +549,7 @@ const portfoliosSlice = createSlice({
             return prev ? ({ ...prev, ...p }) : p;
           });
         }
-        
+
         state.cursor = action.payload.data.metadata?.cursor ?? null;
         state.status = 'succeeded';
         state.lastFetched = Date.now();
@@ -569,7 +568,7 @@ const portfoliosSlice = createSlice({
       })
       .addCase(fetchPortfolio.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        
+
         // Update or add the portfolio in the list
         const existingIndex = state.items.findIndex(p => p.portfolio === action.payload.portfolio.portfolio);
         if (existingIndex >= 0) {
@@ -583,7 +582,7 @@ const portfoliosSlice = createSlice({
         } else {
           state.items.push(action.payload.portfolio);
         }
-        
+
         state.currentClient = action.payload.client;
         state.lastFetched = Date.now();
       })
@@ -599,7 +598,7 @@ const portfoliosSlice = createSlice({
       })
       .addCase(updatePortfolio.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        
+
         // Update the portfolio in the list
         const index = state.items.findIndex(p => p.portfolio === action.payload.portfolio.portfolio);
         if (index >= 0) {
@@ -610,7 +609,7 @@ const portfoliosSlice = createSlice({
           }
           state.items[index] = incoming;
         }
-        
+
         state.currentClient = action.payload.client;
         state.lastFetched = Date.now();
       })
@@ -626,7 +625,7 @@ const portfoliosSlice = createSlice({
       })
       .addCase(patchPortfolio.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        
+
         // Update the portfolio in the list
         const index = state.items.findIndex(p => p.portfolio === action.payload.portfolio.portfolio);
         if (index >= 0) {
@@ -637,7 +636,7 @@ const portfoliosSlice = createSlice({
           }
           state.items[index] = incoming;
         }
-        
+
         state.currentClient = action.payload.client;
         state.lastFetched = Date.now();
       })
@@ -653,15 +652,15 @@ const portfoliosSlice = createSlice({
       })
       .addCase(deletePortfolio.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        
+
         // Remove the portfolio from the list
         state.items = state.items.filter(p => p.portfolio !== action.payload.portfolio);
-        
+
         // Clear selection if deleted portfolio was selected
         if (state.selectedPortfolioId === action.payload.portfolio) {
           state.selectedPortfolioId = null;
         }
-        
+
         state.lastFetched = Date.now();
       })
       .addCase(deletePortfolio.rejected, (state, action) => {
@@ -671,13 +670,13 @@ const portfoliosSlice = createSlice({
   },
 });
 
-export const { 
-  clear, 
-  setPortfolios, 
-  setSelectedPortfolio, 
-  setCurrentClient, 
+export const {
+  clear,
+  setPortfolios,
+  setSelectedPortfolio,
+  setCurrentClient,
   syncFromAPI,
-  updatePortfolioAppCount 
+  updatePortfolioAppCount
 } = portfoliosSlice.actions;
 
 // Selectors for accessing portfolio state
@@ -688,14 +687,14 @@ export const selectPortfoliosCursor = (state: RootState) => state.portfolios.cur
 export const selectPortfoliosLastFetched = (state: RootState) => state.portfolios.lastFetched;
 export const selectSelectedPortfolioId = (state: RootState) => state.portfolios.selectedPortfolioId;
 export const selectCurrentClient = (state: RootState) => state.portfolios.currentClient;
-export const selectPortfolioBySlug = (state: RootState, portfolioSlug: string) => 
+export const selectPortfolioBySlug = (state: RootState, portfolioSlug: string) =>
   state.portfolios.items.find(p => p.portfolio === portfolioSlug);
 export const selectPortfoliosLoading = (state: RootState) => state.portfolios.status === 'loading';
 
 // Filtered selectors for UI convenience
-export const selectActivePortfolios = (state: RootState) => 
+export const selectActivePortfolios = (state: RootState) =>
   state.portfolios.items.filter(p => p.status === 'active');
-export const selectPortfoliosByClient = (state: RootState, clientId: string) => 
+export const selectPortfoliosByClient = (state: RootState, clientId: string) =>
   state.portfolios.items.filter(p => p.clientId === clientId);
 export const selectHasMorePortfolios = (state: RootState) => !!state.portfolios.cursor;
 export const selectPortfoliosPage = (state: RootState, page: number, pageSize: number = 20) => {

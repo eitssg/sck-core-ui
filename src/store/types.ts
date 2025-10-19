@@ -313,7 +313,6 @@ export interface Portfolio {
   attributes?: Record<string, string>;
   compliance?: Record<string, string>;
   identifiers?: Record<string, string>;
-  user_instantiated?: string;
 
   // Catalog identity/presentation
   icon_url?: string;
@@ -512,11 +511,11 @@ export interface AppDeploymentBranches {
 
   portfolio_prn: string; // portfolio prn 'prn:<portfolio name>'
   app_prn: string; // app prn 'prn:<portfolio name>:<app name>'
-  
+
   // Build release information
   short_name: string; // a shortened name for the project branch
   released_build: any; // some information about the released build AppDeploymentBuild
-  
+
   created_at: string
   updated_at: string
 }
